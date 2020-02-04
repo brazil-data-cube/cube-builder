@@ -23,11 +23,16 @@ class Config():
     CELERYD_PREFETCH_MULTIPLIER = 1  # disable
     DEBUG = False
     TESTING = False
+    DATA_DIR = '/data'
     # REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379')
     RABBIT_MQ_URL = os.environ.get('RABBIT_MQ_URL', 'pyamqp://guest@localhost')
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         'SQLALCHEMY_DATABASE_URI',
-        'postgresql://postgres:postgres@localhost:5433/bdc_collection_builder'
+        'postgresql://postgres:bdc-scripts2019@localhost:5435/bdc'
+    )
+    STAC_URL = os.environ.get(
+        'STAC_URL',
+        'http://brazildatacube.dpi.inpe.br/bdc-stac/0.7.0/'
     )
     SECRET_KEY = 'cube-builder'
     TASK_RETRY_DELAY = int(os.environ.get('TASK_RETRY_DELAY', 60 * 60))  # a hour

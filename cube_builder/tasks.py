@@ -108,8 +108,3 @@ def publish(blends):
 @celery_app.task()
 def _publish_merge(bands, datacube, dateset, tile_id, period, merge_date, scenes):
     return publish_merge(bands, datacube, dateset, tile_id, period, merge_date, scenes)
-
-
-@celery_app.task()
-def upload(*args, **kwargs):
-    pass

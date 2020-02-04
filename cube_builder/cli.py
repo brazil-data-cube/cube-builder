@@ -62,4 +62,4 @@ def worker(ctx):
 def main(as_module=False):
     # TODO omit sys.argv once https://github.com/pallets/click/issues/536 is fixed
     import sys
-    cli.main(args=sys.argv[1:], prog_name="python -m bdc_collection_builder" if as_module else None)
+    cli.main(args=sys.argv[1:], prog_name="python -m cube_builder" if as_module else None)

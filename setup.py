@@ -40,7 +40,8 @@ install_requires = [
     'numpy>=1.17.2',
     'numpngw>=0.0.8',
     'rasterio>=1.1.2',
-    'stac @ git+git://github.com/brazil-data-cube/stac.py.git#egg=stac',
+    'stac @ git+git://github.com/brazil-data-cube/stac.py.git@v0.7#egg=stac',
+    'scikit-image>=0.16.2',
 ]
 
 packages = find_packages()

@@ -17,12 +17,12 @@ from .business import CubeBusiness
 from .parsers import DataCubeParser, DataCubeProcessParser
 
 
-api = Namespace('datastorm', description='datastorm')
+api = Namespace('cubes', description='cubes')
 
 
 @api.route('/create')
 class CubeCreateController(Resource):
-    @require_oauth_scopes(scope="bdc_scripts:datastorm:POST")
+    # @require_oauth_scopes(scope="cube_builder:cubes:POST")
     def post(self):
         form = DataCubeParser()
 
@@ -42,7 +42,7 @@ class CubeCreateController(Resource):
 
 @api.route('/process')
 class CubeProcessController(Resource):
-    @require_oauth_scopes(scope="bdc_scripts:datastorm:POST")
+    # @require_oauth_scopes(scope="cube_builder:cubes:POST")
     def post(self):
         args = request.get_json()
 

@@ -271,7 +271,7 @@ class Maestro:
 
     def dispatch_celery(self):
         from celery import group, chain
-        from bdc_scripts.datastorm.tasks import blend, warp_merge, publish
+        from .tasks import blend, warp_merge, publish
         self.prepare_merge()
 
         datacube = self.datacube.id
@@ -281,8 +281,6 @@ class Maestro:
 
         bands = self.datacube_bands
         warped_datacube = self.warped_datacube.id
-
-        print('{} - Bands - '.format(datacube, bands))
 
         # Quality
         # bands = filter(lambda b: b.common_name == 'quality', bands)
@@ -343,7 +341,7 @@ class Maestro:
 
             collection_bands = collection_metadata['properties']['bdc:bands']
 
-            items = stac_cli.collection_items(dataset, filter=options)
+            items = stac_cli.collections[dataset].get_items(filter=options)
 
             for feature in items['features']:
                 if feature['type'] == 'Feature':
