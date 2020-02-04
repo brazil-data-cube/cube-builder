@@ -10,7 +10,7 @@ import numpy
 
 # BDC Scripts
 from .config import Config
-from .models.activity import Activity
+# from .models.activity import Activity
 
 
 def days_in_month(date):
@@ -163,6 +163,7 @@ class Maestro:
 
         temporal_schema = self.datacube.temporal_composition_schema.temporal_schema
         temporal_step = self.datacube.temporal_composition_schema.temporal_composite_t
+
         datacube_stac = stac_cli.collection(self.datacube.id)
 
         cube_start_date, cube_end_date = datacube_stac['extent'].get('temporal', [None, None])
@@ -306,26 +307,22 @@ class Maestro:
                                 datacube=datacube,
                                 resx=band.resolution_x,
                                 resy=band.resolution_y,
-                                tileid=tileid,
-                                assets=assets,
-                                cols=cols,
-                                rows=rows
                             )
 
-                            activity = self.create_activity(
-                                self.datacube.id,
-                                self.warped_datacube.id,
-                                'MERGE',
-                                'WARPED',
-                                band.id,
-                                period_start_end,
-                                **properties
-                            )
+                            # activity = self.create_activity(
+                            #     self.datacube.id,
+                            #     self.warped_datacube.id,
+                            #     'MERGE',
+                            #     'WARPED',
+                            #     band.id,
+                            #     period_start_end,
+                            #     **properties
+                            # )
 
-                            Activity(**activity).save(commit=False)
+                            # Activity(**activity).save(commit=False)
 
-                            task = warp_merge.s(activity)
-                            # task = warp_merge.s(warped_datacube, tileid, period_start_end, assets, cols, rows, **properties)
+                            # task = warp_merge.s(activity)
+                            task = warp_merge.s(warped_datacube, tileid, period_start_end, assets, cols, rows, **properties)
                             merges_tasks.append(task)
 
                 # Persist activities
