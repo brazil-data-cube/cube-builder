@@ -180,19 +180,20 @@ def blend(activity):
     height = profile['height']
 
     # STACK will be generated in memory
-    stackRaster = numpy.zeros((height, width), dtype=profile['dtype'])
+    stackRaster = numpy.full((height, width), fill_value=-9999, dtype=profile['dtype'])
 
     datacube = activity.get('datacube')
     period = activity.get('period')
     tile_id = activity.get('tile_id')
-    output_name = '{}-{}-{}-{}.tif'.format(datacube, tile_id, period, band)
+    output_name = '{}-{}-{}-{}'.format(datacube, tile_id, period, band)
+
     #
     # MEDIAN will be generated in local disk
-    medianfile = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}'.format(
-        datacube, tile_id, period, output_name))
+    medianfile = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}_{}.tif'.format(
+        datacube, tile_id, period, output_name, 'MEDIAN'))
 
-    stack_file = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}'.format(
-        datacube, tile_id, period, output_name))
+    stack_file = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}_{}.tif'.format(
+        datacube, tile_id, period, output_name, 'STACK'))
 
     os.makedirs(os.path.dirname(medianfile), exist_ok=True)
 
@@ -201,7 +202,10 @@ def blend(activity):
     count = 0
     for _, window in tilelist:
         # Build the stack to store all images as a masked array. At this stage the array will contain the masked data
-        stackMA = numpy.ma.zeros((numscenes, window.height, window.width), dtype=numpy.uint16)
+        # stackMA = numpy.full(shape=(numscenes, window.height, window.width), dtype=numpy.int16, fill_value=-9999)
+        # stackMA = numpy.ma.array(stackMA, mask=False, fill_value=-9999)
+        stackMA = numpy.ma.zeros((numscenes, window.height, window.width), dtype=numpy.int16, fill_value=-9999)
+        # numpy.ma.set_fill_value(stackMA, -9999)
 
         # notdonemask will keep track of pixels that have not been filled in each step
         notdonemask = numpy.ones(shape=(window.height, window.width), dtype=numpy.bool_)
