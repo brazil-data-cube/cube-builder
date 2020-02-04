@@ -1,13 +1,6 @@
-#
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019 INPE.
-#
-# Cube Builder free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
-#
-
 # Python Native
 from datetime import datetime
+import logging
 import os
 import time
 # 3rdparty
@@ -17,13 +10,15 @@ from rasterio.warp import reproject, Resampling
 import numpy
 import rasterio
 # BDC Scripts
-from bdc_db.models import Collection
-from .config import Config
+from bdc_db.models import Asset, Band, Collection, CollectionItem, db
+from bdc_scripts.config import Config
+from bdc_scripts.core.utils import generate_cogs
+from bdc_scripts.radcor.utils import get_or_create_model
 
 
 def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
     datacube = kwargs['datacube']
-    nodata = kwargs.get('nodata', None)
+    nodata = kwargs.get('nodata', -9999)
     xmin = kwargs.get('xmin')
     ymax = kwargs.get('ymax')
     dataset = kwargs.get('dataset')
@@ -37,21 +32,23 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
     merge_name = '{}-{}-{}_M_{}_{}'.format(dataset, tile_id, formatted_date, len(assets), band)
 
-    merged_file = os.path.join(Config.DATA_DIR, 'Repository/collections/cubes/{}/{}/{}/{}.tif'.format(warped_datacube, tile_id, period, merge_name))
+    merged_file = os.path.join(Config.DATA_DIR, 'Repository/Warped/{}/{}/{}/{}.tif'.format(warped_datacube, tile_id, period, merge_name))
 
     transform = Affine(resx, 0, xmin, 0, -resy, ymax)
 
     # Quality band is resampled by nearest, other are bilinear
     if band == 'quality':
         resampling = Resampling.nearest
+
+        raster = numpy.zeros((rows, cols,), dtype=numpy.uint8)
+        raster_merge = numpy.zeros((rows, cols,), dtype=numpy.uint8)
+        raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint8)
+        nodata = 0
     else:
         resampling = Resampling.bilinear
+        raster = numpy.zeros((rows, cols,), dtype=numpy.int16)
+        raster_merge = numpy.full((rows, cols,), fill_value=nodata, dtype=numpy.int16)
 
-    # For all files
-    src = rasterio.open(assets[0]['link'])
-    raster = numpy.zeros((rows, cols,), dtype=src.profile['dtype'])
-    rasterMerge = numpy.zeros((rows, cols,), dtype=src.profile['dtype'])
-    rasterMask = numpy.ones((rows, cols,), dtype=src.profile['dtype'])
     count = 0
     template = None
     for asset in assets:
@@ -66,13 +63,13 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
                     'height': rows
                 })
 
+                source_nodata = 0
+
                 if src.profile['nodata'] is not None:
-                    nodata = src.profile['nodata']
-                elif nodata is None:
-                    nodata = 0
+                    source_nodata = src.profile['nodata']
 
                 kwargs.update({
-                    'nodata': nodata
+                    'nodata': source_nodata
                 })
 
                 with MemoryFile() as mem_file:
@@ -84,26 +81,43 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
                             src_crs=src.crs,
                             dst_transform=transform,
                             dst_crs=srs,
-                            src_nodata=nodata,
+                            src_nodata=source_nodata,
                             dst_nodata=nodata,
                             resampling=resampling)
-                        rasterMerge = rasterMerge + raster*rasterMask
-                        rasterMask[raster != nodata] = 0
+
+                        if band != 'quality':
+                            valid_data_scene = raster[raster != nodata]
+                            raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
+                        else:
+                            raster_merge = raster_merge + raster * raster_mask
+                            raster_mask[raster != nodata] = 0
+
                         if template is None:
                             template = dst.profile
+                            # Ensure type is >= int16
+
+                            if band != 'quality':
+                                template['dtype'] = 'int16'
+                                template['nodata'] = nodata
 
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
     cloudratio = 100
     if band == 'quality':
-        rasterMerge, efficacy, cloudratio = getMask(rasterMerge, dataset)
-        template.update({'dtype': 'uint8'})
+        raster_merge, efficacy, cloudratio = getMask(raster_merge, dataset)
+        # template.update({'dtype': 'uint8'})
 
     target_dir = os.path.dirname(merged_file)
     os.makedirs(target_dir, exist_ok=True)
 
     with rasterio.open(merged_file, 'w', **template) as merge_dataset:
-        merge_dataset.write_band(1, rasterMerge)
+        merge_dataset.nodata = nodata
+        merge_dataset.write_band(1, raster_merge)
+        merge_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+        merge_dataset.update_tags(ns='rio_overview', resampling='nearest')
+
+    # Ensure file is COG
+    # generate_cogs(merged_file, merged_file)
 
     return dict(
         band=band,
@@ -179,12 +193,16 @@ def blend(activity):
     output_name = '{}-{}-{}-{}.tif'.format(datacube, tile_id, period, band)
     #
     # MEDIAN will be generated in local disk
-    medianfile = os.path.join(Config.DATA_DIR, 'Repository/collections/cubes/{}/{}/{}/{}'.format(
+    medianfile = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}'.format(
+        datacube, tile_id, period, output_name))
+
+    stack_file = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}'.format(
         datacube, tile_id, period, output_name))
 
     os.makedirs(os.path.dirname(medianfile), exist_ok=True)
 
     mediandataset = rasterio.open(medianfile, 'w', **profile)
+
     count = 0
     for _, window in tilelist:
         # Build the stack to store all images as a masked array. At this stage the array will contain the masked data
@@ -197,8 +215,8 @@ def blend(activity):
         for order in range(numscenes):
             ssrc = bandlist[order]
             msrc = masklist[order]
-            raster = ssrc.read(1,window=window)
-            mask = msrc.read(1,window=window)
+            raster = ssrc.read(1, window=window)
+            mask = msrc.read(1, window=window)
             mask[mask != 1] = 0
             bmask = mask.astype(numpy.bool_)
 
@@ -223,36 +241,57 @@ def blend(activity):
     # Evaluate cloudcover
     cloudcover = 100. * ((height * width - numpy.count_nonzero(stackRaster)) / (height * width))
     #
+
+    if band == 'quality':
+        mediandataset.nodata = -9999
+
     # # Close and upload the MEDIAN dataset
     mediandataset.close()
     mediandataset = None
-    # key = activity['MEDIANfile']
 
-    # Create and upload the STACK dataset
-    # with MemoryFile() as memfile:
-    #     with memfile.open(**profile) as dataset:
-    #         dataset.write_band(1,stackRaster)
-    #         if self.verbose > 2: print ('blend - STACK profile',dataset.profile)
+    with rasterio.open(medianfile, 'r+', **profile) as ds_median:
+        if band == 'quality':
+            ds_median.nodata = -9999
+        # ds_median.nodata = activity.get('nodata', -9999)
+        ds_median.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+        ds_median.update_tags(ns='rio_overview', resampling='nearest')
 
-    #     key = activity['STACKfile']
-    #     if self.verbose > 1: print('blend - key STACKfile',key)
-    #     self.S3client.upload_fileobj(memfile, Bucket=self.bucket_name, Key=key, ExtraArgs={'ACL': 'public-read'})
+    with rasterio.open(stack_file, 'w', **profile) as stack_dataset:
+        if band == 'quality':
+            stack_dataset.nodata = -9999
+        stack_dataset.write_band(1, stackRaster)
+        stack_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+        stack_dataset.update_tags(ns='rio_overview', resampling='nearest')
+
+    # Ensure blend files are COG
+    # generate_cogs(medianfile, medianfile)
+    # generate_cogs(stack_file, stack_file)
 
     activity['efficacy'] = 0
-    activity['cloudratio'] = 100
-    activity['blends'] = {"MEDIAN": medianfile}
+    activity['cloudratio'] = cloudcover
+    activity['blends'] = {
+        "MEDIAN": medianfile,
+        "STACK": stack_file
+    }
 
     return activity
 
 
-def publish_datacube(bands, datacube, tile_id, period, scenes):
+def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio):
+    item_id = '{}_{}_{}'.format(cube.id, tile_id, period)
+    start_date, end_date = period.slice('_')
+
+    cube_bands = Band.query().filter(Band.collection_id == cube.id).all()
+    raster_size_schemas = cube.raster_size_schemas
+
     for composite_function in ['MEDIAN']:  # ,'STACK']:
         quick_look_name = '{}-{}-{}_{}'.format(datacube, tile_id, period, composite_function)
+        quick_look_relpath = 'Repository/Mosaic/{}/{}/{}/{}'.format(
+            datacube, tile_id, period, quick_look_name
+        )
         quick_look_file = os.path.join(
             Config.DATA_DIR,
-            'Repository/collections/cubes/{}/{}/{}/{}'.format(
-                datacube, tile_id, period, quick_look_name
-            )
+            quick_look_relpath
         )
 
         ql_files = []
@@ -261,12 +300,68 @@ def publish_datacube(bands, datacube, tile_id, period, scenes):
 
         generate_quick_look(quick_look_file, ql_files)
 
+        assets = Asset.query().filter(Asset.collection_item_id == item_id).all()
+
+        for asset in assets:
+            asset.delete()
+
+        item = CollectionItem.query().filter(CollectionItem.id == item_id).first()
+
+        if item:
+            item.delete()
+
+        with db.session.begin_nested():
+            CollectionItem(
+                id=item_id,
+                collection_id=cube.id,
+                grs_schema_id=cube.grs_schema_id,
+                tile_id=tile_id,
+                item_date=start_date,
+                composite_start=start_date,
+                composite_end=end_date,
+                quicklook=quick_look_file,
+                cloud_cover=cloudratio,
+                scene_type=composite_function,
+                compressed_file=None
+            ).save(commit=False)
+
+            for band in scenes['ARDfiles']:
+                if band == 'quality':
+                    continue
+
+                band_model = next(filter(lambda b: b.common_name == band, cube_bands))
+
+                # Band does not exists on model
+                if not band_model:
+                    logging.warning('Band {} of {} does not exist on database'.format(band, cube.id))
+                    continue
+
+                Asset(
+                    collection_id=cube.id,
+                    band_id=band_model.id,
+                    grs_schema_id=cube.grs_schema_id,
+                    tile_id=tile_id,
+                    collection_item_id=item_id,
+                    url='/{}'.format(quick_look_relpath),
+                    source=None,
+                    raster_size_x=raster_size_schemas.raster_size_x,
+                    raster_size_y=raster_size_schemas.raster_size_y,
+                    raster_size_t=1,
+                    chunk_size_x=raster_size_schemas.chunk_size_x,
+                    chunk_size_y=raster_size_schemas.chunk_size_y,
+                    chunk_size_t=1
+                ).save(commit=False)
+
+        db.session.commit()
+
+    return quick_look_file
+
 
 def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
     quick_look_name = '{}-{}-{}'.format(dataset, tile_id, date)
     quick_look_file = os.path.join(
         Config.DATA_DIR,
-        'Repository/collections/cubes/{}/{}/{}/{}'.format(
+        'Repository/Warped/{}/{}/{}/{}'.format(
             datacube, tile_id, period, quick_look_name
         )
     )
@@ -276,6 +371,8 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
         ql_files.append(scenes['ARDfiles'][band])
 
     generate_quick_look(quick_look_file, ql_files)
+
+    return quick_look_file
 
 
 def generate_quick_look(file_path, qlfiles):
@@ -310,7 +407,7 @@ def getMask(raster, dataset):
     # 0 - fill
     # 1 - clear data
     # 0 - cloud
-    if dataset == 'LC8SR':
+    if 'LC8SR' in dataset:
         # Input pixel_qa codes
         fill    = 1 				# warped images have 0 as fill area
         terrain = 2					# 0000 0000 0000 0010
@@ -355,7 +452,7 @@ def getMask(raster, dataset):
         lut = numpy.array([0,1,1,2,2],dtype=numpy.uint8)
         rastercm = numpy.take(lut,raster+1).astype(numpy.uint8)
 
-    elif dataset == 'S2SR_SEN28':
+    elif 'S2SR' in dataset:
         # S2 sen2cor - The generated classification map is specified as follows:
         # Label Classification
         #  0		NO_DATA

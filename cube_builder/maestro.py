@@ -1,11 +1,3 @@
-#
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019 INPE.
-#
-# Cube Builder free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
-#
-
 # Python
 from typing import List
 import datetime
@@ -15,7 +7,7 @@ from stac import STAC
 import numpy
 # BDC Scripts
 from bdc_db.models import Collection, Tile, Band, db
-from .config import Config
+from bdc_scripts.config import Config
 
 
 def days_in_month(date):
@@ -271,7 +263,7 @@ class Maestro:
 
     def dispatch_celery(self):
         from celery import group, chain
-        from .tasks import blend, warp_merge, publish
+        from bdc_scripts.datastorm.tasks import blend, warp_merge, publish
         self.prepare_merge()
 
         datacube = self.datacube.id
@@ -281,9 +273,6 @@ class Maestro:
 
         bands = self.datacube_bands
         warped_datacube = self.warped_datacube.id
-
-        # Quality
-        # bands = filter(lambda b: b.common_name == 'quality', bands)
 
         for tileid in self.mosaics:
             blends = []
@@ -296,6 +285,9 @@ class Maestro:
 
                 cols = self.mosaics[tileid]['periods'][period]['cols']
                 rows = self.mosaics[tileid]['periods'][period]['rows']
+                start_date = self.mosaics[tileid]['periods'][period]['start']
+                end_date = self.mosaics[tileid]['periods'][period]['end']
+                period_start_end = '{}_{}'.format(start_date, end_date)
 
                 for band in bands:
                     collections = self.mosaics[tileid]['periods'][period]['scenes'][band.common_name]
@@ -311,13 +303,13 @@ class Maestro:
                                 resx=band.resolution_x,
                                 resy=band.resolution_y,
                             )
-                            task = warp_merge.s(warped_datacube, tileid, period, assets, cols, rows, **properties)
+
+                            task = warp_merge.s(warped_datacube, tileid, period_start_end, assets, cols, rows, **properties)
                             merges_tasks.append(task)
 
                 task = chain(group(merges_tasks), blend.s())
                 blends.append(task)
 
-            # task = chain(group(blends), publish.s())
             task = group(blends)
             task.apply_async()
 
@@ -341,7 +333,7 @@ class Maestro:
 
             collection_bands = collection_metadata['properties']['bdc:bands']
 
-            items = stac_cli.collections[dataset].get_items(filter=options)
+            items = stac_cli.collection_items(dataset, filter=options)
 
             for feature in items['features']:
                 if feature['type'] == 'Feature':
