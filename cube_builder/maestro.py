@@ -7,7 +7,7 @@ from stac import STAC
 import numpy
 # BDC Scripts
 from bdc_db.models import Collection, Tile, Band, db
-from bdc_scripts.config import Config
+from .config import Config
 
 
 def days_in_month(date):
@@ -263,7 +263,7 @@ class Maestro:
 
     def dispatch_celery(self):
         from celery import group, chain
-        from bdc_scripts.datastorm.tasks import blend, warp_merge, publish
+        from .tasks import blend, warp_merge, publish
         self.prepare_merge()
 
         datacube = self.datacube.id
@@ -272,6 +272,7 @@ class Maestro:
             datacube = self.params['datacube']
 
         bands = self.datacube_bands
+        bands = list(filter(lambda b: b.common_name in ('bnir', 'quality'), self.datacube_bands))
         warped_datacube = self.warped_datacube.id
 
         for tileid in self.mosaics:
@@ -333,7 +334,7 @@ class Maestro:
 
             collection_bands = collection_metadata['properties']['bdc:bands']
 
-            items = stac_cli.collection_items(dataset, filter=options)
+            items = stac_cli.collections[dataset].get_items(filter=options)
 
             for feature in items['features']:
                 if feature['type'] == 'Feature':

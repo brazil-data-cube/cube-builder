@@ -5,7 +5,7 @@ import logging
 from celery import chain, group
 # BDC Scripts
 from bdc_db.models import Collection
-from bdc_scripts.celery import celery_app
+from .celery import celery_app
 from .utils import merge as merge_processing, \
                    blend as blend_processing, \
                    publish_datacube, publish_merge
