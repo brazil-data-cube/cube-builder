@@ -1,13 +1,16 @@
 # Python
 from typing import List
 import datetime
+
 # 3rdparty
+from bdc_db.models import Collection, Tile, Band, db
 from geoalchemy2 import func
 from stac import STAC
 import numpy
+
 # BDC Scripts
-from bdc_db.models import Collection, Tile, Band, db
 from .config import Config
+from .models.activity import Activity
 
 
 def days_in_month(date):
@@ -117,7 +120,6 @@ def decode_periods(temporalschema,startdate,enddate,timestep):
         monthf = end_date.month
         dayi = start_date.day
         dayf = end_date.day
-        print('decode_periods - {} {} {} {} {} {}'.format(yeari,yearf,monthi,monthf,dayi,dayf))
         for year in range(yeari,yearf+1):
             dbase = datetime.datetime(year,monthi,dayi)
             if monthi <= monthf:
@@ -250,13 +252,14 @@ class Maestro:
                 self.mosaics[tileid]['periods'][periodkey]['scenes'] = self.search_images(bbox, start, end)
 
     @staticmethod
-    def create_activity(collection: str, scene: str, activity_type: str, scene_type: str, band: str, **parameters):
+    def create_activity(collection: str, warped: str, activity_type: str, scene_type: str, band: str, period: str, **parameters):
         return dict(
             band=band,
             collection_id=collection,
+            warped_collection_id=warped,
             activity_type=activity_type,
             tags=parameters.get('tags', []),
-            sceneid=scene,
+            period=period,
             scene_type=scene_type,
             args=parameters
         )
@@ -303,10 +306,30 @@ class Maestro:
                                 datacube=datacube,
                                 resx=band.resolution_x,
                                 resy=band.resolution_y,
+                                tileid=tileid,
+                                assets=assets,
+                                cols=cols,
+                                rows=rows
                             )
 
-                            task = warp_merge.s(warped_datacube, tileid, period_start_end, assets, cols, rows, **properties)
+                            activity = self.create_activity(
+                                self.datacube.id,
+                                self.warped_datacube.id,
+                                'MERGE',
+                                'WARPED',
+                                band.id,
+                                period_start_end,
+                                **properties
+                            )
+
+                            Activity(**activity).save(commit=False)
+
+                            task = warp_merge.s(activity)
+                            # task = warp_merge.s(warped_datacube, tileid, period_start_end, assets, cols, rows, **properties)
                             merges_tasks.append(task)
+
+                # Persist activities
+                db.session.commit()
 
                 task = chain(group(merges_tasks), blend.s())
                 blends.append(task)
