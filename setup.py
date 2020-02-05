@@ -30,7 +30,19 @@ extras_require['all'] = [ req for exts, reqs in extras_require.items() for req i
 
 setup_requires = []
 
-install_requires = []
+install_requires = [
+    'bdc-core @ git+git://github.com/brazil-data-cube/bdc-core.git#egg=bdc-core',
+    'bdc-db @ git+git://github.com/brazil-data-cube/bdc-db.git#egg=bdc-db',
+    'celery[librabbitmq]>=4.3.0',
+    'Flask>=1.1.1',
+    'GDAL>=2.3.3',
+    'marshmallow-sqlalchemy>=0.19.0',
+    'numpy>=1.17.2',
+    'numpngw>=0.0.8',
+    'rasterio>=1.1.2',
+    'stac @ git+git://github.com/brazil-data-cube/stac.py.git@v0.7#egg=stac',
+    'scikit-image>=0.16.2',
+]
 
 packages = find_packages()
 
@@ -53,7 +65,11 @@ setup(
     zip_safe=False,
     include_package_data=True,
     platforms='any',
-    entry_points={},
+    entry_points={
+        'console_scripts': [
+            'cube-builder = cube_builder.cli:cli'
+        ]
+    },
     extras_require=extras_require,
     install_requires=install_requires,
     setup_requires=setup_requires,
