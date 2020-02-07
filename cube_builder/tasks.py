@@ -19,6 +19,11 @@ def warp_merge(warped_datacube, tile_id, period, warps, cols, rows, **kwargs):
 
 
 @celery_app.task()
+def dummy_task(activity):
+    return activity
+
+
+@celery_app.task()
 def blend(merges):
     activities = dict()
 
@@ -94,7 +99,7 @@ def publish(blends):
         date = merge_date.replace(definition['dataset'], '')
         tasks.append(_publish_merge.s(quick_look_bands, warped_datacube, definition['dataset'], tile_id, period, date, definition))
 
-    promise = chain(group(tasks), upload.s())
+    promise = chain(group(tasks))
     promise.apply_async()
 
 

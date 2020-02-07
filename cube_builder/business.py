@@ -222,10 +222,10 @@ class CubeBusiness:
             return None
 
     @classmethod
-    def maestro(cls, datacube, collections, tiles, start_date, end_date):
+    def maestro(cls, datacube, collections, tiles, start_date, end_date, bands=None):
         from .maestro import Maestro
 
-        maestro = Maestro(datacube, collections, tiles, start_date, end_date)
+        maestro = Maestro(datacube, collections, tiles, start_date, end_date, bands)
 
         maestro.orchestrate()
 

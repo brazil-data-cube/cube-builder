@@ -35,3 +35,4 @@ class DataCubeProcessParser(Schema):
     tiles = fields.List(fields.String, required=True, allow_none=False)
     start_date = fields.Date()
     end_date = fields.Date()
+    bands = fields.List(fields.String, required=False)

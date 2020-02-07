@@ -10,7 +10,7 @@ import numpy
 
 # BDC Scripts
 from .config import Config
-# from .models.activity import Activity
+from .models.activity import Activity
 
 
 def days_in_month(date):
@@ -19,7 +19,7 @@ def days_in_month(date):
     nday = day = int(date.split('-')[2])
     if month == 12:
         nmonth = 1
-        nyear = year +1
+        nyear = year + 1
     else:
         nmonth = month + 1
         nyear = year
@@ -28,91 +28,91 @@ def days_in_month(date):
     return td
 
 
-def decode_periods(temporalschema,startdate,enddate,timestep):
-    print('decode_periods - {} {} {} {}'.format(temporalschema,startdate,enddate,timestep))
-    requestedperiods = {}
-    if startdate is None:
-        return requestedperiods
-    if isinstance(startdate, datetime.date):
-        startdate = startdate.strftime('%Y-%m-%d')
+def decode_periods(temporal_schema, start_date, end_date, time_step):
+    print('decode_periods - {} {} {} {}'.format(temporal_schema,start_date, end_date, time_step))
+    requested_periods = {}
+    if start_date is None:
+        return requested_periods
+    if isinstance(start_date, datetime.date):
+        start_date = start_date.strftime('%Y-%m-%d')
 
-    tdtimestep = datetime.timedelta(days=timestep)
-    stepsperperiod = int(round(365./timestep))
+    td_time_step = datetime.timedelta(days=time_step)
+    steps_per_period = int(round(365./time_step))
 
-    if enddate is None:
-        enddate = datetime.datetime.now().strftime('%Y-%m-%d')
-    if isinstance(enddate, datetime.date):
-        enddate = enddate.strftime('%Y-%m-%d')
+    if end_date is None:
+        end_date = datetime.datetime.now().strftime('%Y-%m-%d')
+    if isinstance(end_date, datetime.date):
+        end_date = end_date.strftime('%Y-%m-%d')
 
-    if temporalschema is None:
-        periodkey = startdate + '_' + startdate + '_' + enddate
-        requestedperiod = []
-        requestedperiod.append(periodkey)
-        requestedperiods[startdate] = requestedperiod
-        return requestedperiods
+    if temporal_schema is None:
+        periodkey = start_date + '_' + start_date + '_' + end_date
+        requested_period = list()
+        requested_period.append(periodkey)
+        requested_periods[start_date] = requested_period
+        return requested_periods
 
-    if temporalschema == 'M':
-        start_date = numpy.datetime64(startdate)
-        end_date = numpy.datetime64(enddate)
-        requestedperiod = []
+    if temporal_schema == 'M':
+        start_date = numpy.datetime64(start_date)
+        end_date = numpy.datetime64(end_date)
+        requested_period = []
         while start_date <= end_date:
             next_date = start_date + days_in_month(str(start_date))
             periodkey = str(start_date)[:10] + '_' + str(start_date)[:10] + '_' + str(next_date - numpy.timedelta64(1, 'D'))[:10]
-            requestedperiod.append(periodkey)
-            requestedperiods[startdate] = requestedperiod
+            requested_period.append(periodkey)
+            requested_periods[start_date] = requested_period
             start_date = next_date
-        return requestedperiods
+        return requested_periods
 
-    # Find the exact startdate based on periods that start on yyyy-01-01
-    firstyear = startdate.split('-')[0]
-    start_date = datetime.datetime.strptime(startdate, '%Y-%m-%d')
-    if temporalschema == 'A':
+    # Find the exact start_date based on periods that start on yyyy-01-01
+    firstyear = start_date.split('-')[0]
+    start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')
+    if temporal_schema == 'A':
         dbase = datetime.datetime.strptime(firstyear+'-01-01', '%Y-%m-%d')
         while dbase < start_date:
-            dbase += tdtimestep
+            dbase += td_time_step
         if dbase > start_date:
-            dbase -= tdtimestep
-        startdate = dbase.strftime('%Y-%m-%d')
+            dbase -= td_time_step
+        start_date = dbase.strftime('%Y-%m-%d')
         start_date = dbase
 
-    # Find the exact enddate based on periods that start on yyyy-01-01
-    lastyear = enddate.split('-')[0]
-    end_date = datetime.datetime.strptime(enddate, '%Y-%m-%d')
-    if temporalschema == 'A':
+    # Find the exact end_date based on periods that start on yyyy-01-01
+    lastyear = end_date.split('-')[0]
+    end_date = datetime.datetime.strptime(end_date, '%Y-%m-%d')
+    if temporal_schema == 'A':
         dbase = datetime.datetime.strptime(lastyear+'-12-31', '%Y-%m-%d')
         while dbase > end_date:
-            dbase -= tdtimestep
+            dbase -= td_time_step
         end_date = dbase
         if end_date == start_date:
-            end_date += tdtimestep - datetime.timedelta(days=1)
-        enddate = end_date.strftime('%Y-%m-%d')
+            end_date += td_time_step - datetime.timedelta(days=1)
+        end_date = end_date.strftime('%Y-%m-%d')
 
     # For annual periods
-    if temporalschema == 'A':
+    if temporal_schema == 'A':
         dbase = start_date
         yearold = dbase.year
         count = 0
-        requestedperiod = []
+        requested_period = []
         while dbase < end_date:
             if yearold != dbase.year:
                 dbase = datetime.datetime(dbase.year,1,1)
             yearold = dbase.year
             dstart = dbase
-            dend = dbase + tdtimestep - datetime.timedelta(days=1)
-            dend = min(datetime.datetime(dbase.year,12,31),dend)
+            dend = dbase + td_time_step - datetime.timedelta(days=1)
+            dend = min(datetime.datetime(dbase.year, 12, 31), dend)
             basedate = dbase.strftime('%Y-%m-%d')
-            startdate = dstart.strftime('%Y-%m-%d')
-            enddate = dend.strftime('%Y-%m-%d')
-            periodkey = basedate + '_' + startdate + '_' + enddate
-            if count % stepsperperiod == 0:
+            start_date = dstart.strftime('%Y-%m-%d')
+            end_date = dend.strftime('%Y-%m-%d')
+            periodkey = basedate + '_' + start_date + '_' + end_date
+            if count % steps_per_period == 0:
                 count = 0
-                requestedperiod = []
-                requestedperiods[basedate] = requestedperiod
-            requestedperiod.append(periodkey)
+                requested_period = []
+                requested_periods[basedate] = requested_period
+            requested_period.append(periodkey)
             count += 1
-            dbase += tdtimestep
-        if len(requestedperiods) == 0 and count > 0:
-            requestedperiods[basedate].append(requestedperiod)
+            dbase += td_time_step
+        if len(requested_periods) == 0 and count > 0:
+            requested_periods[basedate].append(requested_period)
     else:
         yeari = start_date.year
         yearf = end_date.year
@@ -128,16 +128,16 @@ def decode_periods(temporalschema,startdate,enddate,timestep):
                 dbasen = datetime.datetime(year+1,monthf,dayf)
             while dbase < dbasen:
                 dstart = dbase
-                dend = dbase + tdtimestep - datetime.timedelta(days=1)
+                dend = dbase + td_time_step - datetime.timedelta(days=1)
                 basedate = dbase.strftime('%Y-%m-%d')
-                startdate = dstart.strftime('%Y-%m-%d')
-                enddate = dend.strftime('%Y-%m-%d')
-                periodkey = basedate + '_' + startdate + '_' + enddate
-                requestedperiod = []
-                requestedperiods[basedate] = requestedperiod
-                requestedperiods[basedate].append(periodkey)
-                dbase += tdtimestep
-    return requestedperiods
+                start_date = dstart.strftime('%Y-%m-%d')
+                end_date = dend.strftime('%Y-%m-%d')
+                periodkey = basedate + '_' + start_date + '_' + end_date
+                requested_period = []
+                requested_periods[basedate] = requested_period
+                requested_periods[basedate].append(periodkey)
+                dbase += td_time_step
+    return requested_periods
 
 
 stac_cli = STAC(Config.STAC_URL)
@@ -149,7 +149,7 @@ class Maestro:
     tiles = []
     mosaics = dict()
 
-    def __init__(self, datacube: str, collections: List[str], tiles: List[str], start_date: str, end_date: str):
+    def __init__(self, datacube: str, collections: List[str], tiles: List[str], start_date: str, end_date: str, bands: List[str]=None):
         self.params = dict(
             datacube=datacube,
             collections=collections,
@@ -157,6 +157,9 @@ class Maestro:
             start_date=start_date,
             end_date=end_date
         )
+
+        if bands:
+            self.params['bands'] = bands
 
     def orchestrate(self):
         self.datacube = Collection.query().filter(Collection.id == self.params['datacube']).one()
@@ -197,9 +200,9 @@ class Maestro:
             )
 
             for datekey in sorted(periodlist):
-                requestedperiod = periodlist[datekey]
-                for periodkey in requestedperiod:
-                    _ , startdate, enddate = periodkey.split('_')
+                requested_period = periodlist[datekey]
+                for periodkey in requested_period:
+                    _, startdate, enddate = periodkey.split('_')
 
                     if dstart is not None and startdate < dstart.strftime('%Y-%m-%d'):
                         continue
@@ -225,7 +228,7 @@ class Maestro:
     @property
     def datacube_bands(self):
         if self.params.get('bands'):
-            return list(filter(lambda band: band.id in self.params['bands'], self.bands))
+            return list(filter(lambda band: band.common_name in self.params['bands'], self.bands))
         return self.bands
 
     def prepare_merge(self):
@@ -276,7 +279,7 @@ class Maestro:
             datacube = self.params['datacube']
 
         bands = self.datacube_bands
-        bands = list(filter(lambda b: b.common_name in ('bnir', 'quality'), self.datacube_bands))
+        # bands = list(filter(lambda b: b.common_name in ('bnir', 'quality'), self.datacube_bands))
         warped_datacube = self.warped_datacube.id
 
         for tileid in self.mosaics:

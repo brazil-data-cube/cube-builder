@@ -35,84 +35,84 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
     transform = Affine(resx, 0, xmin, 0, -resy, ymax)
 
     # Quality band is resampled by nearest, other are bilinear
-    # if band == 'quality':
-    #     resampling = Resampling.nearest
+    if band == 'quality':
+        resampling = Resampling.nearest
 
-    #     raster = numpy.zeros((rows, cols,), dtype=numpy.uint8)
-    #     raster_merge = numpy.zeros((rows, cols,), dtype=numpy.uint8)
-    #     raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint8)
-    #     nodata = 0
-    # else:
-    #     resampling = Resampling.bilinear
-    #     raster = numpy.zeros((rows, cols,), dtype=numpy.int16)
-    #     raster_merge = numpy.full((rows, cols,), fill_value=nodata, dtype=numpy.int16)
+        raster = numpy.zeros((rows, cols,), dtype=numpy.uint8)
+        raster_merge = numpy.zeros((rows, cols,), dtype=numpy.uint8)
+        raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint8)
+        nodata = 0
+    else:
+        resampling = Resampling.bilinear
+        raster = numpy.zeros((rows, cols,), dtype=numpy.int16)
+        raster_merge = numpy.full((rows, cols,), fill_value=nodata, dtype=numpy.int16)
 
-    # count = 0
-    # template = None
-    # for asset in assets:
-    #     count += 1
-    #     with rasterio.Env(CPL_CURL_VERBOSE=False):
-    #         with rasterio.open(asset['link']) as src:
-    #             kwargs = src.meta.copy()
-    #             kwargs.update({
-    #                 'crs': srs,
-    #                 'transform': transform,
-    #                 'width': cols,
-    #                 'height': rows
-    #             })
+    count = 0
+    template = None
+    for asset in assets:
+        count += 1
+        with rasterio.Env(CPL_CURL_VERBOSE=False):
+            with rasterio.open(asset['link']) as src:
+                kwargs = src.meta.copy()
+                kwargs.update({
+                    'crs': srs,
+                    'transform': transform,
+                    'width': cols,
+                    'height': rows
+                })
 
-    #             source_nodata = 0
+                source_nodata = 0
 
-    #             if src.profile['nodata'] is not None:
-    #                 source_nodata = src.profile['nodata']
+                if src.profile['nodata'] is not None:
+                    source_nodata = src.profile['nodata']
 
-    #             kwargs.update({
-    #                 'nodata': source_nodata
-    #             })
+                kwargs.update({
+                    'nodata': source_nodata
+                })
 
-    #             with MemoryFile() as mem_file:
-    #                 with mem_file.open(**kwargs) as dst:
-    #                     reproject(
-    #                         source=rasterio.band(src, 1),
-    #                         destination=raster,
-    #                         src_transform=src.transform,
-    #                         src_crs=src.crs,
-    #                         dst_transform=transform,
-    #                         dst_crs=srs,
-    #                         src_nodata=source_nodata,
-    #                         dst_nodata=nodata,
-    #                         resampling=resampling)
+                with MemoryFile() as mem_file:
+                    with mem_file.open(**kwargs) as dst:
+                        reproject(
+                            source=rasterio.band(src, 1),
+                            destination=raster,
+                            src_transform=src.transform,
+                            src_crs=src.crs,
+                            dst_transform=transform,
+                            dst_crs=srs,
+                            src_nodata=source_nodata,
+                            dst_nodata=nodata,
+                            resampling=resampling)
 
-    #                     if band != 'quality':
-    #                         valid_data_scene = raster[raster != nodata]
-    #                         raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
-    #                     else:
-    #                         raster_merge = raster_merge + raster * raster_mask
-    #                         raster_mask[raster != nodata] = 0
+                        if band != 'quality':
+                            valid_data_scene = raster[raster != nodata]
+                            raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
+                        else:
+                            raster_merge = raster_merge + raster * raster_mask
+                            raster_mask[raster != nodata] = 0
 
-    #                     if template is None:
-    #                         template = dst.profile
-    #                         # Ensure type is >= int16
+                        if template is None:
+                            template = dst.profile
+                            # Ensure type is >= int16
 
-    #                         if band != 'quality':
-    #                             template['dtype'] = 'int16'
-    #                             template['nodata'] = nodata
+                            if band != 'quality':
+                                template['dtype'] = 'int16'
+                                template['nodata'] = nodata
 
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
     cloudratio = 100
-    # if band == 'quality':
-    #     raster_merge, efficacy, cloudratio = getMask(raster_merge, dataset)
-        # template.update({'dtype': 'uint8'})
+    if band == 'quality':
+        raster_merge, efficacy, cloudratio = getMask(raster_merge, dataset)
+        template.update({'dtype': 'uint8'})
 
-    # target_dir = os.path.dirname(merged_file)
-    # os.makedirs(target_dir, exist_ok=True)
+    target_dir = os.path.dirname(merged_file)
+    os.makedirs(target_dir, exist_ok=True)
 
-    # with rasterio.open(merged_file, 'w', **template) as merge_dataset:
-    #     merge_dataset.nodata = nodata
-    #     merge_dataset.write_band(1, raster_merge)
-    #     merge_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-    #     merge_dataset.update_tags(ns='rio_overview', resampling='nearest')
+    with rasterio.open(merged_file, 'w', **template) as merge_dataset:
+        merge_dataset.nodata = nodata
+        merge_dataset.write_band(1, raster_merge)
+        merge_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+        merge_dataset.update_tags(ns='rio_overview', resampling='nearest')
 
     return dict(
         band=band,
@@ -157,12 +157,14 @@ def blend(activity):
     # The list will be ordered by efficacy/resolution
     masklist = []
     bandlist = []
+    efficacy = 0
     for m in sorted(mask_tuples, reverse=True):
         key = m[1]
         efficacy = m[0]
         scene = activity['scenes'][key]
 
         filename = scene['ARDfiles']['quality']
+        print(filename)
         try:
             masklist.append(rasterio.open(filename))
         except BaseException as e:
@@ -180,7 +182,7 @@ def blend(activity):
     height = profile['height']
 
     # STACK will be generated in memory
-    stackRaster = numpy.full((height, width), fill_value=-9999, dtype=profile['dtype'])
+    stackRaster = numpy.zeros((height, width), dtype=profile['dtype'])
 
     datacube = activity.get('datacube')
     period = activity.get('period')
@@ -198,38 +200,46 @@ def blend(activity):
     os.makedirs(os.path.dirname(medianfile), exist_ok=True)
 
     mediandataset = rasterio.open(medianfile, 'w', **profile)
+    fill_value = -9999
+
+    stackRaster += fill_value
 
     count = 0
     for _, window in tilelist:
         # Build the stack to store all images as a masked array. At this stage the array will contain the masked data
-        # stackMA = numpy.full(shape=(numscenes, window.height, window.width), dtype=numpy.int16, fill_value=-9999)
-        # stackMA = numpy.ma.array(stackMA, mask=False, fill_value=-9999)
-        stackMA = numpy.ma.zeros((numscenes, window.height, window.width), dtype=numpy.int16, fill_value=-9999)
+        stackMA = numpy.ma.zeros((numscenes, window.height, window.width), dtype=numpy.int16)
         # numpy.ma.set_fill_value(stackMA, -9999)
 
         # notdonemask will keep track of pixels that have not been filled in each step
         notdonemask = numpy.ones(shape=(window.height, window.width), dtype=numpy.bool_)
 
-        # For all pair (quality,band) scenes
         for order in range(numscenes):
             ssrc = bandlist[order]
             msrc = masklist[order]
             raster = ssrc.read(1, window=window)
             mask = msrc.read(1, window=window)
             mask[mask != 1] = 0
-            bmask = mask.astype(numpy.bool_)
-
-            # Use the mask to mark the fill (0) and cloudy (2) pixels
-            stackMA[order] = numpy.ma.masked_where(numpy.invert(bmask), raster)
-
-            # Evaluate the STACK image
-            # Pixels that have been already been filled by previous rasters will be masked in the current raster
+            mask[raster == fill_value] = 0
+            bmask = mask.astype(numpy.bool_)    # Use the mask to mark the fill (0) and cloudy (2) pixels
+            raster[numpy.invert(bmask)] = fill_value
+            stackMA[order] = raster    # # Evaluate the STACK image
+            # # Pixels that have been already been filled by previous rasters will be masked in the current raster
             todomask = notdonemask * bmask
             notdonemask = notdonemask * numpy.invert(bmask)
-            stackRaster[window.row_off:window.row_off + window.height, window.col_off:window.col_off + window.width] += (raster * todomask).astype(profile['dtype'])
 
-        medianRaster = numpy.ma.median(stackMA, axis=0).data
+            todo_indexes = numpy.where(todomask)[1]
+
+            stackRaster[window.row_off:window.row_off + window.height, window.col_off:window.col_off + window.width][0][todo_indexes] = stackMA[order, 0][todo_indexes]
+
+        medianRaster = numpy.ma.median(numpy.ma.masked_array(stackMA, mask=stackMA == fill_value), axis=0).data
+
+        # check if all is NA
+        check_all_fill = numpy.all(stackMA == stackMA[0,:], axis=0)
+        if any(check_all_fill[0]):
+            medianRaster[0][numpy.where(check_all_fill)[1]] = fill_value
+
         mediandataset.write(medianRaster.astype(profile['dtype']), window=window, indexes=1)
+
         count += 1
 
     # Close all input dataset
@@ -246,7 +256,6 @@ def blend(activity):
 
     # # Close and upload the MEDIAN dataset
     mediandataset.close()
-    mediandataset = None
 
     with rasterio.open(medianfile, 'r+', **profile) as ds_median:
         if band != 'quality':
@@ -262,7 +271,7 @@ def blend(activity):
         stack_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
         stack_dataset.update_tags(ns='rio_overview', resampling='nearest')
 
-    activity['efficacy'] = 0
+    activity['efficacy'] = efficacy
     activity['cloudratio'] = cloudcover
     activity['blends'] = {
         "MEDIAN": medianfile,
