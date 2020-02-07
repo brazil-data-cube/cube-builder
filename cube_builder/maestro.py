@@ -3,7 +3,7 @@ from typing import List
 import datetime
 
 # 3rdparty
-from bdc_db.models import Collection, Tile, Band, db
+from bdc_db.models import Collection, Tile, Band, db, CollectionItem
 from geoalchemy2 import func
 from stac import STAC
 import numpy
@@ -167,9 +167,17 @@ class Maestro:
         temporal_schema = self.datacube.temporal_composition_schema.temporal_schema
         temporal_step = self.datacube.temporal_composition_schema.temporal_composite_t
 
-        datacube_stac = stac_cli.collection(self.datacube.id)
+        # datacube_stac = stac_cli.collection(self.datacube.id)
 
-        cube_start_date, cube_end_date = datacube_stac['extent'].get('temporal', [None, None])
+        collections_items = CollectionItem.query().filter(
+            CollectionItem.collection_id == self.datacube.id,
+            CollectionItem.grs_schema_id == self.datacube.grs_schema_id
+        ).order_by(CollectionItem.composite_start).all()
+        cube_start_date = self.params['start_date']
+        if list(filter(lambda c_i: c_i.tile_id == self.params['tiles'][0], collections_items)):
+            cube_start_date = collections_items[0].composite_start
+
+        # cube_start_date, cube_end_date = datacube_stac['extent'].get('temporal', [None, None])
 
         dstart = self.params['start_date']
         dend = self.params['end_date']
@@ -177,8 +185,8 @@ class Maestro:
         if cube_start_date is None:
             cube_start_date = dstart.strftime('%Y-%m-%d')
 
-        if cube_end_date is None or datetime.datetime.strptime(cube_end_date, '%Y-%m-%d').date() < dend:
-            cube_end_date = dend.strftime('%Y-%m-%d')
+        # if cube_end_date is None or datetime.datetime.strptime(cube_end_date, '%Y-%m-%d').date() < dend:
+        cube_end_date = dend.strftime('%Y-%m-%d')
 
         periodlist = decode_periods(temporal_schema, cube_start_date, cube_end_date, int(temporal_step))
 
@@ -279,7 +287,6 @@ class Maestro:
             datacube = self.params['datacube']
 
         bands = self.datacube_bands
-        # bands = list(filter(lambda b: b.common_name in ('bnir', 'quality'), self.datacube_bands))
         warped_datacube = self.warped_datacube.id
 
         for tileid in self.mosaics:
