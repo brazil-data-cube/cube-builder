@@ -65,6 +65,8 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
                 if src.profile['nodata'] is not None:
                     source_nodata = src.profile['nodata']
+                elif 'LC8SR' in dataset and band != 'quality':
+                    source_nodata = -9999
 
                 kwargs.update({
                     'nodata': source_nodata
@@ -103,11 +105,20 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
     cloudratio = 100
     if band == 'quality':
         raster_merge, efficacy, cloudratio = getMask(raster_merge, dataset)
+        # Sentinel
         template.update({'dtype': 'uint8'})
+        # Landsat
+        # template.update({'dtype': assets[0]['data_type'].lower()})
 
     target_dir = os.path.dirname(merged_file)
     os.makedirs(target_dir, exist_ok=True)
+    template.update({
+        'compress': 'LZW',
+        'tiled': True,
+        'blockxsize': 512,
+        'blockysize': 512
 
+    })
     with rasterio.open(merged_file, 'w', **template) as merge_dataset:
         merge_dataset.nodata = nodata
         merge_dataset.write_band(1, raster_merge)
@@ -218,7 +229,7 @@ def blend(activity):
             msrc = masklist[order]
             raster = ssrc.read(1, window=window)
             mask = msrc.read(1, window=window)
-            mask[mask != 1] = 0
+            mask[mask != 2] = 0
             mask[raster == fill_value] = 0
             bmask = mask.astype(numpy.bool_)    # Use the mask to mark the fill (0) and cloudy (2) pixels
             raster[numpy.invert(bmask)] = fill_value
@@ -304,59 +315,59 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
         generate_quick_look(quick_look_file, ql_files)
 
-        assets = Asset.query().filter(Asset.collection_item_id == item_id).all()
+        # assets = Asset.query().filter(Asset.collection_item_id == item_id).all()
+        #
+        # for asset in assets:
+        #     asset.delete()
+        #
+        # item = CollectionItem.query().filter(CollectionItem.id == item_id).first()
 
-        for asset in assets:
-            asset.delete()
-
-        item = CollectionItem.query().filter(CollectionItem.id == item_id).first()
-
-        if item:
-            item.delete()
-
-        with db.session.begin_nested():
-            CollectionItem(
-                id=item_id,
-                collection_id=cube.id,
-                grs_schema_id=cube.grs_schema_id,
-                tile_id=tile_id,
-                item_date=start_date,
-                composite_start=start_date,
-                composite_end=end_date,
-                quicklook=quick_look_file,
-                cloud_cover=cloudratio,
-                scene_type=composite_function,
-                compressed_file=None
-            ).save(commit=False)
-
-            for band in scenes['ARDfiles']:
-                if band == 'quality':
-                    continue
-
-                band_model = next(filter(lambda b: b.common_name == band, cube_bands))
-
-                # Band does not exists on model
-                if not band_model:
-                    logging.warning('Band {} of {} does not exist on database'.format(band, cube.id))
-                    continue
-
-                Asset(
-                    collection_id=cube.id,
-                    band_id=band_model.id,
-                    grs_schema_id=cube.grs_schema_id,
-                    tile_id=tile_id,
-                    collection_item_id=item_id,
-                    url='/{}'.format(quick_look_relpath),
-                    source=None,
-                    raster_size_x=raster_size_schemas.raster_size_x,
-                    raster_size_y=raster_size_schemas.raster_size_y,
-                    raster_size_t=1,
-                    chunk_size_x=raster_size_schemas.chunk_size_x,
-                    chunk_size_y=raster_size_schemas.chunk_size_y,
-                    chunk_size_t=1
-                ).save(commit=False)
-
-        db.session.commit()
+        # if item:
+        #     item.delete()
+        #
+        # with db.session.begin_nested():
+        #     CollectionItem(
+        #         id=item_id,
+        #         collection_id=cube.id,
+        #         grs_schema_id=cube.grs_schema_id,
+        #         tile_id=tile_id,
+        #         item_date=start_date,
+        #         composite_start=start_date,
+        #         composite_end=end_date,
+        #         quicklook=quick_look_file,
+        #         cloud_cover=cloudratio,
+        #         scene_type=composite_function,
+        #         compressed_file=None
+        #     ).save(commit=False)
+        #
+        #     for band in scenes['ARDfiles']:
+        #         if band == 'quality':
+        #             continue
+        #
+        #         band_model = next(filter(lambda b: b.common_name == band, cube_bands))
+        #
+        #         # Band does not exists on model
+        #         if not band_model:
+        #             logging.warning('Band {} of {} does not exist on database'.format(band, cube.id))
+        #             continue
+        #
+        #         Asset(
+        #             collection_id=cube.id,
+        #             band_id=band_model.id,
+        #             grs_schema_id=cube.grs_schema_id,
+        #             tile_id=tile_id,
+        #             collection_item_id=item_id,
+        #             url='/{}'.format(quick_look_relpath),
+        #             source=None,
+        #             raster_size_x=raster_size_schemas.raster_size_x,
+        #             raster_size_y=raster_size_schemas.raster_size_y,
+        #             raster_size_t=1,
+        #             chunk_size_x=raster_size_schemas.chunk_size_x,
+        #             chunk_size_y=raster_size_schemas.chunk_size_y,
+        #             chunk_size_t=1
+        #         ).save(commit=False)
+        #
+        # db.session.commit()
 
     return quick_look_file
 
@@ -441,7 +452,7 @@ def getMask(raster, dataset):
         # Clear area is the area with valid data and with no Cloud or Snow
         cleararea = imagearea * numpy.invert(notcleararea)
         # Code the output image rastercm as the output codes
-        rastercm = (2*notcleararea + cleararea).astype(numpy.uint8)
+        rastercm = (2*notcleararea + cleararea).astype(numpy.uint16)  # .astype(numpy.uint8)
 
     elif dataset == 'MOD13Q1' or dataset == 'MYD13Q1':
         # MOD13Q1 Pixel Reliability !!!!!!!!!!!!!!!!!!!!

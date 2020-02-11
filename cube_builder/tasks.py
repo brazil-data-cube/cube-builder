@@ -28,7 +28,8 @@ def blend(merges):
     activities = dict()
 
     for _merge in merges:
-        if _merge['band'] in activities and _merge['date'] in activities[_merge['band']]['scenes']:
+        if _merge['band'] in activities and _merge['date'] in activities[_merge['band']]['scenes'] or \
+                _merge['band'] == 'quality':
             continue
 
         activity = activities.get(_merge['band'], dict(scenes=dict()))
