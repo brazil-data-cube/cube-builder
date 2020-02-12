@@ -2,7 +2,6 @@
 from datetime import datetime
 import logging
 import os
-import time
 # 3rdparty
 from numpngw import write_png
 from rasterio import Affine, MemoryFile
@@ -10,7 +9,7 @@ from rasterio.warp import reproject, Resampling
 import numpy
 import rasterio
 # BDC Scripts
-from bdc_db.models import Asset, Band, Collection, CollectionItem, db
+from bdc_db.models import Asset, Band, CollectionItem, db
 from .config import Config
 
 
@@ -108,17 +107,17 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
         # Sentinel
         template.update({'dtype': 'uint8'})
         # Landsat
-        # template.update({'dtype': assets[0]['data_type'].lower()})
+        template.update({'dtype': assets[0]['data_type'].lower()})
 
     target_dir = os.path.dirname(merged_file)
     os.makedirs(target_dir, exist_ok=True)
+
     template.update({
         'compress': 'LZW',
         'tiled': True,
-        'blockxsize': 512,
-        'blockysize': 512
-
+        "interleave": "pixel",
     })
+
     with rasterio.open(merged_file, 'w', **template) as merge_dataset:
         merge_dataset.nodata = nodata
         merge_dataset.write_band(1, raster_merge)
@@ -193,7 +192,8 @@ def blend(activity):
     height = profile['height']
 
     # STACK will be generated in memory
-    stackRaster = numpy.zeros((height, width), dtype=profile['dtype'])
+    stack_raster = numpy.zeros((height, width), dtype=profile['dtype'])
+    mask_raster = numpy.ones((height, width), dtype=profile['dtype'])
 
     datacube = activity.get('datacube')
     period = activity.get('period')
@@ -211,56 +211,50 @@ def blend(activity):
     os.makedirs(os.path.dirname(medianfile), exist_ok=True)
 
     mediandataset = rasterio.open(medianfile, 'w', **profile)
-    fill_value = -9999
 
-    stackRaster += fill_value
-
-    count = 0
     for _, window in tilelist:
         # Build the stack to store all images as a masked array. At this stage the array will contain the masked data
         stackMA = numpy.ma.zeros((numscenes, window.height, window.width), dtype=numpy.int16)
-        # numpy.ma.set_fill_value(stackMA, -9999)
 
-        # notdonemask will keep track of pixels that have not been filled in each step
         notdonemask = numpy.ones(shape=(window.height, window.width), dtype=numpy.bool_)
 
+        # For all pair (quality,band) scenes
         for order in range(numscenes):
             ssrc = bandlist[order]
             msrc = masklist[order]
             raster = ssrc.read(1, window=window)
             mask = msrc.read(1, window=window)
-            mask[mask != 2] = 0
-            mask[raster == fill_value] = 0
-            bmask = mask.astype(numpy.bool_)    # Use the mask to mark the fill (0) and cloudy (2) pixels
-            raster[numpy.invert(bmask)] = fill_value
-            stackMA[order] = raster    # # Evaluate the STACK image
-            # # Pixels that have been already been filled by previous rasters will be masked in the current raster
-            todomask = notdonemask * bmask
-            notdonemask = notdonemask * numpy.invert(bmask)
+            mask[mask % 2 == 0] = 1
+            mask[raster == -9999] = 0
 
-            todo_indexes = numpy.where(todomask)[1]
+            # True => nodata
+            bmask = numpy.invert(mask.astype(numpy.bool_))
 
-            stackRaster[window.row_off:window.row_off + window.height, window.col_off:window.col_off + window.width][0][todo_indexes] = stackMA[order, 0][todo_indexes]
+            # Use the mask to mark the fill (0) and cloudy (2) pixels
+            stackMA[order] = numpy.ma.masked_where(bmask, raster)
 
-        medianRaster = numpy.ma.median(numpy.ma.masked_array(stackMA, mask=stackMA == fill_value), axis=0).data
+            # Evaluate the STACK image
+            # Pixels that have been already been filled by previous rasters will be masked in the current raster
+            mask_raster[window.row_off: window.row_off + window.height, window.col_off: window.col_off + window.width] *= bmask.astype(profile['dtype'])
 
-        # check if all is NA
-        check_all_fill = numpy.all(stackMA == stackMA[0,:], axis=0)
-        if any(check_all_fill[0]):
-            medianRaster[0][numpy.where(check_all_fill)[1]] = fill_value
+            raster[raster == -9999] = 0
+            todomask = notdonemask * numpy.invert(bmask)
+            notdonemask = notdonemask * bmask
+            stack_raster[window.row_off: window.row_off + window.height, window.col_off: window.col_off + window.width] += (todomask * raster.astype(profile['dtype']))
 
-        mediandataset.write(medianRaster.astype(profile['dtype']), window=window, indexes=1)
+        median_raster = numpy.ma.median(stackMA, axis=0).data
+        median_raster[notdonemask.astype(numpy.bool_)] = -9999
 
-        count += 1
+        mediandataset.write(median_raster.astype(profile['dtype']), window=window, indexes=1)
 
+    stack_raster[mask_raster.astype(numpy.bool_)] = -9999
     # Close all input dataset
     for order in range(numscenes):
         bandlist[order].close()
         masklist[order].close()
 
     # Evaluate cloudcover
-    cloudcover = 100. * ((height * width - numpy.count_nonzero(stackRaster)) / (height * width))
-    #
+    cloudcover = 100. * ((height * width - numpy.count_nonzero(stack_raster)) / (height * width))
 
     if band != 'quality':
         mediandataset.nodata = -9999
@@ -268,17 +262,23 @@ def blend(activity):
     # # Close and upload the MEDIAN dataset
     mediandataset.close()
 
+    profile.update({
+        'compress': 'LZW',
+        'tiled': True,
+        "interleave": "pixel",
+    })
+
     with rasterio.open(medianfile, 'r+', **profile) as ds_median:
         if band != 'quality':
             ds_median.nodata = -9999
-        # ds_median.nodata = activity.get('nodata', -9999)
+        ds_median.nodata = activity.get('nodata', -9999)
         ds_median.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
         ds_median.update_tags(ns='rio_overview', resampling='nearest')
 
     with rasterio.open(stack_file, 'w', **profile) as stack_dataset:
         if band != 'quality':
             stack_dataset.nodata = -9999
-        stack_dataset.write_band(1, stackRaster)
+        stack_dataset.write_band(1, stack_raster)
         stack_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
         stack_dataset.update_tags(ns='rio_overview', resampling='nearest')
 
@@ -315,59 +315,59 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
         generate_quick_look(quick_look_file, ql_files)
 
-        # assets = Asset.query().filter(Asset.collection_item_id == item_id).all()
-        #
-        # for asset in assets:
-        #     asset.delete()
-        #
-        # item = CollectionItem.query().filter(CollectionItem.id == item_id).first()
+        assets = Asset.query().filter(Asset.collection_item_id == item_id).all()
 
-        # if item:
-        #     item.delete()
-        #
-        # with db.session.begin_nested():
-        #     CollectionItem(
-        #         id=item_id,
-        #         collection_id=cube.id,
-        #         grs_schema_id=cube.grs_schema_id,
-        #         tile_id=tile_id,
-        #         item_date=start_date,
-        #         composite_start=start_date,
-        #         composite_end=end_date,
-        #         quicklook=quick_look_file,
-        #         cloud_cover=cloudratio,
-        #         scene_type=composite_function,
-        #         compressed_file=None
-        #     ).save(commit=False)
-        #
-        #     for band in scenes['ARDfiles']:
-        #         if band == 'quality':
-        #             continue
-        #
-        #         band_model = next(filter(lambda b: b.common_name == band, cube_bands))
-        #
-        #         # Band does not exists on model
-        #         if not band_model:
-        #             logging.warning('Band {} of {} does not exist on database'.format(band, cube.id))
-        #             continue
-        #
-        #         Asset(
-        #             collection_id=cube.id,
-        #             band_id=band_model.id,
-        #             grs_schema_id=cube.grs_schema_id,
-        #             tile_id=tile_id,
-        #             collection_item_id=item_id,
-        #             url='/{}'.format(quick_look_relpath),
-        #             source=None,
-        #             raster_size_x=raster_size_schemas.raster_size_x,
-        #             raster_size_y=raster_size_schemas.raster_size_y,
-        #             raster_size_t=1,
-        #             chunk_size_x=raster_size_schemas.chunk_size_x,
-        #             chunk_size_y=raster_size_schemas.chunk_size_y,
-        #             chunk_size_t=1
-        #         ).save(commit=False)
-        #
-        # db.session.commit()
+        for asset in assets:
+            asset.delete()
+
+        item = CollectionItem.query().filter(CollectionItem.id == item_id).first()
+
+        if item:
+            item.delete()
+
+        with db.session.begin_nested():
+            CollectionItem(
+                id=item_id,
+                collection_id=cube.id,
+                grs_schema_id=cube.grs_schema_id,
+                tile_id=tile_id,
+                item_date=start_date,
+                composite_start=start_date,
+                composite_end=end_date,
+                quicklook=quick_look_file,
+                cloud_cover=cloudratio,
+                scene_type=composite_function,
+                compressed_file=None
+            ).save(commit=False)
+
+            for band in scenes['ARDfiles']:
+                if band == 'quality':
+                    continue
+
+                band_model = next(filter(lambda b: b.common_name == band, cube_bands))
+
+                # Band does not exists on model
+                if not band_model:
+                    logging.warning('Band {} of {} does not exist on database'.format(band, cube.id))
+                    continue
+
+                Asset(
+                    collection_id=cube.id,
+                    band_id=band_model.id,
+                    grs_schema_id=cube.grs_schema_id,
+                    tile_id=tile_id,
+                    collection_item_id=item_id,
+                    url='/{}'.format(quick_look_relpath),
+                    source=None,
+                    raster_size_x=raster_size_schemas.raster_size_x,
+                    raster_size_y=raster_size_schemas.raster_size_y,
+                    raster_size_t=1,
+                    chunk_size_x=raster_size_schemas.chunk_size_x,
+                    chunk_size_y=raster_size_schemas.chunk_size_y,
+                    chunk_size_t=1
+                ).save(commit=False)
+
+        db.session.commit()
 
     return quick_look_file
 
