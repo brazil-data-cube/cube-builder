@@ -131,3 +131,5 @@ dmypy.json
 # Local Development
 .vscode
 .idea
+doc/sphinx/_build
+doc/sphinx/_static
