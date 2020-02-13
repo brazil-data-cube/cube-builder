@@ -171,7 +171,7 @@ def blend(activity):
         scene = activity['scenes'][key]
 
         filename = scene['ARDfiles']['quality']
-        print(filename)
+
         try:
             masklist.append(rasterio.open(filename))
         except BaseException as e:

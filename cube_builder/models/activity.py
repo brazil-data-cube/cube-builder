@@ -7,10 +7,8 @@
 #
 
 # 3rdparty
-from sqlalchemy import Column, String, ARRAY, ForeignKey, Integer, JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, String, ARRAY, Integer, JSON
 from bdc_db.models.base_sql import BaseModel
-from bdc_db.models import Collection
 
 
 class Activity(BaseModel):
@@ -28,5 +26,3 @@ class Activity(BaseModel):
     scene_type = Column('scene_type', String)
     band = Column('band', String(64), nullable=False)
 
-    # Relations
-    # history = relationship('ActivityHistory', order_by='desc(ActivityHistory.start)')

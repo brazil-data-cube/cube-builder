@@ -19,11 +19,6 @@ def warp_merge(warped_datacube, tile_id, period, warps, cols, rows, **kwargs):
 
 
 @celery_app.task()
-def dummy_task(activity):
-    return activity
-
-
-@celery_app.task()
 def blend(merges):
     activities = dict()
 
