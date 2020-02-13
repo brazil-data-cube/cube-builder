@@ -37,9 +37,9 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
     if band == 'quality':
         resampling = Resampling.nearest
 
-        raster = numpy.zeros((rows, cols,), dtype=numpy.uint8)
-        raster_merge = numpy.zeros((rows, cols,), dtype=numpy.uint8)
-        raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint8)
+        raster = numpy.zeros((rows, cols,), dtype=numpy.uint16)
+        raster_merge = numpy.zeros((rows, cols,), dtype=numpy.uint16)
+        raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint16)
         nodata = 0
     else:
         resampling = Resampling.bilinear
@@ -104,10 +104,7 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
     cloudratio = 100
     if band == 'quality':
         raster_merge, efficacy, cloudratio = getMask(raster_merge, dataset)
-        # Sentinel
-        template.update({'dtype': 'uint8'})
-        # Landsat
-        template.update({'dtype': assets[0]['data_type'].lower()})
+        template.update({'dtype': 'uint16'})
 
     target_dir = os.path.dirname(merged_file)
     os.makedirs(target_dir, exist_ok=True)
@@ -224,7 +221,8 @@ def blend(activity):
             msrc = masklist[order]
             raster = ssrc.read(1, window=window)
             mask = msrc.read(1, window=window)
-            mask[mask % 2 == 0] = 1
+            mask[mask != 1] = 0
+
             mask[raster == -9999] = 0
 
             # True => nodata
@@ -340,7 +338,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
                 compressed_file=None
             ).save(commit=False)
 
-            for band in scenes['ARDfiles']:
+            for band in scenes:
                 if band == 'quality':
                     continue
 
@@ -351,13 +349,15 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
                     logging.warning('Band {} of {} does not exist on database'.format(band, cube.id))
                     continue
 
+                asset_relative_path = scenes[band][composite_function].replace(Config.DATA_DIR, '')
+
                 Asset(
                     collection_id=cube.id,
                     band_id=band_model.id,
                     grs_schema_id=cube.grs_schema_id,
                     tile_id=tile_id,
                     collection_item_id=item_id,
-                    url='/{}'.format(quick_look_relpath),
+                    url='{}'.format(asset_relative_path),
                     source=None,
                     raster_size_x=raster_size_schemas.raster_size_x,
                     raster_size_y=raster_size_schemas.raster_size_y,
@@ -424,26 +424,24 @@ def getMask(raster, dataset):
     # 0 - cloud
     if 'LC8SR' in dataset:
         # Input pixel_qa codes
-        fill    = 1 				# warped images have 0 as fill area
-        terrain = 2					# 0000 0000 0000 0010
-        radsat  = 4+8				# 0000 0000 0000 1100
-        cloud   = 16+32+64			# 0000 0000 0110 0000
-        shadow  = 128+256			# 0000 0001 1000 0000
+        fill = 1 				# warped images have 0 as fill area
+        # terrain = 2					# 0000 0000 0000 0010
+        radsat = 4+8				# 0000 0000 0000 1100
+        cloud = 16+32+64			# 0000 0000 0110 0000
+        shadow = 128+256			# 0000 0001 1000 0000
         snowice = 512+1024			# 0000 0110 0000 0000
-        cirrus  = 2048+4096			# 0001 1000 0000 0000
-
-        unique, counts = numpy.unique(raster, return_counts=True)
+        cirrus = 2048+4096			# 0001 1000 0000 0000
 
         # Start with a zeroed image imagearea
         imagearea = numpy.zeros(raster.shape, dtype=numpy.bool_)
         # Mark with True the pixels that contain valid data
         imagearea = imagearea + raster > fill
         # Create a notcleararea mask with True where the quality criteria is as follows
-        notcleararea = 	(raster & radsat > 4) + \
-                    (raster & cloud > 64) + \
-                    (raster & shadow > 256) + \
-                    (raster & snowice > 512) + \
-                    (raster & cirrus > 4096)
+        notcleararea = (raster & radsat > 4) + \
+            (raster & cloud > 64) + \
+            (raster & shadow > 256) + \
+            (raster & snowice > 512) + \
+            (raster & cirrus > 4096)
 
         strel = morphology.selem.square(6)
         notcleararea = morphology.binary_dilation(notcleararea,strel)
@@ -463,9 +461,9 @@ def getMask(raster, dataset):
         # 1 		Marginal data 	Useful, but look at other QA information
         # 2 		Snow/Ice 		Target covered with snow/ice
         # 3 		Cloudy 			Target not visible, covered with cloud
-        fill    = 0 	# warped images have 0 as fill area
-        lut = numpy.array([0,1,1,2,2],dtype=numpy.uint8)
-        rastercm = numpy.take(lut,raster+1).astype(numpy.uint8)
+        fill = 0 	# warped images have 0 as fill area
+        lut = numpy.array([0, 1, 1, 2, 2], dtype=numpy.uint8)
+        rastercm = numpy.take(lut, raster+1).astype(numpy.uint8)
 
     elif 'S2SR' in dataset:
         # S2 sen2cor - The generated classification map is specified as follows:
@@ -495,20 +493,15 @@ def getMask(raster, dataset):
         lut = numpy.zeros(256,dtype=numpy.uint8)
         lut[127] = 1
         lut[255] = 2
-        rastercm = numpy.take(lut,raster).astype(numpy.uint8)
+        rastercm = numpy.take(lut, raster).astype(numpy.uint8)
 
-    unique, counts = numpy.unique(rastercm, return_counts=True)
-
-    totpix   = rastercm.size
-    fillpix  = numpy.count_nonzero(rastercm==0)
-    clearpix = numpy.count_nonzero(rastercm==1)
-    cloudpix = numpy.count_nonzero(rastercm==2)
+    totpix = rastercm.size
+    clearpix = numpy.count_nonzero(rastercm == 1)
+    cloudpix = numpy.count_nonzero(rastercm == 2)
     imagearea = clearpix+cloudpix
-    clearratio = 0
     cloudratio = 100
     if imagearea != 0:
-        clearratio = round(100.*clearpix/imagearea,1)
-        cloudratio = round(100.*cloudpix/imagearea,1)
-    efficacy = round(100.*clearpix/totpix,2)
+        cloudratio = round(100.*cloudpix/imagearea, 1)
+    efficacy = round(100.*clearpix/totpix, 2)
 
-    return rastercm,efficacy,cloudratio
+    return rastercm.astype(numpy.uint16), efficacy, cloudratio
