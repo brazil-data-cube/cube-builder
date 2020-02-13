@@ -167,6 +167,7 @@ class Maestro:
         temporal_schema = self.datacube.temporal_composition_schema.temporal_schema
         temporal_step = self.datacube.temporal_composition_schema.temporal_composite_t
 
+        # TODO: Check in STAC for cube item
         # datacube_stac = stac_cli.collection(self.datacube.id)
 
         collections_items = CollectionItem.query().filter(
@@ -177,15 +178,12 @@ class Maestro:
         if list(filter(lambda c_i: c_i.tile_id == self.params['tiles'][0], collections_items)):
             cube_start_date = collections_items[0].composite_start
 
-        # cube_start_date, cube_end_date = datacube_stac['extent'].get('temporal', [None, None])
-
         dstart = self.params['start_date']
         dend = self.params['end_date']
 
         if cube_start_date is None:
             cube_start_date = dstart.strftime('%Y-%m-%d')
 
-        # if cube_end_date is None or datetime.datetime.strptime(cube_end_date, '%Y-%m-%d').date() < dend:
         cube_end_date = dend.strftime('%Y-%m-%d')
 
         periodlist = decode_periods(temporal_schema, cube_start_date, cube_end_date, int(temporal_step))
