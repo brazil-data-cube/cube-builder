@@ -6,17 +6,71 @@
     under the terms of the MIT License; see LICENSE file for more details.
 
 
-Running Cube Builder through API
---------------------------------
+Prepare and initialize database
+-------------------------------
+
+Edit file **cube_builder/config.py** the following variables:
+
+1. **SQLALCHEMY_DATABASE_URI** URI Connection to database
+2. **DATA_DIR** Path prefix to remove from asset and store on database
+3. **ACTIVITIES_SCHEMA** Schema of datacube activities. Default is **cube_builder**
 
 .. code-block:: shell
 
-        TODO
+        cube-builder db create # Create database and schema
+        cube-builder db upgrade # Up migrations
 
 
-Running Cube Builder in the Command Line
-----------------------------------------
+Running http server
+-------------------
+
+Once everything configured, run local server:
 
 .. code-block:: shell
 
-        TODO
+        cube-builder run
+
+
+Creating datacube Landsat8
+--------------------------
+
+Create datacube metadata
+
+.. code-block:: shell
+
+        curl --location --request POST '127.0.0.1:5000/api/cubes/create' \
+             --header 'Content-Type: application/json' \
+             --data-raw '{
+                 "datacube": "L30m",
+                 "grs": "aea_250k",
+                 "resolution": 30,
+                 "temporal_schema": "M1month",
+                 "bands_quicklook": ["swir2", "nir", "red"],
+                 "composite_function_list": ["MEDIAN", "STACK"],
+                 "bands": {
+                     "names": ["coastal", "blue", "green", "red", "nir", "swir1", "swir2", "evi", "ndvi", "quality"],
+                     "min": 0,
+                     "max": 10000,
+                     "fill": -9999,
+                     "scale": 0.0001,
+                     "data_type": "Int16"
+                 },
+                 "description": "Landsat8 Cubes 30m - Monthly"
+             }'
+
+
+Trigger datacube generation with following command:
+
+.. code-block:: shell
+
+        curl --location \
+             --request POST '127.0.0.1:5000/api/cubes/process' \
+             --header 'Content-Type: application/json'
+             --data-raw '{
+                "datacube": "L30mMEDIAN",
+                "collections": ["LC8SR"],
+                "tiles": ["089098"],
+                "start_date": "2019-01-01",
+                "end_date": "2019-01-31",
+                "bands": ["swir2", "nir", "red", "evi", "quality"]
+             }'

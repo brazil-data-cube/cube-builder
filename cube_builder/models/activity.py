@@ -7,7 +7,7 @@
 #
 
 # 3rdparty
-from sqlalchemy import Column, String, ARRAY, Integer, JSON
+from sqlalchemy import Column, Date, String, ARRAY, Integer, JSON, Text
 from bdc_db.models.base_sql import BaseModel
 
 
@@ -20,9 +20,10 @@ class Activity(BaseModel):
     warped_collection_id = Column(String(64), nullable=False)
     activity_type = Column('activity_type', String(64), nullable=False)
     period = Column(String(64), nullable=False)
+    date = Column(Date, nullable=False)
     status = Column(String(64), nullable=False)
     args = Column('args', JSON)
     tags = Column('tags', ARRAY(String))
     scene_type = Column('scene_type', String)
     band = Column('band', String(64), nullable=False)
-
+    traceback = Column(Text(), nullable=True)

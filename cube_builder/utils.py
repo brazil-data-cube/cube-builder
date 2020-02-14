@@ -11,6 +11,58 @@ import rasterio
 # BDC Scripts
 from bdc_db.models import Asset, Band, CollectionItem, db
 from .config import Config
+from .models import Activity
+
+
+def get_or_create_model(model_class, defaults=None, **restrictions):
+    """
+    Utility method for looking up an object with the given restrictions, creating
+    one if necessary.
+    Args:
+        model_class (BaseModel) - Base Model of Brazil Data Cube DB
+        defaults (dict) - Values to fill out model instance
+        restrictions (dict) - Query Restrictions
+    Returns:
+        BaseModel Retrieves model instance
+    """
+
+    instance = db.session.query(model_class).filter_by(**restrictions).first()
+
+    if instance:
+        return instance, False
+
+    params = dict((k, v) for k, v in restrictions.items())
+
+    params.update(defaults or {})
+    instance = model_class(**params)
+
+    db.session.add(instance)
+
+    return instance, True
+
+
+def get_or_create_activity(datacube: str, warped: str, activity_type: str, scene_type: str, band: str, period: str, activity_date: str, **parameters):
+    defaults = dict(
+        band=band,
+        collection_id=datacube,
+        warped_collection_id=warped,
+        activity_type=activity_type,
+        tags=parameters.get('tags', []),
+        status='CREATED',
+        date=activity_date,
+        period=period,
+        scene_type=scene_type,
+        args=parameters
+    )
+
+    where = dict(
+        band=band,
+        collection_id=datacube,
+        period=period,
+        date=activity_date
+    )
+
+    return get_or_create_model(Activity, defaults=defaults, **where)
 
 
 def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):

@@ -1,21 +1,62 @@
 # Python Native
-from os import path as resource_path
+from copy import deepcopy
 import logging
+import traceback
 # 3rdparty
 from celery import chain, group
 # BDC Scripts
 from bdc_db.models import Collection
+
+from cube_builder.models import Activity
+from cube_builder.utils import get_or_create_activity
 from .celery import celery_app
 from .utils import merge as merge_processing, \
                    blend as blend_processing, \
                    publish_datacube, publish_merge
 
 
-@celery_app.task()
-def warp_merge(warped_datacube, tile_id, period, warps, cols, rows, **kwargs):
-    logging.warning('Executing merge {}'.format(kwargs.get('datacube')), kwargs)
+def capture_traceback(exception=None):
+    return traceback.format_exc() or str(exception)
 
-    return merge_processing(warped_datacube, tile_id, warps, int(cols), int(rows), period, **kwargs)
+
+@celery_app.task()
+def warp_merge(activity):
+    logging.warning('Executing merge {}'.format(activity.get('warped_collection_id')))
+
+    record: Activity = Activity.query().filter(Activity.id == activity['id']).one()
+
+    # TODO: Validate in disk
+    if record.status != 'SUCCESS':
+        record.status = 'STARTED'
+        record.save()
+
+        try:
+            args = deepcopy(activity.get('args'))
+            period = activity.get('period')
+            warped_datacube = activity.get('warped_collection_id')
+            tile_id = args.pop('tile_id')
+            assets = args.pop('assets')
+            cols = args.pop('cols')
+            rows = args.pop('rows')
+
+            res = merge_processing(warped_datacube, tile_id, assets, int(cols), int(rows), period, **args)
+
+            merge_args = activity['args']
+            merge_args.update(res)
+
+            record.traceback = ''
+            record.status = 'SUCCESS'
+            record.args = merge_args
+        except BaseException as e:
+            record.status = 'FAILURE'
+            record.traceback = capture_traceback(e)
+            logging.error('Error in merge. Activity {}'.format(record.id), exc_info=True)
+
+            raise e
+        finally:
+            record.save()
+
+    return activity
 
 
 @celery_app.task()
@@ -23,22 +64,22 @@ def blend(merges):
     activities = dict()
 
     for _merge in merges:
-        if _merge['band'] in activities and _merge['date'] in activities[_merge['band']]['scenes'] or \
+        if _merge['band'] in activities and _merge['args']['date'] in activities[_merge['band']]['scenes'] or \
                 _merge['band'] == 'quality':
             continue
 
         activity = activities.get(_merge['band'], dict(scenes=dict()))
 
-        activity['datacube'] = _merge['datacube']
-        activity['warped_datacube'] = merges[0]['warped_datacube']
+        activity['datacube'] = _merge['collection_id']
+        activity['warped_datacube'] = merges[0]['warped_collection_id']
         activity['band'] = _merge['band']
-        activity['scenes'].setdefault(_merge['date'], dict(**_merge))
+        activity['scenes'].setdefault(_merge['args']['date'], dict(**_merge['args']))
         activity['period'] = _merge['period']
-        activity['tile_id'] = _merge['tile_id']
+        activity['tile_id'] = _merge['args']['tile_id']
 
-        activity['scenes'][_merge['date']]['ARDfiles'] = {
-            "quality": _merge['file'].replace(_merge['band'], 'quality'),
-            _merge['band']: _merge['file']
+        activity['scenes'][_merge['args']['date']]['ARDfiles'] = {
+            "quality": _merge['args']['file'].replace(_merge['band'], 'quality'),
+            _merge['band']: _merge['args']['file']
         }
 
         activities[_merge['band']] = activity
@@ -48,6 +89,7 @@ def blend(merges):
     blends = []
 
     for activity in activities.values():
+        # TODO: Persist
         blends.append(_blend.s(activity))
 
     task = chain(group(blends), publish.s())

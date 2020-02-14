@@ -17,15 +17,16 @@ def get_settings(env):
     return CONFIG.get(env)
 
 
-class Config():
+class Config:
     """Base configuration with default flags."""
 
     CELERYD_PREFETCH_MULTIPLIER = 1  # disable
     DEBUG = False
     TESTING = False
     DATA_DIR = '/data'
-    # REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379')
+    ACTIVITIES_SCHEMA = 'cube_builder'
     RABBIT_MQ_URL = os.environ.get('RABBIT_MQ_URL', 'pyamqp://guest@localhost')
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         'SQLALCHEMY_DATABASE_URI',
         'postgresql://postgres:bdc-scripts2019@localhost:5435/bdc'

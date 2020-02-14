@@ -9,6 +9,8 @@ from stac import STAC
 import numpy
 
 # BDC Scripts
+from cube_builder.forms import ActivityForm
+from cube_builder.utils import get_or_create_activity
 from .config import Config
 from .models.activity import Activity
 
@@ -261,19 +263,6 @@ class Maestro:
                 # Search all images
                 self.mosaics[tileid]['periods'][periodkey]['scenes'] = self.search_images(bbox, start, end)
 
-    @staticmethod
-    def create_activity(collection: str, warped: str, activity_type: str, scene_type: str, band: str, period: str, **parameters):
-        return dict(
-            band=band,
-            collection_id=collection,
-            warped_collection_id=warped,
-            activity_type=activity_type,
-            tags=parameters.get('tags', []),
-            period=period,
-            scene_type=scene_type,
-            args=parameters
-        )
-
     def dispatch_celery(self):
         from celery import group, chain
         from .tasks import blend, warp_merge, publish
@@ -315,22 +304,24 @@ class Maestro:
                                 datacube=datacube,
                                 resx=band.resolution_x,
                                 resy=band.resolution_y,
+                                cols=cols,
+                                rows=rows,
+                                tile_id=tileid,
+                                assets=assets,
                             )
 
-                            # activity = self.create_activity(
-                            #     self.datacube.id,
-                            #     self.warped_datacube.id,
-                            #     'MERGE',
-                            #     'WARPED',
-                            #     band.id,
-                            #     period_start_end,
-                            #     **properties
-                            # )
+                            activity_obj, _ = get_or_create_activity(
+                                datacube=self.datacube.id,
+                                warped=warped_datacube,
+                                activity_type='MERGE',
+                                scene_type='WARPED',
+                                band=band.common_name,
+                                period=period_start_end,
+                                activity_date=merge_date,
+                                **properties
+                            )
 
-                            # Activity(**activity).save(commit=False)
-
-                            # task = warp_merge.s(activity)
-                            task = warp_merge.s(warped_datacube, tileid, period_start_end, assets, cols, rows, **properties)
+                            task = warp_merge.s(ActivityForm().dump(activity_obj))
                             merges_tasks.append(task)
 
                 # Persist activities
