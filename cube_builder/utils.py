@@ -41,10 +41,10 @@ def get_or_create_model(model_class, defaults=None, **restrictions):
     return instance, True
 
 
-def get_or_create_activity(datacube: str, warped: str, activity_type: str, scene_type: str, band: str, period: str, activity_date: str, **parameters):
+def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_type: str, band: str, period: str, activity_date: str, **parameters):
     defaults = dict(
         band=band,
-        collection_id=datacube,
+        collection_id=cube,
         warped_collection_id=warped,
         activity_type=activity_type,
         tags=parameters.get('tags', []),
@@ -57,12 +57,16 @@ def get_or_create_activity(datacube: str, warped: str, activity_type: str, scene
 
     where = dict(
         band=band,
-        collection_id=datacube,
+        collection_id=cube,
         period=period,
         date=activity_date
     )
 
     return get_or_create_model(Activity, defaults=defaults, **where)
+
+
+def build_datacube_name(datacube, func):
+    return '{}{}'.format(datacube[:-3], func)
 
 
 def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
@@ -251,13 +255,17 @@ def blend(activity):
 
     #
     # MEDIAN will be generated in local disk
-    medianfile = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}_{}.tif'.format(
-        datacube, tile_id, period, output_name, 'MEDIAN'))
+    medianfile = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}.tif'.format(
+        datacube, tile_id, period, output_name))
 
-    stack_file = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}_{}.tif'.format(
-        datacube, tile_id, period, output_name, 'STACK'))
+    stack_datacube = build_datacube_name(datacube, 'STK')
+    output_name = output_name.replace(datacube, stack_datacube)
+
+    stack_file = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}.tif'.format(
+        stack_datacube, tile_id, period, output_name))
 
     os.makedirs(os.path.dirname(medianfile), exist_ok=True)
+    os.makedirs(os.path.dirname(stack_file), exist_ok=True)
 
     mediandataset = rasterio.open(medianfile, 'w', **profile)
 
@@ -335,8 +343,8 @@ def blend(activity):
     activity['efficacy'] = efficacy
     activity['cloudratio'] = cloudcover
     activity['blends'] = {
-        "MEDIAN": medianfile,
-        "STACK": stack_file
+        "MED": medianfile,
+        "STK": stack_file
     }
 
     return activity
@@ -349,10 +357,13 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
     cube_bands = Band.query().filter(Band.collection_id == cube.id).all()
     raster_size_schemas = cube.raster_size_schemas
 
-    for composite_function in ['MEDIAN']:  # ,'STACK']:
-        quick_look_name = '{}-{}-{}_{}'.format(datacube, tile_id, period, composite_function)
+    for composite_function in ['MED', 'STK']:
+        _datacube = build_datacube_name(datacube, composite_function)
+
+        quick_look_name = '{}-{}-{}'.format(_datacube, tile_id, period)
+
         quick_look_relpath = 'Repository/Mosaic/{}/{}/{}/{}'.format(
-            datacube, tile_id, period, quick_look_name
+            _datacube, tile_id, period, quick_look_name
         )
         quick_look_file = os.path.join(
             Config.DATA_DIR,
@@ -365,10 +376,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
         generate_quick_look(quick_look_file, ql_files)
 
-        assets = Asset.query().filter(Asset.collection_item_id == item_id).all()
-
-        for asset in assets:
-            asset.delete()
+        Asset.query().filter(Asset.collection_item_id == item_id).delete()
 
         item = CollectionItem.query().filter(CollectionItem.id == item_id).first()
 

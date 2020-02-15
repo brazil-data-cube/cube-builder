@@ -311,7 +311,7 @@ class Maestro:
                             )
 
                             activity_obj, _ = get_or_create_activity(
-                                datacube=self.datacube.id,
+                                cube=self.datacube.id,
                                 warped=warped_datacube,
                                 activity_type='MERGE',
                                 scene_type='WARPED',
@@ -320,6 +320,7 @@ class Maestro:
                                 activity_date=merge_date,
                                 **properties
                             )
+                            activity_obj.save()
 
                             task = warp_merge.s(ActivityForm().dump(activity_obj))
                             merges_tasks.append(task)

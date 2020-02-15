@@ -41,7 +41,7 @@ Create datacube metadata
         curl --location --request POST '127.0.0.1:5000/api/cubes/create' \
              --header 'Content-Type: application/json' \
              --data-raw '{
-                 "datacube": "L30m",
+                 "datacube": "LC8_30_1M",
                  "grs": "aea_250k",
                  "resolution": 30,
                  "temporal_schema": "M1month",
@@ -67,7 +67,7 @@ Trigger datacube generation with following command:
              --request POST '127.0.0.1:5000/api/cubes/process' \
              --header 'Content-Type: application/json'
              --data-raw '{
-                "datacube": "L30mMEDIAN",
+                "datacube": "LC8_30_1M_MED",
                 "collections": ["LC8SR"],
                 "tiles": ["089098"],
                 "start_date": "2019-01-01",
