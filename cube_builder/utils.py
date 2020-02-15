@@ -121,7 +121,7 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
                 if src.profile['nodata'] is not None:
                     source_nodata = src.profile['nodata']
                 elif 'LC8SR' in dataset and band != 'quality':
-                    source_nodata = -9999
+                    source_nodata = nodata
 
                 kwargs.update({
                     'nodata': source_nodata
@@ -188,7 +188,8 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
         date='{}{}'.format(merge_date, dataset),
         datacube=datacube,
         tile_id=tile_id,
-        warped_datacube=warped_datacube
+        warped_datacube=warped_datacube,
+        nodata=nodata
     )
 
 
@@ -197,6 +198,8 @@ def blend(activity):
     numscenes = len(activity['scenes'])
 
     band = activity['band']
+
+    nodata = activity.get('nodata', -9999)
 
     # Get basic information (profile) of input files
     keys = list(activity['scenes'].keys())
@@ -283,7 +286,7 @@ def blend(activity):
             mask = msrc.read(1, window=window)
             mask[mask != 1] = 0
 
-            mask[raster == -9999] = 0
+            mask[raster == nodata] = 0
 
             # True => nodata
             bmask = numpy.invert(mask.astype(numpy.bool_))
@@ -295,17 +298,17 @@ def blend(activity):
             # Pixels that have been already been filled by previous rasters will be masked in the current raster
             mask_raster[window.row_off: window.row_off + window.height, window.col_off: window.col_off + window.width] *= bmask.astype(profile['dtype'])
 
-            raster[raster == -9999] = 0
+            raster[raster == nodata] = 0
             todomask = notdonemask * numpy.invert(bmask)
             notdonemask = notdonemask * bmask
             stack_raster[window.row_off: window.row_off + window.height, window.col_off: window.col_off + window.width] += (todomask * raster.astype(profile['dtype']))
 
         median_raster = numpy.ma.median(stackMA, axis=0).data
-        median_raster[notdonemask.astype(numpy.bool_)] = -9999
+        median_raster[notdonemask.astype(numpy.bool_)] = nodata
 
         mediandataset.write(median_raster.astype(profile['dtype']), window=window, indexes=1)
 
-    stack_raster[mask_raster.astype(numpy.bool_)] = -9999
+    stack_raster[mask_raster.astype(numpy.bool_)] = nodata
     # Close all input dataset
     for order in range(numscenes):
         bandlist[order].close()
@@ -315,7 +318,7 @@ def blend(activity):
     cloudcover = 100. * ((height * width - numpy.count_nonzero(stack_raster)) / (height * width))
 
     if band != 'quality':
-        mediandataset.nodata = -9999
+        mediandataset.nodata = nodata
 
     # # Close and upload the MEDIAN dataset
     mediandataset.close()
@@ -327,15 +330,12 @@ def blend(activity):
     })
 
     with rasterio.open(medianfile, 'r+', **profile) as ds_median:
-        if band != 'quality':
-            ds_median.nodata = -9999
-        ds_median.nodata = activity.get('nodata', -9999)
+        ds_median.nodata = nodata
         ds_median.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
         ds_median.update_tags(ns='rio_overview', resampling='nearest')
 
     with rasterio.open(stack_file, 'w', **profile) as stack_dataset:
-        if band != 'quality':
-            stack_dataset.nodata = -9999
+        stack_dataset.nodata = nodata
         stack_dataset.write_band(1, stack_raster)
         stack_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
         stack_dataset.update_tags(ns='rio_overview', resampling='nearest')
@@ -378,10 +378,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
         Asset.query().filter(Asset.collection_item_id == item_id).delete()
 
-        item = CollectionItem.query().filter(CollectionItem.id == item_id).first()
-
-        if item:
-            item.delete()
+        CollectionItem.query().filter(CollectionItem.id == item_id).delete()
 
         with db.session.begin_nested():
             CollectionItem(
@@ -433,19 +430,70 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
 
 def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
+    item_id = '{}_{}_{}'.format(datacube.id, tile_id, period)
     quick_look_name = '{}-{}-{}'.format(dataset, tile_id, date)
     quick_look_file = os.path.join(
         Config.DATA_DIR,
         'Repository/Warped/{}/{}/{}/{}'.format(
-            datacube, tile_id, period, quick_look_name
+            datacube.id, tile_id, period, quick_look_name
         )
     )
+
+    cube_bands = Band.query().filter(Band.collection_id == datacube.id).all()
+    raster_size_schemas = datacube.raster_size_schemas
 
     ql_files = []
     for band in bands:
         ql_files.append(scenes['ARDfiles'][band])
 
     generate_quick_look(quick_look_file, ql_files)
+
+    Asset.query().filter(Asset.collection_item_id == item_id).delete()
+
+    CollectionItem.query().filter(CollectionItem.id == item_id).delete()
+
+    with db.session.begin_nested():
+        CollectionItem(
+            id=item_id,
+            collection_id=datacube.id,
+            grs_schema_id=datacube.grs_schema_id,
+            tile_id=tile_id,
+            item_date=date,
+            composite_start=date,
+            composite_end=period.split('_')[-1],
+            quicklook=quick_look_file,
+            cloud_cover=scenes.get('cloudratio', 0),
+            scene_type='WARPED',
+            compressed_file=None
+        ).save(commit=False)
+
+        for band in scenes['ARDfiles']:
+            band_model = next(filter(lambda b: b.common_name == band, cube_bands))
+
+            # Band does not exists on model
+            if not band_model:
+                logging.warning('Band {} of {} does not exist on database'.format(band, datacube.id))
+                continue
+
+            asset_relative_path = scenes['ARDfiles'][band].replace(Config.DATA_DIR, '')
+
+            Asset(
+                collection_id=datacube.id,
+                band_id=band_model.id,
+                grs_schema_id=datacube.grs_schema_id,
+                tile_id=tile_id,
+                collection_item_id=item_id,
+                url='{}'.format(asset_relative_path),
+                source=None,
+                raster_size_x=raster_size_schemas.raster_size_x,
+                raster_size_y=raster_size_schemas.raster_size_y,
+                raster_size_t=1,
+                chunk_size_x=raster_size_schemas.chunk_size_x,
+                chunk_size_y=raster_size_schemas.chunk_size_y,
+                chunk_size_t=1
+            ).save(commit=False)
+
+    db.session.commit()
 
     return quick_look_file
 

@@ -33,10 +33,9 @@ class Config:
     )
     STAC_URL = os.environ.get(
         'STAC_URL',
-        'http://127.0.0.1:5444'
+        'http://brazildatacube.dpi.inpe.br/bdc-stac/0.7.0'
     )
     SECRET_KEY = 'cube-builder'
-    TASK_RETRY_DELAY = int(os.environ.get('TASK_RETRY_DELAY', 60 * 60))  # a hour
 
 
 class ProductionConfig(Config):

@@ -71,11 +71,12 @@ def blend(merges):
         activity = activities.get(_merge['band'], dict(scenes=dict()))
 
         activity['datacube'] = _merge['collection_id']
-        activity['warped_datacube'] = merges[0]['warped_collection_id']
+        activity['warped_datacube'] = _merge['warped_collection_id']
         activity['band'] = _merge['band']
         activity['scenes'].setdefault(_merge['args']['date'], dict(**_merge['args']))
         activity['period'] = _merge['period']
         activity['tile_id'] = _merge['args']['tile_id']
+        activity['nodata'] = _merge['args'].get('nodata')
 
         activity['scenes'][_merge['args']['date']]['ARDfiles'] = {
             "quality": _merge['args']['file'].replace(_merge['band'], 'quality'),
@@ -123,24 +124,18 @@ def publish(blends):
         blend_files[blend_result['band']] = blend_result['blends']
 
         for merge_date, definition in blend_result['scenes'].items():
-            merges.setdefault(merge_date, dict(dataset=definition['dataset'], ARDfiles=dict()))
+            merges.setdefault(merge_date, dict(dataset=definition['dataset'],
+                                               cloudratio=definition['cloudratio'],
+                                               ARDfiles=dict()))
             merges[merge_date]['ARDfiles'].update(definition['ARDfiles'])
 
     # Generate quick looks for cube scenes
     publish_datacube(cube, quick_look_bands, cube.id, tile_id, period, blend_files, cloudratio)
 
     # Generate quick looks of irregular cube
-    # In order to do that, we must schedule new celery tasks and execute in parallel
-    tasks = []
-
     for merge_date, definition in merges.items():
         date = merge_date.replace(definition['dataset'], '')
-        tasks.append(_publish_merge.s(quick_look_bands, warped_datacube, definition['dataset'], tile_id, period, date, definition))
 
-    promise = chain(group(tasks))
-    promise.apply_async()
+        wcube = Collection.query().filter(Collection.id == warped_datacube).first()
 
-
-@celery_app.task()
-def _publish_merge(bands, datacube, dateset, tile_id, period, merge_date, scenes):
-    return publish_merge(bands, datacube, dateset, tile_id, period, merge_date, scenes)
+        publish_merge(quick_look_bands, wcube, definition['dataset'], tile_id, period, date, definition)

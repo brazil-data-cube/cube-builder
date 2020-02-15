@@ -226,10 +226,7 @@ class Maestro:
 
     @property
     def warped_datacube(self):
-        datacube_warped = self.datacube.id
-
-        for fn in ['MEDIAN', 'STACK']:
-            datacube_warped = datacube_warped.replace(fn, 'WARPED')
+        datacube_warped = '{}WARPED'.format(self.datacube.id[:-3])
 
         return Collection.query().filter(Collection.id == datacube_warped).first()
 
@@ -308,6 +305,7 @@ class Maestro:
                                 rows=rows,
                                 tile_id=tileid,
                                 assets=assets,
+                                nodata=band.fill
                             )
 
                             activity_obj, _ = get_or_create_activity(
