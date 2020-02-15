@@ -63,6 +63,9 @@ Trigger datacube generation with following command:
 
 .. code-block:: shell
 
+        # Using cube-builder command line
+        cube-builder build LC8_30_1M_MED --collections=LC8SR --tiles=089098 --start=2019-01-01 --end=2019-01-31 --bands=swir2,nir,red,evi,quality
+        # Using curl (Make sure to execute cube-builder run)
         curl --location \
              --request POST '127.0.0.1:5000/api/cubes/process' \
              --header 'Content-Type: application/json'

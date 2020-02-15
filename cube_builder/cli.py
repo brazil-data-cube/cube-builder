@@ -81,8 +81,47 @@ def worker(ctx):
     _main(args)
 
 
-def main(as_module=False):
-    """Loads cube-builder as package in python module"""
+@cli.command()
+@click.argument('datacube')
+@click.option('--collections', type=click.STRING, required=True, help='Collections to use')
+@click.option('--tiles', type=click.STRING, required=True, help='Comma delimited tiles')
+@click.option('--start', type=click.STRING, required=True, help='Start date')
+@click.option('--end', type=click.STRING, required=True, help='End date')
+@click.option('--bands', type=click.STRING, required=True, help='comma delimited bands to generate')
+@with_appcontext
+def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str):
+    """Build data cube through command line.
 
+    Args:
+        datacube - Data cube name to generate
+        collections - Comma separated collections to use
+        tiles - Comma separated tiles to use
+        start - Data cube start date
+        end - Data cube end date
+        bands - Comma separated bands to generate
+    """
+    from .business import CubeBusiness
+    from .parsers import DataCubeProcessParser
+
+    data = dict(
+        datacube=datacube,
+        collections=collections.split(','),
+        start_date=start,
+        end_date=end,
+        bands=bands.split(','),
+        tiles=tiles.split(',')
+    )
+
+    parser = DataCubeProcessParser()
+    parsed_data = parser.load(data)
+
+    click.secho('Triggering data cube generation...', fg='green')
+    res = CubeBusiness.maestro(**parsed_data)
+
+    assert res['ok']
+
+
+def main(as_module=False):
+    """Loads cube-builder as package in python module."""
     import sys
     cli.main(args=sys.argv[1:], prog_name="python -m cube_builder" if as_module else None)
