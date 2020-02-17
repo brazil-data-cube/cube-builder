@@ -73,8 +73,7 @@ def create_celery_app(flask_app: Flask):
                 logging.warning('Not Call context Task')
 
         def after_return(self, status, retval, task_id, args, kwargs, einfo):
-            """
-            Called after task execution.
+            """Called after task execution.
 
             Whenever task finishes, it must teardown our db session, since the Flask SQLAlchemy
             creates scoped session at startup.

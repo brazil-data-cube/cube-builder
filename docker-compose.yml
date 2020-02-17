@@ -1,0 +1,58 @@
+version: '3.1'
+
+networks:
+  cube_builder_net:
+
+services:
+  mq:
+    image: rabbitmq:3-management
+    container_name: cube-builder-rabbitmq
+    hostname: cube-builder-rabbitmq
+    restart: "always"
+    volumes:
+      - "./volumes/rabbitmq:/var/lib/rabbitmq"
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    networks:
+      - cube_builder_net
+
+  cube-builder:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile
+    container_name: cube-builder-api
+    image: ${IMAGE_CUBE_BUILDER_FULL}
+    restart: "always"
+    environment:
+      - "RABBIT_MQ_URL=pyamqp://guest@cube-builder-rabbitmq"
+      - "SQLALCHEMY_DATABASE_URI=postgresql://postgres:bdc_collection_builder2019@bdc_collection_builder-pg:5432/bdc_scripts"
+      - "DATA_DIR=/gfs"
+    networks:
+      - cube_builder_net
+    ports:
+      - "5000:5000"
+    volumes:
+      - /gfs:/gfs
+    command: >
+      bash -c "cube-builder run --host 0.0.0.0"
+    depends_on:
+      - mq
+
+  worker:
+    container_name: cube-builder-worker
+    image: ${IMAGE_CUBE_BUILDER_FULL}
+    restart: "always"
+    depends_on:
+      - mq
+      - cube-builder
+    volumes:
+      - /gfs:/gfs
+    environment:
+      - "RABBIT_MQ_URL=pyamqp://guest@cube-builder-rabbitmq"
+      - "SQLALCHEMY_DATABASE_URI=postgresql://postgres:bdc_collection_builder2019@bdc_collection_builder-pg:5432/bdc_scripts"
+      - "DATA_DIR=/gfs"
+    command: >
+      cube-builder worker -l INFO --concurrency 8
+    networks:
+      - cube_builder_net

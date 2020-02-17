@@ -6,10 +6,12 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
-"""Version information for Python Module for Cube Builder.
-This file is imported by ``cube_builder.__init__``,
-and parsed by ``setup.py``.
-"""
+FROM registry.dpi.inpe.br/brazildatacube/geo:0.3
 
+ADD . /app
 
-__version__ = '0.1.0'
+WORKDIR /app
+
+RUN pip3 install pip --upgrade && \
+    pip install wheel && \
+    pip install -e .[all]

@@ -25,7 +25,7 @@ class DataCubeParser(Schema):
     temporal_schema = fields.String(required=True, allow_none=False)
     bands_quicklook = fields.List(fields.String, required=True, allow_none=False)
     composite_function_list = fields.List(fields.String, required=True, allow_none=False)
-    bands = fields.Nested(DataCubeBandParser, required=True)
+    bands = fields.List(fields.String, required=True, allow_none=False)
     description = fields.String(required=True, allow_none=False)
 
 
@@ -35,3 +35,4 @@ class DataCubeProcessParser(Schema):
     tiles = fields.List(fields.String, required=True, allow_none=False)
     start_date = fields.Date()
     end_date = fields.Date()
+    bands = fields.List(fields.String, required=False)
