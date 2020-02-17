@@ -47,14 +47,7 @@ Create datacube metadata
                  "temporal_schema": "M1month",
                  "bands_quicklook": ["swir2", "nir", "red"],
                  "composite_function_list": ["MEDIAN", "STACK"],
-                 "bands": {
-                     "names": ["coastal", "blue", "green", "red", "nir", "swir1", "swir2", "evi", "ndvi", "quality"],
-                     "min": 0,
-                     "max": 10000,
-                     "fill": -9999,
-                     "scale": 0.0001,
-                     "data_type": "Int16"
-                 },
+                 "bands": ["coastal", "blue", "green", "red", "nir", "swir1", "swir2", "evi", "ndvi", "quality"],
                  "description": "Landsat8 Cubes 30m - Monthly"
              }'
 
@@ -100,14 +93,22 @@ Creating datacube Sentinel-2
                 "temporal_schema": "M1month",
                 "bands_quicklook": ["red", "blue", "green"],
                 "composite_function_list": ["MEDIAN", "STACK"],
-                "bands": {
-                    "names": ["coastal", "blue", "green", "red", "redge1", "redge2", "redge3", "nir", "bnir", "swir1", "swir2", "ndvi", "evi", "quality"],
-                    "min": 0,
-                    "max": 10000,
-                    "fill": -9999,
-                    "scale": 0.0001,
-                    "data_type": "Int16"
-                },
+                "bands": [
+                    "coastal",
+                    "blue",
+                    "green",
+                    "red",
+                    "redge1",
+                    "redge2",
+                    "redge3",
+                    "nir",
+                    "bnir",
+                    "swir1",
+                    "swir2",
+                    "ndvi",
+                    "evi",
+                    "quality"
+                ],
                 "description": "S2 10 Monthly"
             }'
 

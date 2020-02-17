@@ -60,7 +60,7 @@ class CubeBusiness:
                 bands.append(Band(
                     name=band,
                     collection_id=cube.id,
-                    min=params['bands']['min'] if band != 'quality' else 0,
+                    min=0 if band != 'quality' else 0,
                     max=10000 if band != 'quality' else 255,
                     fill=-9999 if band != 'quality' else 0,
                     scale=0.0001 if band != 'quality' else 1,
