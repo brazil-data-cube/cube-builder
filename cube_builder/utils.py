@@ -83,9 +83,11 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
     srs = kwargs.get('srs', '+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-50 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs')
 
-    merge_name = '{}-{}-{}_M_{}_{}'.format(dataset, tile_id, formatted_date, len(assets), band)
+    merge_name = '{}-{}-{}-{}'.format(warped_datacube, tile_id, formatted_date, band)
 
-    merged_file = os.path.join(Config.DATA_DIR, 'Repository/Warped/{}/{}/{}/{}.tif'.format(warped_datacube, tile_id, period, merge_name))
+    folder_name = warped_datacube.replace('_WARPED', '')
+
+    merged_file = os.path.join(Config.DATA_DIR, 'Repository/Warped/{}/{}/{}/{}.tif'.format(folder_name, tile_id, period, merge_name))
 
     transform = Affine(resx, 0, xmin, 0, -resy, ymax)
 
@@ -431,11 +433,11 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
 def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
     item_id = '{}_{}_{}'.format(datacube.id, tile_id, period)
-    quick_look_name = '{}-{}-{}'.format(dataset, tile_id, date)
+    quick_look_name = '{}-{}-{}'.format(datacube.id, tile_id, date)
     quick_look_file = os.path.join(
         Config.DATA_DIR,
         'Repository/Warped/{}/{}/{}/{}'.format(
-            datacube.id, tile_id, period, quick_look_name
+            datacube.id.replace('_WARPED', ''), tile_id, period, quick_look_name
         )
     )
 

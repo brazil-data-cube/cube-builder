@@ -64,7 +64,13 @@ Trigger datacube generation with following command:
 .. code-block:: shell
 
         # Using cube-builder command line
-        cube-builder build LC8_30_1M_MED --collections=LC8SR --tiles=089098 --start=2019-01-01 --end=2019-01-31 --bands=swir2,nir,red,evi,quality
+        cube-builder build LC8_30_1M_MED \
+            --collections=LC8SR \
+            --tiles=089098 \
+            --start=2019-01-01 \
+            --end=2019-01-31 \
+            --bands=swir2,nir,red,evi,quality # Bands are optional.
+
         # Using curl (Make sure to execute cube-builder run)
         curl --location \
              --request POST '127.0.0.1:5000/api/cubes/process' \
@@ -77,3 +83,39 @@ Trigger datacube generation with following command:
                 "end_date": "2019-01-31",
                 "bands": ["swir2", "nir", "red", "evi", "quality"]
              }'
+
+
+Creating datacube Sentinel-2
+----------------------------
+
+
+.. code-block:: shell
+
+    curl --location --request POST '127.0.0.1:5000/api/cubes/create' \
+            --header 'Content-Type: application/json' \
+            --data-raw '{
+                "datacube": "S2_10_1M",
+                "grs": "aea_250k",
+                "resolution": 10,
+                "temporal_schema": "M1month",
+                "bands_quicklook": ["red", "blue", "green"],
+                "composite_function_list": ["MEDIAN", "STACK"],
+                "bands": {
+                    "names": ["coastal", "blue", "green", "red", "redge1", "redge2", "redge3", "nir", "bnir", "swir1", "swir2", "ndvi", "evi", "quality"],
+                    "min": 0,
+                    "max": 10000,
+                    "fill": -9999,
+                    "scale": 0.0001,
+                    "data_type": "Int16"
+                },
+                "description": "S2 10 Monthly"
+            }'
+
+
+.. code-block:: shell
+
+    cube-builder build S2_10_1M_MED \
+        --collections=S2SR_SEN28 \
+        --tiles=089098 \
+        --start=2019-01-01 \
+        --end=2019-01-31

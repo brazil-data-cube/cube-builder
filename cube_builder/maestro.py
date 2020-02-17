@@ -237,6 +237,9 @@ class Maestro:
         return self.bands
 
     def prepare_merge(self):
+        # Remove this when https://github.com/brazil-data-cube/stac.py/issues/10 is fixed.
+        _ = stac_cli.catalog
+
         for tileid in self.mosaics:
             if len(self.mosaics) != 1:
                 self.params['tileid'] = tileid
@@ -255,14 +258,13 @@ class Maestro:
             for periodkey in self.mosaics[tileid]['periods']:
                 start = self.mosaics[tileid]['periods'][periodkey]['start']
                 end = self.mosaics[tileid]['periods'][periodkey]['end']
-                # activity['dirname'] = self.mosaics[tileid]['periods'][periodkey]['dirname']
 
                 # Search all images
                 self.mosaics[tileid]['periods'][periodkey]['scenes'] = self.search_images(bbox, start, end)
 
     def dispatch_celery(self):
         from celery import group, chain
-        from .tasks import blend, warp_merge, publish
+        from .tasks import blend, warp_merge
         self.prepare_merge()
 
         datacube = self.datacube.id
@@ -271,6 +273,7 @@ class Maestro:
             datacube = self.params['datacube']
 
         bands = self.datacube_bands
+
         warped_datacube = self.warped_datacube.id
 
         for tileid in self.mosaics:
@@ -348,7 +351,7 @@ class Maestro:
             scenes[band.common_name] = dict()
 
         for dataset in self.params['collections']:
-            collection_metadata = stac_cli.collection(dataset)
+            collection_metadata = stac_cli.collections[dataset]
 
             collection_bands = collection_metadata['properties']['bdc:bands']
 

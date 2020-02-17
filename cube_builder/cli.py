@@ -87,9 +87,9 @@ def worker(ctx):
 @click.option('--tiles', type=click.STRING, required=True, help='Comma delimited tiles')
 @click.option('--start', type=click.STRING, required=True, help='Start date')
 @click.option('--end', type=click.STRING, required=True, help='End date')
-@click.option('--bands', type=click.STRING, required=True, help='comma delimited bands to generate')
+@click.option('--bands', type=click.STRING, help='Comma delimited bands to generate')
 @with_appcontext
-def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str):
+def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None):
     """Build data cube through command line.
 
     Args:
@@ -108,9 +108,14 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
         collections=collections.split(','),
         start_date=start,
         end_date=end,
-        bands=bands.split(','),
         tiles=tiles.split(',')
     )
+
+    if bands:
+        data['bands'] = bands.split(',')
+
+        if 'quality' not in data['bands']:
+            raise RuntimeError('Quality band is required')
 
     parser = DataCubeProcessParser()
     parsed_data = parser.load(data)
