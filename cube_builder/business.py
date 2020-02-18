@@ -55,7 +55,7 @@ class CubeBusiness:
 
         for cube in cubes:
             # save bands
-            for band in params['bands']['names']:
+            for band in params['bands']:
                 band = band.strip()
                 bands.append(Band(
                     name=band,

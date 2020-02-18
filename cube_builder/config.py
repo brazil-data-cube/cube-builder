@@ -23,7 +23,7 @@ class Config:
     CELERYD_PREFETCH_MULTIPLIER = 1  # disable
     DEBUG = False
     TESTING = False
-    DATA_DIR = '/data'
+    DATA_DIR = os.environ.get('DATA_DIR', '/data')
     ACTIVITIES_SCHEMA = 'cube_builder'
     RABBIT_MQ_URL = os.environ.get('RABBIT_MQ_URL', 'pyamqp://guest@localhost')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
