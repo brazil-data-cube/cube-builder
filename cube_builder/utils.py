@@ -394,7 +394,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
                 item_date=start_date,
                 composite_start=start_date,
                 composite_end=end_date,
-                quicklook=quick_look_file,
+                quicklook='/{}'.format(quick_look_relpath),
                 cloud_cover=cloudratio,
                 scene_type=composite_function,
                 compressed_file=None
@@ -466,7 +466,7 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
             item_date=date,
             composite_start=date,
             composite_end=period.split('_')[-1],
-            quicklook=quick_look_file,
+            quicklook=quick_look_file.replace(Config.DATA_DIR, quick_look_file),
             cloud_cover=scenes.get('cloudratio', 0),
             scene_type='WARPED',
             compressed_file=None
