@@ -3,7 +3,7 @@ from typing import List
 import datetime
 
 # 3rdparty
-from bdc_db.models import Collection, Tile, Band, db, CollectionItem
+from bdc_db.models import Collection, CollectionTile, Tile, Band, db, CollectionItem
 from geoalchemy2 import func
 from stac import STAC
 import numpy
@@ -163,11 +163,57 @@ class Maestro:
         if bands:
             self.params['bands'] = bands
 
+    def create_tiles(self, tiles: List[str], collection: Collection):
+        """Create Collection tiles on database.
+
+        Args:
+            tiles - List of tiles in same GRS schema of collection
+            collection - Collection object
+        """
+        tiles_by_grs = db.session() \
+            .query(Tile, func.ST_AsText(func.ST_BoundingDiagonal(Tile.geom_wgs84))) \
+            .filter(
+                Tile.grs_schema_id == collection.grs_schema_id,
+                Tile.id.in_(tiles)
+            ).all()
+
+        collection_tiles = []
+        tiles = list(set(tiles))
+        tiles_infos = {}
+
+        datacube = "_".join(collection.id.split('_')[:-1])
+
+        with db.session.begin_nested():
+            for tile in tiles:
+                # verify tile exists
+                tile_info = list(filter(lambda t: t[0].id == tile, tiles_by_grs))
+                if not tile_info:
+                    raise RuntimeError('Tile ({}) not found in GRS ({})'.format(tile, cube_infos.grs_schema_id))
+
+                tiles_infos[tile] = tile_info[0]
+                for function in ['WARPED', 'STK', 'MED']:
+                    collection_tile = CollectionTile.query().filter(
+                        CollectionTile.collection_id == '{}_{}'.format(datacube, function),
+                        CollectionTile.grs_schema_id == collection.grs_schema_id,
+                        CollectionTile.tile_id == tile
+                    ).first()
+                    if not collection_tile:
+                        CollectionTile(
+                            collection_id='{}_{}'.format(datacube, function),
+                            grs_schema_id=collection.grs_schema_id,
+                            tile_id=tile
+                        ).save(commit=False)
+
+        db.session.commit()
+
     def orchestrate(self):
         self.datacube = Collection.query().filter(Collection.id == self.params['datacube']).one()
 
         temporal_schema = self.datacube.temporal_composition_schema.temporal_schema
         temporal_step = self.datacube.temporal_composition_schema.temporal_composite_t
+
+        # Create tiles
+        self.create_tiles(self.params['tiles'], self.datacube)
 
         # TODO: Check in STAC for cube item
         # datacube_stac = stac_cli.collection(self.datacube.id)

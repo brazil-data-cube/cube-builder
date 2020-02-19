@@ -379,7 +379,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
         for band in bands:
             ql_files.append(scenes[band][composite_function])
 
-        generate_quick_look(quick_look_file, ql_files)
+        quick_look_file = generate_quick_look(quick_look_file, ql_files)
 
         Asset.query().filter(Asset.collection_item_id == item_id).delete()
 
@@ -394,7 +394,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
                 item_date=start_date,
                 composite_start=start_date,
                 composite_end=end_date,
-                quicklook='/{}'.format(quick_look_relpath),
+                quicklook=quick_look_file.replace(Config.DATA_DIR, ''),
                 cloud_cover=cloudratio,
                 scene_type=composite_function,
                 compressed_file=None
@@ -451,7 +451,7 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
     for band in bands:
         ql_files.append(scenes['ARDfiles'][band])
 
-    generate_quick_look(quick_look_file, ql_files)
+    quick_look_file = generate_quick_look(quick_look_file, ql_files)
 
     Asset.query().filter(Asset.collection_item_id == item_id).delete()
 
@@ -466,7 +466,7 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
             item_date=date,
             composite_start=date,
             composite_end=period.split('_')[-1],
-            quicklook=quick_look_file.replace(Config.DATA_DIR, quick_look_file),
+            quicklook=quick_look_file.replace(Config.DATA_DIR, ''),
             cloud_cover=scenes.get('cloudratio', 0),
             scene_type='WARPED',
             compressed_file=None
