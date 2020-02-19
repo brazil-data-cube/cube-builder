@@ -353,13 +353,16 @@ def blend(activity):
 
 
 def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio):
-    item_id = '{}_{}_{}'.format(cube.id, tile_id, period)
     start_date, end_date = period.split('_')
 
     cube_bands = Band.query().filter(Band.collection_id == cube.id).all()
     raster_size_schemas = cube.raster_size_schemas
 
     for composite_function in ['MED', 'STK']:
+        item_datacube = '{}_{}'.format("_".join(cube.id.split('_')[:-1]), composite_function)
+
+        item_id = '{}_{}_{}'.format(item_datacube, tile_id, period)
+
         _datacube = build_datacube_name(datacube, composite_function)
 
         quick_look_name = '{}-{}-{}'.format(_datacube, tile_id, period)
@@ -385,7 +388,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
         with db.session.begin_nested():
             CollectionItem(
                 id=item_id,
-                collection_id=cube.id,
+                collection_id=item_datacube,
                 grs_schema_id=cube.grs_schema_id,
                 tile_id=tile_id,
                 item_date=start_date,
@@ -411,7 +414,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
                 asset_relative_path = scenes[band][composite_function].replace(Config.DATA_DIR, '')
 
                 Asset(
-                    collection_id=cube.id,
+                    collection_id=item_datacube,
                     band_id=band_model.id,
                     grs_schema_id=cube.grs_schema_id,
                     tile_id=tile_id,
