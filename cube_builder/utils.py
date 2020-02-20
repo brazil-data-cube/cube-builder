@@ -83,7 +83,7 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
     srs = kwargs.get('srs', '+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-50 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs')
 
-    merge_name = '{}-{}-{}-{}'.format(warped_datacube, tile_id, formatted_date, band)
+    merge_name = '{}_{}_{}_{}'.format(warped_datacube, tile_id, formatted_date, band)
 
     folder_name = warped_datacube.replace('_WARPED', '')
 
@@ -256,7 +256,7 @@ def blend(activity):
     datacube = activity.get('datacube')
     period = activity.get('period')
     tile_id = activity.get('tile_id')
-    output_name = '{}-{}-{}-{}'.format(datacube, tile_id, period, band)
+    output_name = '{}_{}_{}_{}'.format(datacube, tile_id, period, band)
 
     #
     # MEDIAN will be generated in local disk
@@ -365,7 +365,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
         _datacube = build_datacube_name(datacube, composite_function)
 
-        quick_look_name = '{}-{}-{}'.format(_datacube, tile_id, period)
+        quick_look_name = '{}_{}_{}'.format(_datacube, tile_id, period)
 
         quick_look_relpath = 'Repository/Mosaic/{}/{}/{}/{}'.format(
             _datacube, tile_id, period, quick_look_name
@@ -436,7 +436,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
 def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
     item_id = '{}_{}_{}'.format(datacube.id, tile_id, period)
-    quick_look_name = '{}-{}-{}'.format(datacube.id, tile_id, date)
+    quick_look_name = '{}_{}_{}'.format(datacube.id, tile_id, date)
     quick_look_file = os.path.join(
         Config.DATA_DIR,
         'Repository/Warped/{}/{}/{}/{}'.format(

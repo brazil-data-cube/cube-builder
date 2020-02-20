@@ -151,7 +151,7 @@ class Maestro:
     tiles = []
     mosaics = dict()
 
-    def __init__(self, datacube: str, collections: List[str], tiles: List[str], start_date: str, end_date: str, bands: List[str]=None):
+    def __init__(self, datacube: str, collections: List[str], tiles: List[str], start_date: str, end_date: str, **properties):
         self.params = dict(
             datacube=datacube,
             collections=collections,
@@ -160,8 +160,13 @@ class Maestro:
             end_date=end_date
         )
 
+        bands = properties.get('bands')
+
         if bands:
             self.params['bands'] = bands
+
+        force = properties.get('force', False)
+        self.params['force'] = force
 
     def create_tiles(self, tiles: List[str], collection: Collection):
         """Create Collection tiles on database.
@@ -188,7 +193,7 @@ class Maestro:
                 # verify tile exists
                 tile_info = list(filter(lambda t: t[0].id == tile, tiles_by_grs))
                 if not tile_info:
-                    raise RuntimeError('Tile ({}) not found in GRS ({})'.format(tile, cube_infos.grs_schema_id))
+                    raise RuntimeError('Tile ({}) not found in GRS ({})'.format(tile, collection.grs_schema_id))
 
                 tiles_infos[tile] = tile_info[0]
                 for function in ['WARPED', 'STK', 'MED']:
@@ -369,7 +374,7 @@ class Maestro:
                             )
                             activity_obj.save()
 
-                            task = warp_merge.s(ActivityForm().dump(activity_obj))
+                            task = warp_merge.s(ActivityForm().dump(activity_obj), self.params['force'])
                             merges_tasks.append(task)
 
                 # Persist activities

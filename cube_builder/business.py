@@ -78,10 +78,10 @@ class CubeBusiness:
         return cubes_serealized, 201
 
     @classmethod
-    def maestro(cls, datacube, collections, tiles, start_date, end_date, bands=None):
+    def maestro(cls, datacube, collections, tiles, start_date, end_date, **properties):
         from .maestro import Maestro
 
-        maestro = Maestro(datacube, collections, tiles, start_date, end_date, bands)
+        maestro = Maestro(datacube, collections, tiles, start_date, end_date, **properties)
 
         maestro.orchestrate()
 
