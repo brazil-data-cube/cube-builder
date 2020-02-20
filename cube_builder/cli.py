@@ -88,8 +88,9 @@ def worker(ctx):
 @click.option('--start', type=click.STRING, required=True, help='Start date')
 @click.option('--end', type=click.STRING, required=True, help='End date')
 @click.option('--bands', type=click.STRING, help='Comma delimited bands to generate')
+@click.option('--force', '-f', is_flag=True, help='Build data cube without cache')
 @with_appcontext
-def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None):
+def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None, force=False):
     """Build data cube through command line.
 
     Args:
@@ -108,7 +109,8 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
         collections=collections.split(','),
         start_date=start,
         end_date=end,
-        tiles=tiles.split(',')
+        tiles=tiles.split(','),
+        force=force
     )
 
     if bands:

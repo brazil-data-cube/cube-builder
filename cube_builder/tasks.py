@@ -20,13 +20,13 @@ def capture_traceback(exception=None):
 
 
 @celery_app.task()
-def warp_merge(activity):
+def warp_merge(activity, force=False):
     logging.warning('Executing merge {}'.format(activity.get('warped_collection_id')))
 
     record: Activity = Activity.query().filter(Activity.id == activity['id']).one()
 
     # TODO: Validate in disk
-    if record.status != 'SUCCESS':
+    if force or record.status != 'SUCCESS':
         record.status = 'STARTED'
         record.save()
 

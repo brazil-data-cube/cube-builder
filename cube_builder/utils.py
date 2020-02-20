@@ -83,7 +83,7 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
     srs = kwargs.get('srs', '+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-50 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs')
 
-    merge_name = '{}-{}-{}-{}'.format(warped_datacube, tile_id, formatted_date, band)
+    merge_name = '{}_{}_{}_{}'.format(warped_datacube, tile_id, formatted_date, band)
 
     folder_name = warped_datacube.replace('_WARPED', '')
 
@@ -256,7 +256,7 @@ def blend(activity):
     datacube = activity.get('datacube')
     period = activity.get('period')
     tile_id = activity.get('tile_id')
-    output_name = '{}-{}-{}-{}'.format(datacube, tile_id, period, band)
+    output_name = '{}_{}_{}_{}'.format(datacube, tile_id, period, band)
 
     #
     # MEDIAN will be generated in local disk
@@ -353,16 +353,19 @@ def blend(activity):
 
 
 def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio):
-    item_id = '{}_{}_{}'.format(cube.id, tile_id, period)
     start_date, end_date = period.split('_')
 
     cube_bands = Band.query().filter(Band.collection_id == cube.id).all()
     raster_size_schemas = cube.raster_size_schemas
 
     for composite_function in ['MED', 'STK']:
+        item_datacube = '{}_{}'.format("_".join(cube.id.split('_')[:-1]), composite_function)
+
+        item_id = '{}_{}_{}'.format(item_datacube, tile_id, period)
+
         _datacube = build_datacube_name(datacube, composite_function)
 
-        quick_look_name = '{}-{}-{}'.format(_datacube, tile_id, period)
+        quick_look_name = '{}_{}_{}'.format(_datacube, tile_id, period)
 
         quick_look_relpath = 'Repository/Mosaic/{}/{}/{}/{}'.format(
             _datacube, tile_id, period, quick_look_name
@@ -376,7 +379,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
         for band in bands:
             ql_files.append(scenes[band][composite_function])
 
-        generate_quick_look(quick_look_file, ql_files)
+        quick_look_file = generate_quick_look(quick_look_file, ql_files)
 
         Asset.query().filter(Asset.collection_item_id == item_id).delete()
 
@@ -385,13 +388,13 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
         with db.session.begin_nested():
             CollectionItem(
                 id=item_id,
-                collection_id=cube.id,
+                collection_id=item_datacube,
                 grs_schema_id=cube.grs_schema_id,
                 tile_id=tile_id,
                 item_date=start_date,
                 composite_start=start_date,
                 composite_end=end_date,
-                quicklook=quick_look_file,
+                quicklook=quick_look_file.replace(Config.DATA_DIR, ''),
                 cloud_cover=cloudratio,
                 scene_type=composite_function,
                 compressed_file=None
@@ -411,7 +414,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
                 asset_relative_path = scenes[band][composite_function].replace(Config.DATA_DIR, '')
 
                 Asset(
-                    collection_id=cube.id,
+                    collection_id=item_datacube,
                     band_id=band_model.id,
                     grs_schema_id=cube.grs_schema_id,
                     tile_id=tile_id,
@@ -433,7 +436,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
 def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
     item_id = '{}_{}_{}'.format(datacube.id, tile_id, period)
-    quick_look_name = '{}-{}-{}'.format(datacube.id, tile_id, date)
+    quick_look_name = '{}_{}_{}'.format(datacube.id, tile_id, date)
     quick_look_file = os.path.join(
         Config.DATA_DIR,
         'Repository/Warped/{}/{}/{}/{}'.format(
@@ -448,7 +451,7 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
     for band in bands:
         ql_files.append(scenes['ARDfiles'][band])
 
-    generate_quick_look(quick_look_file, ql_files)
+    quick_look_file = generate_quick_look(quick_look_file, ql_files)
 
     Asset.query().filter(Asset.collection_item_id == item_id).delete()
 
@@ -463,7 +466,7 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
             item_date=date,
             composite_start=date,
             composite_end=period.split('_')[-1],
-            quicklook=quick_look_file,
+            quicklook=quick_look_file.replace(Config.DATA_DIR, ''),
             cloud_cover=scenes.get('cloudratio', 0),
             scene_type='WARPED',
             compressed_file=None
