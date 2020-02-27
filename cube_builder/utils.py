@@ -79,11 +79,9 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
     merge_date = kwargs.get('date')
     resx, resy = kwargs.get('resx'), kwargs.get('resy')
 
-    formatted_date = datetime.strptime(merge_date, '%Y-%m-%d').strftime('%Y%m%d')
-
     srs = kwargs.get('srs', '+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-50 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs')
 
-    merge_name = '{}_{}_{}_{}'.format(warped_datacube, tile_id, formatted_date, band)
+    merge_name = '{}_{}_{}_{}'.format(warped_datacube, tile_id, merge_date, band)
 
     folder_name = warped_datacube.replace('_WARPED', '')
 
@@ -435,7 +433,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
 
 def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
-    item_id = '{}_{}_{}'.format(datacube.id, tile_id, period)
+    item_id = '{}_{}_{}'.format(datacube.id, tile_id, date)
     quick_look_name = '{}_{}_{}'.format(datacube.id, tile_id, date)
     quick_look_file = os.path.join(
         Config.DATA_DIR,
