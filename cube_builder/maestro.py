@@ -1,21 +1,30 @@
+#
+# This file is part of Python Module for Cube Builder.
+# Copyright (C) 2019-2020 INPE.
+#
+# Cube Builder free software; you can redistribute it and/or modify it
+# under the terms of the MIT License; see LICENSE file for more details.
+#
+
+"""Define Cube Builder forms used to validate both data input and data serialization."""
+
 # Python
 from typing import List
 import datetime
-
 # 3rdparty
-from bdc_db.models import Collection, CollectionTile, Tile, Band, db, CollectionItem
+from bdc_db.models import Collection, CollectionTile, Tile, Band, CollectionItem, db
 from geoalchemy2 import func
 from stac import STAC
 import numpy
-
 # BDC Scripts
-from cube_builder.forms import ActivityForm
-from cube_builder.utils import get_or_create_activity
 from .config import Config
 from .models.activity import Activity
+from .forms import ActivityForm
+from .utils import get_or_create_activity
 
 
 def days_in_month(date):
+    """Retrieve days in month from date."""
     year = int(date.split('-')[0])
     month = int(date.split('-')[1])
     nday = day = int(date.split('-')[2])
@@ -31,6 +40,10 @@ def days_in_month(date):
 
 
 def decode_periods(temporal_schema, start_date, end_date, time_step):
+    """Retrieve datacube temporal resolution by periods.
+
+    TODO: Describe how it works.
+    """
     print('decode_periods - {} {} {} {}'.format(temporal_schema,start_date, end_date, time_step))
     requested_periods = {}
     if start_date is None:
@@ -146,12 +159,15 @@ stac_cli = STAC(Config.STAC_URL)
 
 
 class Maestro:
+    """Define class for handling data cube generation."""
+
     datacube = None
     bands = []
     tiles = []
     mosaics = dict()
 
     def __init__(self, datacube: str, collections: List[str], tiles: List[str], start_date: str, end_date: str, **properties):
+        """Build Maestro interface."""
         self.params = dict(
             datacube=datacube,
             collections=collections,
@@ -212,6 +228,7 @@ class Maestro:
         db.session.commit()
 
     def orchestrate(self):
+        """Orchestrate datacube defintion and prepare temporal resolutions."""
         self.datacube = Collection.query().filter(Collection.id == self.params['datacube']).one()
 
         temporal_schema = self.datacube.temporal_composition_schema.temporal_schema
@@ -277,17 +294,20 @@ class Maestro:
 
     @property
     def warped_datacube(self):
+        """Retrieve cached datacube defintion."""
         datacube_warped = '{}WARPED'.format(self.datacube.id[:-3])
 
         return Collection.query().filter(Collection.id == datacube_warped).first()
 
     @property
     def datacube_bands(self):
+        """Retrieve data cube bands based int user input."""
         if self.params.get('bands'):
             return list(filter(lambda band: band.common_name in self.params['bands'], self.bands))
         return self.bands
 
     def prepare_merge(self):
+        """Search on STAC for available collection images."""
         # Remove this when https://github.com/brazil-data-cube/stac.py/issues/10 is fixed.
         _ = stac_cli.catalog
 
@@ -314,6 +334,10 @@ class Maestro:
                 self.mosaics[tileid]['periods'][periodkey]['scenes'] = self.search_images(bbox, start, end)
 
     def dispatch_celery(self):
+        """Dispatch datacube generation on celery workers.
+
+        Make sure celery is running. Check RUNNING.rst for further details.
+        """
         from celery import group, chain
         from .tasks import blend, warp_merge
         self.prepare_merge()
@@ -389,6 +413,7 @@ class Maestro:
         return self.mosaics
 
     def search_images(self, bbox: str, start: str, end: str):
+        """Search and prepare images on STAC."""
         scenes = {}
         options = dict(
             bbox=bbox,

@@ -16,11 +16,27 @@ from .utils import merge as merge_processing, \
 
 
 def capture_traceback(exception=None):
+    """Retrieve stacktrace as string."""
     return traceback.format_exc() or str(exception)
 
 
 @celery_app.task()
 def warp_merge(activity, force=False):
+    """Execute datacube merge task.
+
+    This task consists in the following steps:
+
+    **1.** Prepare a raster using dimensions of datacube GRS schema.
+    **2.** Open collection dataset with RasterIO and reproject to datacube GRS Schema.
+    **3.** Fill the respective pathrow into raster
+
+    Args:
+        activity - Datacube Activity Model
+        force - Flag to build datacube without cache.
+
+    Returns:
+        Validated activity
+    """
     logging.warning('Executing merge {}'.format(activity.get('warped_collection_id')))
 
     record: Activity = Activity.query().filter(Activity.id == activity['id']).one()
@@ -61,6 +77,12 @@ def warp_merge(activity, force=False):
 
 @celery_app.task()
 def blend(merges):
+    """Receive merges and prepare task blend.
+
+    This task aims to prepare celery task definition for blend.
+    A blend requires both data set quality band and others bands. In this way, we must group
+    these values by temporal resolution and then schedule blend tasks.
+    """
     activities = dict()
 
     for _merge in merges:
@@ -99,6 +121,16 @@ def blend(merges):
 
 @celery_app.task()
 def _blend(activity):
+    """Execute datacube blend task.
+
+    TODO: Describe how it works.
+
+    Args:
+        activity - Datacube Activity Model
+
+    Returns:
+        Validated activity
+    """
     logging.warning('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
 
     return blend_processing(activity)
@@ -106,6 +138,12 @@ def _blend(activity):
 
 @celery_app.task()
 def publish(blends):
+    """Execute publish task and catalog datacube result.
+
+    Args:
+        activity - Datacube Activity Model
+    """
+
     logging.warning('Executing publish')
 
     cube = Collection.query().filter(Collection.id == blends[0]['datacube']).first()

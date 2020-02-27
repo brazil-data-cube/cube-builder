@@ -1,21 +1,27 @@
 #
 # This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019 INPE.
+# Copyright (C) 2019-2020 INPE.
 #
 # Cube Builder free software; you can redistribute it and/or modify it
 # under the terms of the MIT License; see LICENSE file for more details.
 #
+
+"""Define Cube Builder business interface."""
 
 # 3rdparty
 from bdc_db.models.base_sql import BaseModel
 from bdc_db.models import Band, Collection
 
 from .forms import CollectionForm
+from .maestro import Maestro
 
 
 class CubeBusiness:
+    """Define Cube Builder interface for datacube creation."""
+
     @classmethod
     def create(cls, params: dict):
+        """Create and persist datacube on database."""
         params['composite_function_list'] = ['WARPED', 'STK', 'MED']
 
         # generate cubes metadata
@@ -79,8 +85,16 @@ class CubeBusiness:
 
     @classmethod
     def maestro(cls, datacube, collections, tiles, start_date, end_date, **properties):
-        from .maestro import Maestro
+        """Search and Dispatch datacube generation on cluster.
 
+        Args:
+            datacube - Data cube name.
+            collections - List of collections used to generate datacube.
+            tiles - List of tiles to generate.
+            start_date - Start period
+            end_date - End period
+            **properties - Additional properties used on datacube generation, such bands and cache.
+        """
         maestro = Maestro(datacube, collections, tiles, start_date, end_date, **properties)
 
         maestro.orchestrate()
