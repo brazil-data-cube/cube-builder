@@ -14,8 +14,25 @@ Cube Builder
         :target: https://github.com//brazil-data-cube/cube-builder/blob/master/LICENSE
         :alt: Software License
 
+.. image:: https://readthedocs.org/projects/cube-builder/badge/?version=latest
+        :target: https://bdc-db.readthedocs.io/en/latest/
+        :alt: Documentation Status
 
-TODO
+.. image:: https://img.shields.io/badge/lifecycle-experimental-orange.svg
+        :target: https://www.tidyverse.org/lifecycle/#experimental
+        :alt: Software Life Cycle
+
+.. image:: https://img.shields.io/github/tag/brazil-data-cube/cube-builder.svg
+        :target: https://github.com/brazil-data-cube/cube-builder/releases
+        :alt: Release
+
+.. image:: https://badges.gitter.im/brazil-data-cube/community.png
+        :target: https://gitter.im/brazil-data-cube/community#
+        :alt: Join the chat
+
+
+
+Cube Builder is an application to generate data cubes on local cluster using Python and Celery.
 
 
 Installation
