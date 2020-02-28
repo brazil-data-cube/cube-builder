@@ -8,15 +8,14 @@
 
 """Create a python click context and inject it to the global flask commands."""
 
-from bdc_db.models import db
+import click
 from bdc_db.cli import create_db as bdc_create_db
+from bdc_db.models import db
 from flask.cli import with_appcontext
 from flask_migrate.cli import db as flask_migrate_db
-import click
 
 from . import create_app
 from .config import Config
-
 
 # Create cube-builder cli from bdc-db
 cli = create_cli(create_app=create_app)
@@ -26,7 +25,6 @@ cli = create_cli(create_app=create_app)
 @with_appcontext
 def create(ctx: click.Context):
     """Create database. Make sure the variable SQLALCHEMY_DATABASE_URI is set."""
-
     ctx.forward(bdc_create_db)
 
     click.secho('Creating schema {}...'.format(Config.ACTIVITIES_SCHEMA), fg='green')

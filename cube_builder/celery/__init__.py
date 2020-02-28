@@ -6,6 +6,8 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
+"""Define Cube Builder celery module initialization."""
+
 # 3rdparty
 from celery import Celery
 from flask import Flask
@@ -22,9 +24,8 @@ CELERY_TASKS = [
 celery_app = None
 
 
-def create_celery_app(flask_app: Flask):
-    """
-    Creates a Celery object and tir the celery config to the Flask app config
+def create_celery_app(flask_app: Flask) -> Celery:
+    """Create a Celery object and tir the celery config to the Flask app config.
 
     Wrap all the celery tasks in the context of Flask application
 
@@ -34,7 +35,6 @@ def create_celery_app(flask_app: Flask):
     Returns:
         Celery celery app
     """
-
     celery = Celery(
         flask_app.import_name,
         broker=Config.RABBIT_MQ_URL
@@ -56,9 +56,12 @@ def create_celery_app(flask_app: Flask):
     TaskBase = celery.Task
 
     class ContextTask(TaskBase):
+        """Define celery base tasks which supports Flask SQLAlchemy."""
+
         abstract = True
 
         def __call__(self, *args, **kwargs):
+            """Prepare SQLAlchemy inside flask app."""
             if not celery.conf.CELERY_ALWAYS_EAGER:
                 if flask._app_ctx_stack.top is not None:
                     return TaskBase.__call__(self, *args, **kwargs)
@@ -73,13 +76,12 @@ def create_celery_app(flask_app: Flask):
                 logging.warning('Not Call context Task')
 
         def after_return(self, status, retval, task_id, args, kwargs, einfo):
-            """Called after task execution.
+            """Define teardown task execution.
 
             Whenever task finishes, it must teardown our db session, since the Flask SQLAlchemy
             creates scoped session at startup.
             FMI: https://gist.github.com/twolfson/a1b329e9353f9b575131
             """
-
             if flask_app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN']:
                 if not isinstance(retval, Exception):
                     db.session.commit()

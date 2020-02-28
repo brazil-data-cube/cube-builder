@@ -9,17 +9,20 @@
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
 # Python
-from typing import List
 import datetime
+from typing import List
+
 # 3rdparty
-from bdc_db.models import Collection, CollectionTile, Tile, Band, CollectionItem, db
+import numpy
+from bdc_db.models import (Band, Collection, CollectionItem, CollectionTile,
+                           Tile, db)
 from geoalchemy2 import func
 from stac import STAC
-import numpy
-# BDC Scripts
+
+# Cube Builder
 from .config import Config
-from .models.activity import Activity
 from .forms import ActivityForm
+from .models.activity import Activity
 from .utils import get_or_create_activity
 
 

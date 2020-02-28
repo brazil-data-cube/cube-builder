@@ -6,9 +6,7 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
-"""
-Defines a structure component to run celery worker
-"""
+"""Define a structure component to run celery worker."""
 
 # Python Native
 import logging

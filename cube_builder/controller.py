@@ -6,24 +6,31 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
+"""Define Brazil Data Cube Cube Builder routes."""
+
 # 3rdparty
+from bdc_core.decorators.auth import require_oauth_scopes
 from flask import request
 from flask_restplus import Namespace, Resource
 from werkzeug.exceptions import BadRequest
-from bdc_core.decorators.auth import require_oauth_scopes
 
 # BDC Scripts
 from .business import CubeBusiness
 from .parsers import DataCubeParser, DataCubeProcessParser
-
 
 api = Namespace('cubes', description='cubes')
 
 
 @api.route('/create')
 class CubeCreateController(Resource):
-    # @require_oauth_scopes(scope="cube_builder:cubes:POST")
+    """Define route for datacube creation."""
+
+    @require_oauth_scopes(scope="cube_builder:cubes:POST")
     def post(self):
+        """Define POST handler for datacube creation.
+
+        Expects a JSON that matches with ``DataCubeParser``.
+        """
         form = DataCubeParser()
 
         args = request.get_json()
@@ -42,8 +49,14 @@ class CubeCreateController(Resource):
 
 @api.route('/process')
 class CubeProcessController(Resource):
-    # @require_oauth_scopes(scope="cube_builder:cubes:POST")
+    """Define route for datacube execution."""
+
+    @require_oauth_scopes(scope="cube_builder:cubes:POST")
     def post(self):
+        """Define POST handler for datacube execution.
+
+        Expects a JSON that matches with ``DataCubeProcessParser``.
+        """
         args = request.get_json()
 
         form = DataCubeProcessParser()

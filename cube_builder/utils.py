@@ -1,23 +1,34 @@
+#
+# This file is part of Python Module for Cube Builder.
+# Copyright (C) 2019-2020 INPE.
+#
+# Cube Builder free software; you can redistribute it and/or modify it
+# under the terms of the MIT License; see LICENSE file for more details.
+#
+
+"""Define celery tasks utilities for datacube generation."""
+
 # Python Native
-from datetime import datetime
 import logging
 import os
+from datetime import datetime
+
 # 3rdparty
-from numpngw import write_png
-from rasterio import Affine, MemoryFile
-from rasterio.warp import reproject, Resampling
 import numpy
 import rasterio
-# BDC Scripts
 from bdc_db.models import Asset, Band, CollectionItem, db
+from numpngw import write_png
+from rasterio import Affine, MemoryFile
+from rasterio.warp import Resampling, reproject
+
+# BDC Scripts
 from .config import Config
 from .models import Activity
 
 
 def get_or_create_model(model_class, defaults=None, **restrictions):
-    """
-    Utility method for looking up an object with the given restrictions, creating
-    one if necessary.
+    """Define a utility method for looking up an object with the given restrictions, creating one if necessary.
+
     Args:
         model_class (BaseModel) - Base Model of Brazil Data Cube DB
         defaults (dict) - Values to fill out model instance
@@ -25,7 +36,6 @@ def get_or_create_model(model_class, defaults=None, **restrictions):
     Returns:
         BaseModel Retrieves model instance
     """
-
     instance = db.session.query(model_class).filter_by(**restrictions).first()
 
     if instance:
@@ -42,6 +52,7 @@ def get_or_create_model(model_class, defaults=None, **restrictions):
 
 
 def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_type: str, band: str, period: str, activity_date: str, **parameters):
+    """Define a utility method for create activity."""
     defaults = dict(
         band=band,
         collection_id=cube,
@@ -66,10 +77,24 @@ def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_typ
 
 
 def build_datacube_name(datacube, func):
+    """Prepare data cube name based on temporal function."""
     return '{}{}'.format(datacube[:-3], func)
 
 
 def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
+    """Apply datacube merge scenes.
+
+    TODO: Describe how it works.
+
+    Args:
+        warped_datacube - Warped datacube name
+        tile_id - Tile Id of merge
+        assets - List of collections assets during period
+        cols - Number of cols for Raster
+        rows - Number of rows for Raster
+        period - Datacube merge period.
+        **kwargs - Extra properties
+    """
     datacube = kwargs['datacube']
     nodata = kwargs.get('nodata', -9999)
     xmin = kwargs.get('xmin')
@@ -194,6 +219,10 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
 
 def blend(activity):
+    """Apply blend and generate raster from activity.
+
+    Currently, it generates STACK and MEDIAN
+    """
     # Assume that it contains a band and quality band
     numscenes = len(activity['scenes'])
 
@@ -351,6 +380,7 @@ def blend(activity):
 
 
 def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio):
+    """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
 
     cube_bands = Band.query().filter(Band.collection_id == cube.id).all()
@@ -433,6 +463,10 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
 
 def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
+    """Generate quicklook and catalog warped datacube on database.
+
+    TODO: Review it with publish_datacube
+    """
     item_id = '{}_{}_{}'.format(datacube.id, tile_id, date)
     quick_look_name = '{}_{}_{}'.format(datacube.id, tile_id, date)
     quick_look_file = os.path.join(
@@ -502,6 +536,7 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
 
 
 def generate_quick_look(file_path, qlfiles):
+    """Generate quicklook on disk."""
     with rasterio.open(qlfiles[0]) as src:
         profile = src.profile
 
@@ -528,6 +563,10 @@ def generate_quick_look(file_path, qlfiles):
 
 
 def getMask(raster, dataset):
+    """Retrieve dataset mask, applying filter according collection.
+
+    TODO: Implement with plugin on entry_points
+    """
     from skimage import morphology
     # Output Cloud Mask codes
     # 0 - fill

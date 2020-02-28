@@ -7,9 +7,10 @@
 #
 
 """Version information for Python Module for Cube Builder.
+
 This file is imported by ``cube_builder.__init__``,
 and parsed by ``setup.py``.
 """
 
 
-__version__ = '0.1.0'
+__version__ = '0.2.0'

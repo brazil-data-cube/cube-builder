@@ -10,19 +10,18 @@
 
 from bdc_db.ext import BDCDatabase
 from flask import Flask
-from cube_builder import config
-from cube_builder import celery
+
+from . import celery, config
 
 
 def create_app(config_name='DevelopmentConfig'):
-    """
-    Creates Brazil Data Cube application from config object
+    """Create Brazil Data Cube application from config object.
+
     Args:
         config_name (string) Config instance name
     Returns:
         Flask Application with config instance scope
     """
-
     app = Flask(__name__)
     conf = config.get_settings(config_name)
     app.config.from_object(conf)

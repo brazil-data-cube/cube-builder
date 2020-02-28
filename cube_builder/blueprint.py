@@ -10,8 +10,8 @@
 
 from flask import Blueprint
 from flask_restplus import Api
-from .controller import api as cube_ns
 
+from .controller import api as cube_ns
 
 bp = Blueprint('cubes', __name__, url_prefix='/api')
 

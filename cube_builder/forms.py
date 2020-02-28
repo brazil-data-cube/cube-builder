@@ -8,10 +8,10 @@
 
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
-from bdc_db.models import db, Collection
+from bdc_db.models import Collection, db
 from marshmallow_sqlalchemy.schema import ModelSchema
 
-from cube_builder.models import Activity
+from .models import Activity
 
 
 class CollectionForm(ModelSchema):

@@ -9,8 +9,8 @@
 """Define Cube Builder business interface."""
 
 # 3rdparty
-from bdc_db.models.base_sql import BaseModel
 from bdc_db.models import Band, Collection
+from bdc_db.models.base_sql import BaseModel
 
 from .forms import CollectionForm
 from .maestro import Maestro

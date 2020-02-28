@@ -1,18 +1,29 @@
+#
+# This file is part of Python Module for Cube Builder.
+# Copyright (C) 2019-2020 INPE.
+#
+# Cube Builder free software; you can redistribute it and/or modify it
+# under the terms of the MIT License; see LICENSE file for more details.
+#
+
+"""Define celery tasks for Cube Builder."""
+
 # Python Native
-from copy import deepcopy
 import logging
 import traceback
-# 3rdparty
-from celery import chain, group
-# BDC Scripts
-from bdc_db.models import Collection
+from copy import deepcopy
 
-from cube_builder.models import Activity
-from cube_builder.utils import get_or_create_activity
+# 3rdparty
+from bdc_db.models import Collection
+from celery import chain, group
+
+# Cube Builder
 from .celery import celery_app
-from .utils import merge as merge_processing, \
-                   blend as blend_processing, \
-                   publish_datacube, publish_merge
+from .models import Activity
+from .utils import blend as blend_processing
+from .utils import get_or_create_activity
+from .utils import merge as merge_processing
+from .utils import publish_datacube, publish_merge
 
 
 def capture_traceback(exception=None):
@@ -143,7 +154,6 @@ def publish(blends):
     Args:
         activity - Datacube Activity Model
     """
-
     logging.warning('Executing publish')
 
     cube = Collection.query().filter(Collection.id == blends[0]['datacube']).first()
