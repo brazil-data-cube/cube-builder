@@ -1,3 +1,11 @@
+#
+# This file is part of Python Module for Cube Builder.
+# Copyright (C) 2019-2020 INPE.
+#
+# Cube Builder free software; you can redistribute it and/or modify it
+# under the terms of the MIT License; see LICENSE file for more details.
+#
+
 version: '3.1'
 
 networks:
@@ -22,12 +30,15 @@ services:
       context: .
       dockerfile: ./docker/Dockerfile
     container_name: cube-builder-api
-    image: ${IMAGE_CUBE_BUILDER_FULL}
+    image: registry.dpi.inpe.br/brazildatacube/cube-builder:latest
     restart: "always"
     environment:
       - "RABBIT_MQ_URL=pyamqp://guest@cube-builder-rabbitmq"
       - "SQLALCHEMY_DATABASE_URI=postgresql://postgres:bdc_collection_builder2019@bdc_collection_builder-pg:5432/bdc_scripts"
       - "DATA_DIR=/gfs"
+      - "LC_ALL=C.UTF-8"
+      - "LANG=C.UTF-8"
+
     networks:
       - cube_builder_net
     ports:
@@ -41,7 +52,7 @@ services:
 
   worker:
     container_name: cube-builder-worker
-    image: ${IMAGE_CUBE_BUILDER_FULL}
+    image: registry.dpi.inpe.br/brazildatacube/cube-builder:latest
     restart: "always"
     depends_on:
       - mq
@@ -52,6 +63,8 @@ services:
       - "RABBIT_MQ_URL=pyamqp://guest@cube-builder-rabbitmq"
       - "SQLALCHEMY_DATABASE_URI=postgresql://postgres:bdc_collection_builder2019@bdc_collection_builder-pg:5432/bdc_scripts"
       - "DATA_DIR=/gfs"
+      - "LC_ALL=C.UTF-8"
+      - "LANG=C.UTF-8"
     command: >
       cube-builder worker -l INFO --concurrency 8
     networks:

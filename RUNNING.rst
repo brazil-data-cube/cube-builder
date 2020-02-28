@@ -9,11 +9,16 @@
 Prepare and initialize database
 -------------------------------
 
+.. note::
+
+    The ``cube-builder`` uses `bdc-db <https://github.com/brazil-data-cube/bdc-db/>`_ as database definition to store data cube metadata.
+    Make sure you have a prepared database on PostgreSQL. You can follow steps `here <https://github.com/brazil-data-cube/bdc-db/blob/master/RUNNING.rst>`_
+
+
 Edit file **cube_builder/config.py** the following variables:
 
 1. **SQLALCHEMY_DATABASE_URI** URI Connection to database
-2. **DATA_DIR** Path prefix to remove from asset and store on database
-3. **ACTIVITIES_SCHEMA** Schema of datacube activities. Default is **cube_builder**
+2. **DATA_DIR** Path to store datacubes
 
 .. code-block:: shell
 
@@ -21,14 +26,28 @@ Edit file **cube_builder/config.py** the following variables:
         cube-builder db upgrade # Up migrations
 
 
-Running http server
--------------------
+Running http server and worker
+------------------------------
 
 Once everything configured, run local server:
 
 .. code-block:: shell
 
         cube-builder run
+
+
+After that, run local celery worker:
+
+.. code-block:: shell
+
+        cube-builder worker -l INFO --concurrency 8
+
+
+.. note::
+
+    The command line ``cube-builder worker`` is an auxiliary tool that wraps celery command line using ``cube_builder`` as context.
+    In this way, all ``celery worker`` parameters currently supported.
+
 
 
 Creating datacube Landsat8
@@ -89,6 +108,14 @@ Creating datacube Sentinel-2
 
 .. code-block:: shell
 
+    # Using cube-builder command line
+    cube-builder build S2_10_1M_MED \
+        --collections=S2SR_SEN28 \
+        --tiles=089098 \
+        --start=2019-01-01 \
+        --end=2019-01-31
+
+    # Using curl (Make sure to execute cube-builder run)
     curl --location --request POST '127.0.0.1:5000/api/cubes/create' \
             --header 'Content-Type: application/json' \
             --data-raw '{
@@ -96,7 +123,7 @@ Creating datacube Sentinel-2
                 "grs": "aea_250k",
                 "resolution": 10,
                 "temporal_schema": "M1month",
-                "bands_quicklook": ["red", "blue", "green"],
+                "bands_quicklook": ["swir2", "nir", "red"],
                 "composite_function_list": ["MEDIAN", "STACK"],
                 "bands": [
                     "coastal",
@@ -116,12 +143,3 @@ Creating datacube Sentinel-2
                 ],
                 "description": "S2 10 Monthly"
             }'
-
-
-.. code-block:: shell
-
-    cube-builder build S2_10_1M_MED \
-        --collections=S2SR_SEN28 \
-        --tiles=089098 \
-        --start=2019-01-01 \
-        --end=2019-01-31
