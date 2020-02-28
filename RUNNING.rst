@@ -61,8 +61,7 @@ Trigger datacube generation with following command:
             --collections=LC8SR \
             --tiles=089098 \
             --start=2019-01-01 \
-            --end=2019-01-31 \
-            --bands=swir2,nir,red,evi,quality # Bands are optional.
+            --end=2019-01-31
 
         # Using curl (Make sure to execute cube-builder run)
         curl --location \
@@ -76,6 +75,12 @@ Trigger datacube generation with following command:
                 "end_date": "2019-01-31",
                 "bands": ["swir2", "nir", "red", "evi", "quality"]
              }'
+
+
+.. note::
+
+    The command line ``cube-builder build`` has few optional parameters such
+    ``bands``, which defines bands to generate data cube.
 
 
 Creating datacube Sentinel-2

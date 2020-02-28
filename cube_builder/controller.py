@@ -9,7 +9,6 @@
 """Define Brazil Data Cube Cube Builder routes."""
 
 # 3rdparty
-from bdc_core.decorators.auth import require_oauth_scopes
 from flask import request
 from flask_restplus import Namespace, Resource
 from werkzeug.exceptions import BadRequest
@@ -25,7 +24,6 @@ api = Namespace('cubes', description='cubes')
 class CubeCreateController(Resource):
     """Define route for datacube creation."""
 
-    @require_oauth_scopes(scope="cube_builder:cubes:POST")
     def post(self):
         """Define POST handler for datacube creation.
 
@@ -51,7 +49,6 @@ class CubeCreateController(Resource):
 class CubeProcessController(Resource):
     """Define route for datacube execution."""
 
-    @require_oauth_scopes(scope="cube_builder:cubes:POST")
     def post(self):
         """Define POST handler for datacube execution.
 
