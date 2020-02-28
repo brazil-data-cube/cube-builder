@@ -66,7 +66,7 @@ Trigger datacube generation with following command:
         # Using curl (Make sure to execute cube-builder run)
         curl --location \
              --request POST '127.0.0.1:5000/api/cubes/process' \
-             --header 'Content-Type: application/json'
+             --header 'Content-Type: application/json' \
              --data-raw '{
                 "datacube": "LC8_30_1M_MED",
                 "collections": ["LC8SR"],
