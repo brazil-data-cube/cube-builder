@@ -1,10 +1,12 @@
 #
 # This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019 INPE.
+# Copyright (C) 2019-2020 INPE.
 #
 # Cube Builder free software; you can redistribute it and/or modify it
 # under the terms of the MIT License; see LICENSE file for more details.
 #
+
+"""Define Cube Builder Task Activity to track celery execution."""
 
 # 3rdparty
 from sqlalchemy import Column, Date, String, ARRAY, Integer, JSON, Text
@@ -12,6 +14,8 @@ from bdc_db.models.base_sql import BaseModel
 
 
 class Activity(BaseModel):
+    """Define a SQLAlchemy model to track celery execution."""
+
     __tablename__ = 'activities'
     __table_args__ = {"schema": "cube_builder"}
 

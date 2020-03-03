@@ -1,26 +1,53 @@
+#
+# This file is part of Python Module for Cube Builder.
+# Copyright (C) 2019-2020 INPE.
+#
+# Cube Builder free software; you can redistribute it and/or modify it
+# under the terms of the MIT License; see LICENSE file for more details.
+#
+
+"""Define celery tasks for Cube Builder."""
+
 # Python Native
-from copy import deepcopy
 import logging
 import traceback
-# 3rdparty
-from celery import chain, group
-# BDC Scripts
-from bdc_db.models import Collection
+from copy import deepcopy
 
-from cube_builder.models import Activity
-from cube_builder.utils import get_or_create_activity
+# 3rdparty
+from bdc_db.models import Collection
+from celery import chain, group
+
+# Cube Builder
 from .celery import celery_app
-from .utils import merge as merge_processing, \
-                   blend as blend_processing, \
-                   publish_datacube, publish_merge
+from .models import Activity
+from .utils import blend as blend_processing
+from .utils import get_or_create_activity
+from .utils import merge as merge_processing
+from .utils import publish_datacube, publish_merge
 
 
 def capture_traceback(exception=None):
+    """Retrieve stacktrace as string."""
     return traceback.format_exc() or str(exception)
 
 
 @celery_app.task()
 def warp_merge(activity, force=False):
+    """Execute datacube merge task.
+
+    This task consists in the following steps:
+
+    **1.** Prepare a raster using dimensions of datacube GRS schema.
+    **2.** Open collection dataset with RasterIO and reproject to datacube GRS Schema.
+    **3.** Fill the respective pathrow into raster
+
+    Args:
+        activity - Datacube Activity Model
+        force - Flag to build datacube without cache.
+
+    Returns:
+        Validated activity
+    """
     logging.warning('Executing merge {}'.format(activity.get('warped_collection_id')))
 
     record: Activity = Activity.query().filter(Activity.id == activity['id']).one()
@@ -61,6 +88,12 @@ def warp_merge(activity, force=False):
 
 @celery_app.task()
 def blend(merges):
+    """Receive merges and prepare task blend.
+
+    This task aims to prepare celery task definition for blend.
+    A blend requires both data set quality band and others bands. In this way, we must group
+    these values by temporal resolution and then schedule blend tasks.
+    """
     activities = dict()
 
     for _merge in merges:
@@ -99,6 +132,16 @@ def blend(merges):
 
 @celery_app.task()
 def _blend(activity):
+    """Execute datacube blend task.
+
+    TODO: Describe how it works.
+
+    Args:
+        activity - Datacube Activity Model
+
+    Returns:
+        Validated activity
+    """
     logging.warning('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
 
     return blend_processing(activity)
@@ -106,6 +149,11 @@ def _blend(activity):
 
 @celery_app.task()
 def publish(blends):
+    """Execute publish task and catalog datacube result.
+
+    Args:
+        activity - Datacube Activity Model
+    """
     logging.warning('Executing publish')
 
     cube = Collection.query().filter(Collection.id == blends[0]['datacube']).first()

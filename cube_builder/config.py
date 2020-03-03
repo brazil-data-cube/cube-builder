@@ -1,6 +1,6 @@
 #
 # This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019 INPE.
+# Copyright (C) 2019-2020 INPE.
 #
 # Cube Builder is free software; you can redistribute it and/or modify it
 # under the terms of the MIT License; see LICENSE file for more details.
@@ -29,7 +29,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         'SQLALCHEMY_DATABASE_URI',
-        'postgresql://postgres:bdc-scripts2019@localhost:5435/bdc'
+        'postgresql://postgres:bdc-scripts2019@localhost:5435/bdc_scripts'
     )
     STAC_URL = os.environ.get(
         'STAC_URL',

@@ -1,6 +1,6 @@
 #
 # This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019 INPE.
+# Copyright (C) 2019-2020 INPE.
 #
 # Cube Builder free software; you can redistribute it and/or modify it
 # under the terms of the MIT License; see LICENSE file for more details.
@@ -16,10 +16,20 @@ readme = open('README.rst').read()
 history = open('CHANGES.rst').read()
 
 docs_require = [
-    'Sphinx>=2.2',
+    'bdc-readthedocs-theme @ git+git://github.com/brazil-data-cube/bdc-readthedocs-theme.git#egg=bdc-readthedocs-theme',
+    'Sphinx>=2.1.2',
 ]
 
-tests_require = []
+tests_require = [
+    'coverage>=4.5',
+    'coveralls>=1.8',
+    'pytest>=5.2',
+    'pytest-cov>=2.8',
+    'pytest-pep8>=1.0',
+    'pydocstyle>=4.0',
+    'isort>4.3',
+    'check-manifest>=0.40',
+]
 
 extras_require = {
     'docs': docs_require,

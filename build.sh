@@ -25,4 +25,5 @@ echo "IMAGE Cube Builder :: ${IMAGE_CUBE_BUILDER_FULL}"
 
 docker-compose build
 
+docker tag ${IMAGE_CUBE_BUILDER}:latest ${IMAGE_CUBE_BUILDER_FULL}
 docker push ${IMAGE_CUBE_BUILDER_FULL}

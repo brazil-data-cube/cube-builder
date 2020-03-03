@@ -1,0 +1,24 @@
+exclude doc/sphinx/_build
+exclude migrations
+exclude docker
+exclude .dockerignore
+
+include *.rst
+include *.json
+include *.yml
+include *.sh
+include *.txt
+include LICENSE
+include pytest.ini
+include alembic.ini
+recursive-exclude doc/sphinx/_build *
+recursive-exclude migrations *
+recursive-exclude docker *
+recursive-include cube_builder *.py
+recursive-include doc *.bat
+recursive-include doc *.css
+recursive-include doc *.py
+recursive-include doc *.rst
+recursive-include doc Makefile
+recursive-include examples *.py
+recursive-include tests *.py
