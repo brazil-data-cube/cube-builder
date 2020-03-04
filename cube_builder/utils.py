@@ -472,7 +472,7 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
     quick_look_file = os.path.join(
         Config.DATA_DIR,
         'Repository/Warped/{}/{}/{}/{}'.format(
-            datacube.id.replace('_WARPED', ''), tile_id, period, quick_look_name
+            datacube.id.replace('_WARPED', ''), tile_id, date, quick_look_name
         )
     )
 
