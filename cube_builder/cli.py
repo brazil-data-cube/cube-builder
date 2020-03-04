@@ -23,7 +23,8 @@ cli = create_cli(create_app=create_app)
 
 @flask_migrate_db.command()
 @with_appcontext
-def create(ctx: click.Context):
+@click.pass_context
+def create_db(ctx: click.Context):
     """Create database. Make sure the variable SQLALCHEMY_DATABASE_URI is set."""
     ctx.forward(bdc_create_db)
 
