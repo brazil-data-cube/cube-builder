@@ -21,7 +21,6 @@ from celery import chain, group
 from .celery import celery_app
 from .models import Activity
 from .utils import blend as blend_processing
-from .utils import get_or_create_activity
 from .utils import merge as merge_processing
 from .utils import publish_datacube, publish_merge
 
@@ -59,14 +58,12 @@ def warp_merge(activity, force=False):
 
         try:
             args = deepcopy(activity.get('args'))
-            period = activity.get('period')
             warped_datacube = activity.get('warped_collection_id')
-            tile_id = args.pop('tile_id')
-            assets = args.pop('assets')
-            cols = args.pop('cols')
-            rows = args.pop('rows')
+            _ = args.pop('period', None)
+            merge_date = args.get('date')
 
-            res = merge_processing(warped_datacube, tile_id, assets, int(cols), int(rows), period, **args)
+            # res = merge_processing(warped_datacube, tile_id, assets, int(cols), int(rows), merge_date, **args)
+            res = merge_processing(warped_datacube, period=merge_date, **args)
 
             merge_args = activity['args']
             merge_args.update(res)

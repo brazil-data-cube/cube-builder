@@ -213,7 +213,6 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
         date='{}{}'.format(merge_date, dataset),
         datacube=datacube,
         tile_id=tile_id,
-        warped_datacube=warped_datacube,
         nodata=nodata
     )
 
@@ -634,16 +633,18 @@ def getMask(raster, dataset):
         lut = numpy.array([0,0,2,2,1,1,1,2,2,2,1, 1],dtype=numpy.uint8)
         rastercm = numpy.take(lut,raster).astype(numpy.uint8)
 
-    elif dataset == 'CB4_AWFI' or dataset == 'CB4_MUX':
-        # Key 		Summary QA 		Description
-        # 0 		Fill/No Data 	Not Processed
-        # 127 		Good Data 		Use with confidence
-        # 255 		Cloudy 			Target not visible, covered with cloud
-        fill = 0 		# warped images have 0 as fill area
-        lut = numpy.zeros(256,dtype=numpy.uint8)
+    elif dataset == 'CBERS4_AWFI_L4_SR' or dataset == 'CBERS4_MUX_L4_SR':
+        # Key Summary        QA Description
+        #   0 Fill/No Data - Not Processed
+        # 127 Good Data    - Use with confidence
+        # 255 Cloudy       - Target not visible, covered with cloud
+        # fill = 0  # warped images have 0 as fill area
+        lut = numpy.zeros(256, dtype=numpy.uint8)
         lut[127] = 1
         lut[255] = 2
         rastercm = numpy.take(lut, raster).astype(numpy.uint8)
+    else:
+        raise RuntimeError('No mask for data set {}'.format(dataset))
 
     totpix = rastercm.size
     clearpix = numpy.count_nonzero(rastercm == 1)

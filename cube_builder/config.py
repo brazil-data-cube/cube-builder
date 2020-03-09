@@ -21,6 +21,7 @@ class Config:
     """Base configuration with default flags."""
 
     CELERYD_PREFETCH_MULTIPLIER = 1  # disable
+    CBERS_AUTH_TOKEN = 'CHANGE_ME'
     DEBUG = False
     TESTING = False
     DATA_DIR = os.environ.get('DATA_DIR', '/data')
