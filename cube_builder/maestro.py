@@ -329,10 +329,6 @@ class Maestro:
     def prepare_merge(self):
         """Search on STAC for available collection images."""
         for tileid in self.mosaics:
-            if len(self.mosaics) != 1:
-                self.params['tileid'] = tileid
-                continue
-
             bbox_result = db.session.query(
                 Tile.id,
                 func.ST_AsText(func.ST_BoundingDiagonal(func.ST_Force2D(Tile.geom_wgs84)))
