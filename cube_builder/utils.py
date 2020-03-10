@@ -51,7 +51,8 @@ def get_or_create_model(model_class, defaults=None, **restrictions):
     return instance, True
 
 
-def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_type: str, band: str, period: str, activity_date: str, **parameters):
+def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_type: str, band: str,
+                           period: str, tile_id: str, activity_date: str, **parameters):
     """Define a utility method for create activity."""
     defaults = dict(
         band=band,
@@ -70,7 +71,8 @@ def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_typ
         band=band,
         collection_id=cube,
         period=period,
-        date=activity_date
+        date=activity_date,
+        tile_id=tile_id
     )
 
     return get_or_create_model(Activity, defaults=defaults, **where)
@@ -212,7 +214,6 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
         period=period,
         date='{}{}'.format(merge_date, dataset),
         datacube=datacube,
-        tile_id=tile_id,
         nodata=nodata
     )
 

@@ -61,9 +61,9 @@ def warp_merge(activity, force=False):
             warped_datacube = activity.get('warped_collection_id')
             _ = args.pop('period', None)
             merge_date = args.get('date')
+            tile_id = activity.get('tile_id')
 
-            # res = merge_processing(warped_datacube, tile_id, assets, int(cols), int(rows), merge_date, **args)
-            res = merge_processing(warped_datacube, period=merge_date, **args)
+            res = merge_processing(warped_datacube, tile_id=tile_id, period=merge_date, **args)
 
             merge_args = activity['args']
             merge_args.update(res)
@@ -105,7 +105,7 @@ def blend(merges):
         activity['band'] = _merge['band']
         activity['scenes'].setdefault(_merge['args']['date'], dict(**_merge['args']))
         activity['period'] = _merge['period']
-        activity['tile_id'] = _merge['args']['tile_id']
+        activity['tile_id'] = _merge['tile_id']
         activity['nodata'] = _merge['args'].get('nodata')
 
         activity['scenes'][_merge['args']['date']]['ARDfiles'] = {

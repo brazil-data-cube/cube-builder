@@ -265,8 +265,8 @@ class Maestro:
             CollectionItem.grs_schema_id == self.datacube.grs_schema_id
         ).order_by(CollectionItem.composite_start).all()
         cube_start_date = self.params['start_date']
-        if list(filter(lambda c_i: c_i.tile_id == self.params['tiles'][0], collections_items)):
-            cube_start_date = collections_items[0].composite_start
+        # if list(filter(lambda c_i: c_i.tile_id == self.params['tiles'][0], collections_items)):
+        #     cube_start_date = collections_items[0].composite_start
 
         dstart = self.params['start_date']
         dend = self.params['end_date']
@@ -454,7 +454,7 @@ class Maestro:
             stac = self.get_stac(dataset)
 
             token = ''
-            print('Searching for {} - {}...'.format(dataset, tile_id))
+            print('Searching for {} - {} ({}, {}) using {}...'.format(dataset, tile_id, start, end, stac.url))
 
             if 'CBERS' in dataset:
                 token = '?key={}'.format(Config.CBERS_AUTH_TOKEN)
