@@ -12,7 +12,7 @@ Prepare and initialize database
 .. note::
 
     The ``cube-builder`` uses `bdc-db <https://github.com/brazil-data-cube/bdc-db/>`_ as database definition to store data cube metadata.
-    Make sure you have a prepared database on PostgreSQL. You can follow steps `here <https://github.com/brazil-data-cube/bdc-db/blob/master/RUNNING.rst>`_
+    Make sure you have a prepared database on PostgreSQL. You can follow steps `here <https://github.com/brazil-data-cube/bdc-db/blob/master/RUNNING.rst>`_.
 
 
 Edit file **cube_builder/config.py** the following variables:
@@ -48,6 +48,10 @@ After that, run local celery worker:
     The command line ``cube-builder worker`` is an auxiliary tool that wraps celery command line using ``cube_builder`` as context.
     In this way, all ``celery worker`` parameters currently supported.
 
+
+.. warning::
+
+    **Beware**: The ``cube-builder`` may use much memory for each concurrent process, since it opens multiple collection image in memory.
 
 
 Creating datacube Landsat8
@@ -105,15 +109,9 @@ Trigger datacube generation with following command:
 Creating datacube Sentinel-2
 ----------------------------
 
+Use the following code to create data cube metadata of Sentinel 2:
 
 .. code-block:: shell
-
-    # Using cube-builder command line
-    cube-builder build S2_10_1M_MED \
-        --collections=S2SR_SEN28 \
-        --tiles=089098 \
-        --start=2019-01-01 \
-        --end=2019-01-31
 
     # Using curl (Make sure to execute cube-builder run)
     curl --location --request POST '127.0.0.1:5000/api/cubes/create' \
@@ -143,3 +141,55 @@ Creating datacube Sentinel-2
                 ],
                 "description": "S2 10 Monthly"
             }'
+
+
+Trigger datacube generation with following command:
+
+.. code-block:: shell
+
+    # Using cube-builder command line
+    cube-builder build S2_10_1M_MED \
+        --collections=S2SR_SEN28 \
+        --tiles=089098 \
+        --start=2019-01-01 \
+        --end=2019-01-31
+
+
+Creating datacube CBERS4 AWFI
+-----------------------------
+
+Use the following code to create data cube metadata of CBERS 4 AWFI:
+
+.. code-block:: shell
+
+    # Using curl (Make sure to execute cube-builder run)
+    curl --location --request POST '127.0.0.1:5000/api/cubes/create' \
+            --header 'Content-Type: application/json' \
+            --data-raw '{
+                "datacube": "C4_64_1M",
+                "grs": "aea_250k",
+                "resolution": 64,
+                "temporal_schema": "M1month",
+                "bands_quicklook": ["red", "nir", "green"],
+                "composite_function_list": ["MEDIAN", "STACK"],
+                "bands": ["blue", "green", "red", "nir", "evi", "ndvi", "quality"],
+                "description": "CBERS4 AWFI - Monthly"
+            }'
+
+Trigger datacube generation with following command:
+
+.. code-block:: shell
+
+    # Using cube-builder command line
+    cube-builder build C4_64_1M_MED \
+        --collections=CBERS4_AWFI_L4_SR \
+        --tiles=089098 \
+        --start=2019-01-01 \
+        --end=2019-01-31
+
+
+.. note::
+
+    In order to restart data cube generation, just pass the same command line to trigger a data cube.
+    It will reuse the entire process, executing only the failed tasks. You can also pass optional parameter
+    ``--force`` to build data cube without cache.

@@ -84,8 +84,8 @@ def warp_merge(activity, force=False):
 
 
 @celery_app.task()
-def blend(merges):
-    """Receive merges and prepare task blend.
+def prepare_blend(merges):
+    """Receive merges by period and prepare task blend.
 
     This task aims to prepare celery task definition for blend.
     A blend requires both data set quality band and others bands. In this way, we must group
@@ -121,14 +121,14 @@ def blend(merges):
 
     for activity in activities.values():
         # TODO: Persist
-        blends.append(_blend.s(activity))
+        blends.append(blend.s(activity))
 
     task = chain(group(blends), publish.s())
     task.apply_async()
 
 
 @celery_app.task()
-def _blend(activity):
+def blend(activity):
     """Execute datacube blend task.
 
     TODO: Describe how it works.

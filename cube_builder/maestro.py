@@ -17,6 +17,7 @@ import numpy
 from bdc_db.models import (Band, Collection, CollectionItem, CollectionTile,
                            Tile, db)
 from geoalchemy2 import func
+from requests.exceptions import RequestException
 from stac import STAC
 
 # Cube Builder
@@ -184,17 +185,39 @@ class Maestro:
         force = properties.get('force', False)
         self.params['force'] = force
 
-    def get_stac(self, collection: str):
+    def get_stac(self, collection: str) -> STAC:
+        """Retrieve STAC client which provides the given collection.
+
+        By default, it searches for given collection on Brazil Data Cube STAC.
+        When collection not found, search on INPE STAC.
+
+        Args:
+            collection - Collection name to search
+
+        Returns
+        """
         try:
-            return self._stac(collection, 'http://cdsr.dpi.inpe.br/inpe-stac')
-        except RuntimeError:
-            # Search in default
             return self._stac(collection, Config.STAC_URL)
+        except RuntimeError:
+            # Search in INPE STAC
+            return self._stac(collection, 'http://cdsr.dpi.inpe.br/inpe-stac')
 
     @staticmethod
-    def _stac(collection: str, url: str):
-        from requests.exceptions import RequestException
+    def _stac(collection: str, url: str) -> STAC:
+        """Check if collection is provided by given STAC url.
 
+        The provided STAC must follow the `SpatioTemporal Asset Catalogs spec <https://stacspec.org/>`_.
+
+        Exceptions:
+            RuntimeError for any exception during STAC connection.
+
+        Args:
+            collection: Collection name
+            url - STAC URL
+
+        Returns:
+            STAC client
+        """
         try:
             stac = STAC(url)
 
@@ -313,14 +336,14 @@ class Maestro:
                     self.mosaics[tile.id]['periods'][periodkey]['dirname'] = '{}/{}/{}-{}/'.format(self.datacube.id, tile.id, startdate, enddate)
 
     @property
-    def warped_datacube(self):
+    def warped_datacube(self) -> Collection:
         """Retrieve cached datacube defintion."""
         datacube_warped = '{}WARPED'.format(self.datacube.id[:-3])
 
         return Collection.query().filter(Collection.id == datacube_warped).first()
 
     @property
-    def datacube_bands(self):
+    def datacube_bands(self) -> List[Band]:
         """Retrieve data cube bands based int user input."""
         if self.params.get('bands'):
             return list(filter(lambda band: band.common_name in self.params['bands'], self.bands))
@@ -352,7 +375,7 @@ class Maestro:
         Make sure celery is running. Check RUNNING.rst for further details.
         """
         from celery import group, chain
-        from .tasks import blend, warp_merge
+        from .tasks import prepare_blend, warp_merge
         self.prepare_merge()
 
         datacube = self.datacube.id
@@ -417,11 +440,13 @@ class Maestro:
                 # Persist activities
                 db.session.commit()
 
-                task = chain(group(merges_tasks), blend.s())
-                blends.append(task)
+                if len(merges_tasks) > 0:
+                    task = chain(group(merges_tasks), prepare_blend.s())
+                    blends.append(task)
 
-            task = group(blends)
-            task.apply_async()
+            if len(blends) > 0:
+                task = group(blends)
+                task.apply_async()
 
         return self.mosaics
 
