@@ -424,6 +424,7 @@ def blend(activity):
 
     activity['efficacy'] = efficacy
     activity['cloudratio'] = cloudcover
+    activity['cloud_count_file'] = str(count_cloud_data_set.path)
     activity['blends'] = {
         "MED": str(medianfile),
         "STK": str(stack_file)

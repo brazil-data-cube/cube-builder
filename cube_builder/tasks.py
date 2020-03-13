@@ -167,6 +167,7 @@ def publish(blends):
 
     for blend_result in blends:
         blend_files[blend_result['band']] = blend_result['blends']
+        blend_files['cnc'] = dict(MED=blend_result['cloud_count_file'], STK=blend_result['cloud_count_file'])
 
         for merge_date, definition in blend_result['scenes'].items():
             merges.setdefault(merge_date, dict(dataset=definition['dataset'],
