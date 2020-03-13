@@ -117,20 +117,24 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
     transform = Affine(resx, 0, xmin, 0, -resy, ymax)
 
     # Quality band is resampled by nearest, other are bilinear
+    raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint16)
     if band == 'quality':
         resampling = Resampling.nearest
 
         raster = numpy.zeros((rows, cols,), dtype=numpy.uint16)
         raster_merge = numpy.zeros((rows, cols,), dtype=numpy.uint16)
-        raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint16)
         nodata = 0
     else:
         resampling = Resampling.bilinear
         raster = numpy.zeros((rows, cols,), dtype=numpy.int16)
-        raster_merge = numpy.full((rows, cols,), fill_value=nodata, dtype=numpy.int16)
+        raster_merge = numpy.zeros((rows, cols,), dtype=numpy.int16)
 
     count = 0
     template = None
+
+    mask_array = numpy.ones((rows, cols), dtype=numpy.int16)
+    notdonetask = numpy.ones((rows, cols), dtype=numpy.int16)
+
     for asset in assets:
         count += 1
         with rasterio.Env(CPL_CURL_VERBOSE=False):
@@ -154,6 +158,8 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
                     'nodata': source_nodata
                 })
 
+                template = src.profile
+
                 with MemoryFile() as mem_file:
                     with mem_file.open(**kwargs) as dst:
                         reproject(
@@ -167,9 +173,17 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
                             dst_nodata=nodata,
                             resampling=resampling)
 
+                        # Mask all dummy values
                         if band != 'quality':
-                            valid_data_scene = raster[raster != nodata]
-                            raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
+                            bmask = numpy.invert(raster.astype(numpy.bool_))
+                            bmask[raster == nodata] = True
+
+                            todomask = notdonetask * numpy.invert(bmask)
+
+                            mask_array *= bmask
+                            notdonetask *= bmask
+
+                            raster_merge = raster_merge + raster * todomask
                         else:
                             raster_merge = raster_merge + raster * raster_mask
                             raster_mask[raster != nodata] = 0
@@ -181,6 +195,9 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
                             if band != 'quality':
                                 template['dtype'] = 'int16'
                                 template['nodata'] = nodata
+
+    if band != 'quality':
+        raster_merge[mask_array.astype(numpy.bool_)] = nodata
 
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
