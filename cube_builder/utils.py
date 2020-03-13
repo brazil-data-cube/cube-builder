@@ -158,7 +158,7 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
                     'nodata': source_nodata
                 })
 
-                template = src.profile
+                template = kwargs
 
                 with MemoryFile() as mem_file:
                     with mem_file.open(**kwargs) as dst:
