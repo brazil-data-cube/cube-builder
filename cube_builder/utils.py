@@ -11,7 +11,7 @@
 # Python Native
 import logging
 import os
-from datetime import datetime
+from pathlib import Path
 
 # 3rdparty
 import numpy
@@ -235,6 +235,33 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
     )
 
 
+class SmartDataSet:
+    """Defines utility class to auto close rasterio data set."""
+
+    def __init__(self, file_path: str, mode='r', **properties):
+        self.path = Path(file_path)
+        self.dataset = rasterio.open(file_path, mode=mode, **properties)
+
+    def __del__(self):
+        """Close dataset on delete object."""
+        self.close()
+
+    def __enter__(self):
+        """Use data set context with operator ``with``."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Close data set on exit with clause."""
+        self.close()
+
+    def close(self):
+        """Close rasterio data set."""
+        if not self.dataset.closed:
+            logging.warning('Closing dataset {}'.format(str(self.path)))
+
+            self.dataset.close()
+
+
 def blend(activity):
     """Apply blend and generate raster from activity.
 
@@ -300,23 +327,28 @@ def blend(activity):
     datacube = activity.get('datacube')
     period = activity.get('period')
     tile_id = activity.get('tile_id')
-    output_name = '{}_{}_{}_{}'.format(datacube, tile_id, period, band)
+    file_name = '{}_{}_{}'.format(datacube, tile_id, period)
+    output_name = '{}_{}'.format(file_name, band)
+
+    absolute_prefix_path = Path(Config.DATA_DIR) / 'Repository/Mosaic'
 
     #
     # MEDIAN will be generated in local disk
-    medianfile = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}.tif'.format(
-        datacube, tile_id, period, output_name))
+    medianfile = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(datacube, tile_id, period, output_name)
 
     stack_datacube = build_datacube_name(datacube, 'STK')
     output_name = output_name.replace(datacube, stack_datacube)
 
-    stack_file = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}.tif'.format(
-        stack_datacube, tile_id, period, output_name))
+    stack_file = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(stack_datacube, tile_id, period, output_name)
 
-    os.makedirs(os.path.dirname(medianfile), exist_ok=True)
-    os.makedirs(os.path.dirname(stack_file), exist_ok=True)
+    medianfile.parent.mkdir(parents=True, exist_ok=True)
+    stack_file.parent.mkdir(parents=True, exist_ok=True)
 
-    mediandataset = rasterio.open(medianfile, 'w', **profile)
+    mediandataset = rasterio.open(str(medianfile), 'w', **profile)
+
+    count_cloud_file_path = absolute_prefix_path / '{}/{}/{}/{}_cnc.tif'.format(datacube, tile_id, period, file_name)
+
+    count_cloud_data_set = SmartDataSet(count_cloud_file_path, 'w', **profile)
 
     for _, window in tilelist:
         # Build the stack to store all images as a masked array. At this stage the array will contain the masked data
@@ -352,7 +384,10 @@ def blend(activity):
         median_raster = numpy.ma.median(stackMA, axis=0).data
         median_raster[notdonemask.astype(numpy.bool_)] = nodata
 
+        count_raster = numpy.ma.count(stackMA, axis=0)
+
         mediandataset.write(median_raster.astype(profile['dtype']), window=window, indexes=1)
+        count_cloud_data_set.dataset.write(count_raster.astype(profile['dtype']), window=window, indexes=1)
 
     stack_raster[mask_raster.astype(numpy.bool_)] = nodata
     # Close all input dataset
@@ -368,6 +403,7 @@ def blend(activity):
 
     # # Close and upload the MEDIAN dataset
     mediandataset.close()
+    count_cloud_data_set.close()
 
     profile.update({
         'compress': 'LZW',
@@ -375,12 +411,12 @@ def blend(activity):
         "interleave": "pixel",
     })
 
-    with rasterio.open(medianfile, 'r+', **profile) as ds_median:
+    with rasterio.open(str(medianfile), 'r+', **profile) as ds_median:
         ds_median.nodata = nodata
         ds_median.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
         ds_median.update_tags(ns='rio_overview', resampling='nearest')
 
-    with rasterio.open(stack_file, 'w', **profile) as stack_dataset:
+    with rasterio.open(str(stack_file), 'w', **profile) as stack_dataset:
         stack_dataset.nodata = nodata
         stack_dataset.write_band(1, stack_raster)
         stack_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
@@ -389,8 +425,8 @@ def blend(activity):
     activity['efficacy'] = efficacy
     activity['cloudratio'] = cloudcover
     activity['blends'] = {
-        "MED": medianfile,
-        "STK": stack_file
+        "MED": str(medianfile),
+        "STK": str(stack_file)
     }
 
     return activity
