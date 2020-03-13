@@ -103,7 +103,7 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
     ymax = kwargs.get('ymax')
     dataset = kwargs.get('dataset')
     band = assets[0]['band']
-    merge_date = kwargs.get('date')
+    merge_date = kwargs.get('date').replace(dataset, '')
     resx, resy = kwargs.get('resx'), kwargs.get('resy')
 
     srs = kwargs.get('srs', '+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-50 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs')
@@ -122,7 +122,7 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
         raster = numpy.zeros((rows, cols,), dtype=numpy.uint16)
         raster_merge = numpy.zeros((rows, cols,), dtype=numpy.uint16)
-        nodata = 1 if 'LC8SR' in dataset else 0
+        nodata = 0
     else:
         resampling = Resampling.bilinear
         raster = numpy.zeros((rows, cols,), dtype=numpy.int16)
@@ -150,8 +150,11 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
                 if src.profile['nodata'] is not None:
                     source_nodata = src.profile['nodata']
-                elif 'LC8SR' in dataset and band != 'quality':
-                    source_nodata = nodata
+                elif 'LC8SR' in dataset:
+                    if band != 'quality':
+                        source_nodata = nodata
+                    else:
+                        source_nodata = 1
 
                 kwargs.update({
                     'nodata': source_nodata
