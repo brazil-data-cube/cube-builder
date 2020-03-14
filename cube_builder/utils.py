@@ -112,7 +112,7 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
     folder_name = warped_datacube.replace('_WARPED', '')
 
-    merged_file = os.path.join(Config.DATA_DIR, 'Repository/Warped/{}/{}/{}/{}.tif'.format(folder_name, tile_id, period, merge_name))
+    merged_file = os.path.join(Config.DATA_DIR, 'Repository/Warped/{}/{}/{}/{}.tif'.format(folder_name, tile_id, merge_date, merge_name))
 
     transform = Affine(resx, 0, xmin, 0, -resy, ymax)
 
@@ -229,7 +229,7 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
         dataset=dataset,
         resolution=resx,
         period=period,
-        date='{}{}'.format(merge_date, dataset),
+        date=merge_date,
         datacube=datacube,
         nodata=nodata
     )
@@ -413,6 +413,12 @@ def blend(activity, build_cnc=False):
     if band != 'quality':
         mediandataset.dataset.nodata = nodata
 
+    profile.update({
+        'compress': 'LZW',
+        'tiled': True,
+        "interleave": "pixel",
+    })
+
     # Since count no cloud operator is specific for a band, we must ensure to manipulate data set only
     # for band 'cnc' to avoid concurrent processes write same data set in disk.
     # TODO: Review how to design it to avoid these IF's statement, since we must stack data set and mask dummy values
@@ -420,16 +426,14 @@ def blend(activity, build_cnc=False):
         count_cloud_data_set.close()
         logging.warning('Count No Cloud (CNC) file generated successfully.')
 
+        with rasterio.open(str(count_cloud_data_set.path), 'r+', **profile) as dst_cnc:
+            dst_cnc.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+            dst_cnc.update_tags(ns='rio_overview', resampling='nearest')
+
         activity['cloud_count_file'] = str(count_cloud_data_set.path)
 
     # # Close and upload the MEDIAN dataset
     mediandataset.dataset.close()
-
-    profile.update({
-        'compress': 'LZW',
-        'tiled': True,
-        "interleave": "pixel",
-    })
 
     with rasterio.open(str(medianfile), 'r+', **profile) as ds_median:
         ds_median.nodata = nodata
