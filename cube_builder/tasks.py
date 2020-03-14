@@ -119,16 +119,28 @@ def prepare_blend(merges):
 
     blends = []
 
-    for activity in activities.values():
+    # Prepare list of activities to dispatch
+    activity_list = list(activities.values())
+
+    # We must keep track of last activity to run
+    # Since the Count No Cloud (CNC) must only be execute by single process. It is important
+    # to avoid concurrent processes to write same data set in disk
+    last_activity = activity_list[-1]
+
+    # Trigger all except the last
+    for activity in activity_list[:-1]:
         # TODO: Persist
         blends.append(blend.s(activity))
+
+    # Trigger last blend to execute CNC
+    blends.append(blend.s(last_activity, build_cnc=True))
 
     task = chain(group(blends), publish.s())
     task.apply_async()
 
 
 @celery_app.task()
-def blend(activity):
+def blend(activity, build_cnc=False):
     """Execute datacube blend task.
 
     TODO: Describe how it works.
@@ -141,7 +153,7 @@ def blend(activity):
     """
     logging.warning('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
 
-    return blend_processing(activity)
+    return blend_processing(activity, build_cnc)
 
 
 @celery_app.task()
@@ -167,7 +179,9 @@ def publish(blends):
 
     for blend_result in blends:
         blend_files[blend_result['band']] = blend_result['blends']
-        blend_files['cnc'] = dict(MED=blend_result['cloud_count_file'], STK=blend_result['cloud_count_file'])
+
+        if blend_result.get('cloud_count_file'):
+            blend_files['cnc'] = dict(MED=blend_result['cloud_count_file'], STK=blend_result['cloud_count_file'])
 
         for merge_date, definition in blend_result['scenes'].items():
             merges.setdefault(merge_date, dict(dataset=definition['dataset'],

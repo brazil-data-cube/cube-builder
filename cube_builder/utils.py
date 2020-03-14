@@ -236,7 +236,10 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
 
 class SmartDataSet:
-    """Defines utility class to auto close rasterio data set."""
+    """Defines utility class to auto close rasterio data set.
+
+    This class is class helper to avoid memory leak of opened data set in memory.
+    """
 
     def __init__(self, file_path: str, mode='r', **properties):
         self.path = Path(file_path)
@@ -262,10 +265,14 @@ class SmartDataSet:
             self.dataset.close()
 
 
-def blend(activity):
+def blend(activity, build_cnc=False):
     """Apply blend and generate raster from activity.
 
     Currently, it generates STACK and MEDIAN
+
+    Args:
+        activity - Prepared blend activity metadata
+        build_cnc - Flag to dispatch generation of Count No Cloud (CNC) band. This process is not ``thread-safe``.
     """
     # Assume that it contains a band and quality band
     numscenes = len(activity['scenes'])
@@ -344,11 +351,14 @@ def blend(activity):
     medianfile.parent.mkdir(parents=True, exist_ok=True)
     stack_file.parent.mkdir(parents=True, exist_ok=True)
 
-    mediandataset = rasterio.open(str(medianfile), 'w', **profile)
+    mediandataset = SmartDataSet(medianfile, 'w', **profile)
 
-    count_cloud_file_path = absolute_prefix_path / '{}/{}/{}/{}_cnc.tif'.format(datacube, tile_id, period, file_name)
+    if build_cnc:
+        logging.warning('Creating and computing Count No Cloud (CNC) file...')
+        count_cloud_file_path = absolute_prefix_path / '{}/{}/{}/{}_cnc.tif'.format(datacube, tile_id, period,
+                                                                                    file_name)
 
-    count_cloud_data_set = SmartDataSet(count_cloud_file_path, 'w', **profile)
+        count_cloud_data_set = SmartDataSet(count_cloud_file_path, 'w', **profile)
 
     for _, window in tilelist:
         # Build the stack to store all images as a masked array. At this stage the array will contain the masked data
@@ -384,10 +394,12 @@ def blend(activity):
         median_raster = numpy.ma.median(stackMA, axis=0).data
         median_raster[notdonemask.astype(numpy.bool_)] = nodata
 
-        count_raster = numpy.ma.count(stackMA, axis=0)
+        mediandataset.dataset.write(median_raster.astype(profile['dtype']), window=window, indexes=1)
 
-        mediandataset.write(median_raster.astype(profile['dtype']), window=window, indexes=1)
-        count_cloud_data_set.dataset.write(count_raster.astype(profile['dtype']), window=window, indexes=1)
+        if build_cnc:
+            count_raster = numpy.ma.count(stackMA, axis=0)
+
+            count_cloud_data_set.dataset.write(count_raster.astype(profile['dtype']), window=window, indexes=1)
 
     stack_raster[mask_raster.astype(numpy.bool_)] = nodata
     # Close all input dataset
@@ -399,11 +411,19 @@ def blend(activity):
     cloudcover = 100. * ((height * width - numpy.count_nonzero(stack_raster)) / (height * width))
 
     if band != 'quality':
-        mediandataset.nodata = nodata
+        mediandataset.dataset.nodata = nodata
+
+    # Since count no cloud operator is specific for a band, we must ensure to manipulate data set only
+    # for band 'cnc' to avoid concurrent processes write same data set in disk.
+    # TODO: Review how to design it to avoid these IF's statement, since we must stack data set and mask dummy values
+    if build_cnc:
+        count_cloud_data_set.close()
+        logging.warning('Count No Cloud (CNC) file generated successfully.')
+
+        activity['cloud_count_file'] = str(count_cloud_data_set.path)
 
     # # Close and upload the MEDIAN dataset
-    mediandataset.close()
-    count_cloud_data_set.close()
+    mediandataset.dataset.close()
 
     profile.update({
         'compress': 'LZW',
@@ -424,7 +444,6 @@ def blend(activity):
 
     activity['efficacy'] = efficacy
     activity['cloudratio'] = cloudcover
-    activity['cloud_count_file'] = str(count_cloud_data_set.path)
     activity['blends'] = {
         "MED": str(medianfile),
         "STK": str(stack_file)
