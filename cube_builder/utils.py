@@ -11,7 +11,8 @@
 # Python Native
 import logging
 import os
-from datetime import datetime
+from pathlib import Path
+from shutil import copy as copy_file
 
 # 3rdparty
 import numpy
@@ -51,7 +52,8 @@ def get_or_create_model(model_class, defaults=None, **restrictions):
     return instance, True
 
 
-def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_type: str, band: str, period: str, activity_date: str, **parameters):
+def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_type: str, band: str,
+                           period: str, tile_id: str, activity_date: str, **parameters):
     """Define a utility method for create activity."""
     defaults = dict(
         band=band,
@@ -70,7 +72,8 @@ def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_typ
         band=band,
         collection_id=cube,
         period=period,
-        date=activity_date
+        date=activity_date,
+        tile_id=tile_id
     )
 
     return get_or_create_model(Activity, defaults=defaults, **where)
@@ -101,7 +104,7 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
     ymax = kwargs.get('ymax')
     dataset = kwargs.get('dataset')
     band = assets[0]['band']
-    merge_date = kwargs.get('date')
+    merge_date = kwargs.get('date').replace(dataset, '')
     resx, resy = kwargs.get('resx'), kwargs.get('resy')
 
     srs = kwargs.get('srs', '+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-50 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs')
@@ -110,7 +113,7 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
     folder_name = warped_datacube.replace('_WARPED', '')
 
-    merged_file = os.path.join(Config.DATA_DIR, 'Repository/Warped/{}/{}/{}/{}.tif'.format(folder_name, tile_id, period, merge_name))
+    merged_file = os.path.join(Config.DATA_DIR, 'Repository/Warped/{}/{}/{}/{}.tif'.format(folder_name, tile_id, merge_date, merge_name))
 
     transform = Affine(resx, 0, xmin, 0, -resy, ymax)
 
@@ -120,15 +123,18 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
         raster = numpy.zeros((rows, cols,), dtype=numpy.uint16)
         raster_merge = numpy.zeros((rows, cols,), dtype=numpy.uint16)
-        raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint16)
         nodata = 0
     else:
         resampling = Resampling.bilinear
         raster = numpy.zeros((rows, cols,), dtype=numpy.int16)
-        raster_merge = numpy.full((rows, cols,), fill_value=nodata, dtype=numpy.int16)
+        raster_merge = numpy.zeros((rows, cols,), dtype=numpy.int16)
 
     count = 0
     template = None
+
+    mask_array = numpy.ones((rows, cols), dtype=numpy.int16)
+    notdonetask = numpy.ones((rows, cols), dtype=numpy.int16)
+
     for asset in assets:
         count += 1
         with rasterio.Env(CPL_CURL_VERBOSE=False):
@@ -145,12 +151,19 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
 
                 if src.profile['nodata'] is not None:
                     source_nodata = src.profile['nodata']
-                elif 'LC8SR' in dataset and band != 'quality':
+                elif 'LC8SR' in dataset:
+                    if band != 'quality':
+                        source_nodata = nodata
+                    else:
+                        source_nodata = 1
+                elif 'CBERS' in dataset and band != 'quality':
                     source_nodata = nodata
 
                 kwargs.update({
                     'nodata': source_nodata
                 })
+
+                template = kwargs
 
                 with MemoryFile() as mem_file:
                     with mem_file.open(**kwargs) as dst:
@@ -165,12 +178,19 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
                             dst_nodata=nodata,
                             resampling=resampling)
 
-                        if band != 'quality':
-                            valid_data_scene = raster[raster != nodata]
-                            raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
-                        else:
-                            raster_merge = raster_merge + raster * raster_mask
-                            raster_mask[raster != nodata] = 0
+                        # Transform resampled data into boolean array
+                        bmask = numpy.invert(raster.astype(numpy.bool_))
+                        # Mask all dummy values
+                        bmask[raster == nodata] = True
+
+                        # Map array fragments to do
+                        todomask = notdonetask * numpy.invert(bmask)
+                        # Set masked values to mask_array
+                        mask_array *= bmask
+                        # Remap not done task
+                        notdonetask *= bmask
+
+                        raster_merge = raster_merge + raster * todomask
 
                         if template is None:
                             template = dst.profile
@@ -179,6 +199,8 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
                             if band != 'quality':
                                 template['dtype'] = 'int16'
                                 template['nodata'] = nodata
+
+    raster_merge[mask_array.astype(numpy.bool_)] = nodata
 
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
@@ -210,18 +232,50 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
         dataset=dataset,
         resolution=resx,
         period=period,
-        date='{}{}'.format(merge_date, dataset),
+        date=merge_date,
         datacube=datacube,
-        tile_id=tile_id,
-        warped_datacube=warped_datacube,
         nodata=nodata
     )
 
 
-def blend(activity):
+class SmartDataSet:
+    """Defines utility class to auto close rasterio data set.
+
+    This class is class helper to avoid memory leak of opened data set in memory.
+    """
+
+    def __init__(self, file_path: str, mode='r', **properties):
+        self.path = Path(file_path)
+        self.dataset = rasterio.open(file_path, mode=mode, **properties)
+
+    def __del__(self):
+        """Close dataset on delete object."""
+        self.close()
+
+    def __enter__(self):
+        """Use data set context with operator ``with``."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Close data set on exit with clause."""
+        self.close()
+
+    def close(self):
+        """Close rasterio data set."""
+        if not self.dataset.closed:
+            logging.warning('Closing dataset {}'.format(str(self.path)))
+
+            self.dataset.close()
+
+
+def blend(activity, build_cnc=False):
     """Apply blend and generate raster from activity.
 
     Currently, it generates STACK and MEDIAN
+
+    Args:
+        activity - Prepared blend activity metadata
+        build_cnc - Flag to dispatch generation of Count No Cloud (CNC) band. This process is not ``thread-safe``.
     """
     # Assume that it contains a band and quality band
     numscenes = len(activity['scenes'])
@@ -252,7 +306,7 @@ def blend(activity):
     # The list will be ordered by efficacy/resolution
     masklist = []
     bandlist = []
-    efficacy = 0
+
     for m in sorted(mask_tuples, reverse=True):
         key = m[1]
         efficacy = m[0]
@@ -283,29 +337,39 @@ def blend(activity):
     datacube = activity.get('datacube')
     period = activity.get('period')
     tile_id = activity.get('tile_id')
-    output_name = '{}_{}_{}_{}'.format(datacube, tile_id, period, band)
+    file_name = '{}_{}_{}'.format(datacube, tile_id, period)
+    output_name = '{}_{}'.format(file_name, band)
 
-    #
+    absolute_prefix_path = Path(Config.DATA_DIR) / 'Repository/Mosaic'
+
     # MEDIAN will be generated in local disk
-    medianfile = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}.tif'.format(
-        datacube, tile_id, period, output_name))
+    medianfile = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(datacube, tile_id, period, output_name)
 
     stack_datacube = build_datacube_name(datacube, 'STK')
     output_name = output_name.replace(datacube, stack_datacube)
 
-    stack_file = os.path.join(Config.DATA_DIR, 'Repository/Mosaic/{}/{}/{}/{}.tif'.format(
-        stack_datacube, tile_id, period, output_name))
+    stack_file = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(stack_datacube, tile_id, period, output_name)
 
-    os.makedirs(os.path.dirname(medianfile), exist_ok=True)
-    os.makedirs(os.path.dirname(stack_file), exist_ok=True)
+    medianfile.parent.mkdir(parents=True, exist_ok=True)
+    stack_file.parent.mkdir(parents=True, exist_ok=True)
 
-    mediandataset = rasterio.open(medianfile, 'w', **profile)
+    median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
+
+    if build_cnc:
+        logging.warning('Creating and computing Count No Cloud (CNC) file...')
+        count_cloud_file_path = absolute_prefix_path / '{}/{}/{}/{}_cnc.tif'.format(datacube, tile_id, period,
+                                                                                    file_name)
+
+        count_cloud_data_set = SmartDataSet(count_cloud_file_path, 'w', **profile)
 
     for _, window in tilelist:
         # Build the stack to store all images as a masked array. At this stage the array will contain the masked data
         stackMA = numpy.ma.zeros((numscenes, window.height, window.width), dtype=numpy.int16)
 
         notdonemask = numpy.ones(shape=(window.height, window.width), dtype=numpy.bool_)
+
+        row_offset = window.row_off + window.height
+        col_offset = window.col_off + window.width
 
         # For all pair (quality,band) scenes
         for order in range(numscenes):
@@ -325,17 +389,22 @@ def blend(activity):
 
             # Evaluate the STACK image
             # Pixels that have been already been filled by previous rasters will be masked in the current raster
-            mask_raster[window.row_off: window.row_off + window.height, window.col_off: window.col_off + window.width] *= bmask.astype(profile['dtype'])
+            mask_raster[window.row_off: row_offset, window.col_off: col_offset] *= bmask.astype(profile['dtype'])
 
             raster[raster == nodata] = 0
             todomask = notdonemask * numpy.invert(bmask)
             notdonemask = notdonemask * bmask
-            stack_raster[window.row_off: window.row_off + window.height, window.col_off: window.col_off + window.width] += (todomask * raster.astype(profile['dtype']))
+            stack_raster[window.row_off: row_offset, window.col_off: col_offset] += (todomask * raster.astype(profile['dtype']))
 
-        median_raster = numpy.ma.median(stackMA, axis=0).data
-        median_raster[notdonemask.astype(numpy.bool_)] = nodata
+        median = numpy.ma.median(stackMA, axis=0).data
+        median[notdonemask.astype(numpy.bool_)] = nodata
 
-        mediandataset.write(median_raster.astype(profile['dtype']), window=window, indexes=1)
+        median_raster[window.row_off: row_offset, window.col_off: col_offset] = median.astype(profile['dtype'])
+
+        if build_cnc:
+            count_raster = numpy.ma.count(stackMA, axis=0)
+
+            count_cloud_data_set.dataset.write(count_raster.astype(profile['dtype']), window=window, indexes=1)
 
     stack_raster[mask_raster.astype(numpy.bool_)] = nodata
     # Close all input dataset
@@ -343,27 +412,42 @@ def blend(activity):
         bandlist[order].close()
         masklist[order].close()
 
-    # Evaluate cloudcover
+    # Evaluate cloud cover
     cloudcover = 100. * ((height * width - numpy.count_nonzero(stack_raster)) / (height * width))
-
-    if band != 'quality':
-        mediandataset.nodata = nodata
-
-    # # Close and upload the MEDIAN dataset
-    mediandataset.close()
 
     profile.update({
         'compress': 'LZW',
         'tiled': True,
-        "interleave": "pixel",
+        'interleave': 'pixel',
     })
 
-    with rasterio.open(medianfile, 'r+', **profile) as ds_median:
+    # Since count no cloud operator is specific for a band, we must ensure to manipulate data set only
+    # for band 'cnc' to avoid concurrent processes write same data set in disk.
+    # TODO: Review how to design it to avoid these IF's statement, since we must stack data set and mask dummy values
+    if build_cnc:
+        count_cloud_data_set.close()
+        logging.warning('Count No Cloud (CNC) file generated successfully.')
+
+        cnc_path = str(count_cloud_file_path)
+
+        with rasterio.open(cnc_path, 'r+', **profile) as dst_cnc:
+            dst_cnc.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+            dst_cnc.update_tags(ns='rio_overview', resampling='nearest')
+
+        # Copy CNC file to STK
+        # TODO: Remove it when run cube generation for specific composite function
+        copy_file(cnc_path, cnc_path.replace('MED', 'STK'))
+
+        activity['cloud_count_file'] = str(count_cloud_data_set.path)
+
+    # Close and upload the MEDIAN dataset
+    with rasterio.open(str(medianfile), 'w', **profile) as ds_median:
         ds_median.nodata = nodata
+        ds_median.write_band(1, median_raster)
         ds_median.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
         ds_median.update_tags(ns='rio_overview', resampling='nearest')
 
-    with rasterio.open(stack_file, 'w', **profile) as stack_dataset:
+    with rasterio.open(str(stack_file), 'w', **profile) as stack_dataset:
         stack_dataset.nodata = nodata
         stack_dataset.write_band(1, stack_raster)
         stack_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
@@ -372,8 +456,8 @@ def blend(activity):
     activity['efficacy'] = efficacy
     activity['cloudratio'] = cloudcover
     activity['blends'] = {
-        "MED": medianfile,
-        "STK": stack_file
+        "MED": str(medianfile),
+        "STK": str(stack_file)
     }
 
     return activity
@@ -634,16 +718,18 @@ def getMask(raster, dataset):
         lut = numpy.array([0,0,2,2,1,1,1,2,2,2,1, 1],dtype=numpy.uint8)
         rastercm = numpy.take(lut,raster).astype(numpy.uint8)
 
-    elif dataset == 'CB4_AWFI' or dataset == 'CB4_MUX':
-        # Key 		Summary QA 		Description
-        # 0 		Fill/No Data 	Not Processed
-        # 127 		Good Data 		Use with confidence
-        # 255 		Cloudy 			Target not visible, covered with cloud
-        fill = 0 		# warped images have 0 as fill area
-        lut = numpy.zeros(256,dtype=numpy.uint8)
+    elif dataset == 'CBERS4_AWFI_L4_SR' or dataset == 'CBERS4_MUX_L4_SR':
+        # Key Summary        QA Description
+        #   0 Fill/No Data - Not Processed
+        # 127 Good Data    - Use with confidence
+        # 255 Cloudy       - Target not visible, covered with cloud
+        # fill = 0  # warped images have 0 as fill area
+        lut = numpy.zeros(256, dtype=numpy.uint8)
         lut[127] = 1
         lut[255] = 2
         rastercm = numpy.take(lut, raster).astype(numpy.uint8)
+    else:
+        raise RuntimeError('No mask for data set {}'.format(dataset))
 
     totpix = rastercm.size
     clearpix = numpy.count_nonzero(rastercm == 1)
