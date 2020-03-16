@@ -508,7 +508,7 @@ class Maestro:
                         scene['link'] = link
 
                         if dataset == 'MOD13Q1' and band.common_name == 'quality':
-                            scene['link'] = scene['link'].replace('quality','reliability')
+                            scene['link'] = scene['link'].replace('quality', 'reliability')
 
                         scenes[band.common_name][dataset].setdefault(date, [])
                         scenes[band.common_name][dataset][date].append(scene)

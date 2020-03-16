@@ -65,6 +65,12 @@ def warp_merge(activity, force=False):
 
             res = merge_processing(warped_datacube, tile_id=tile_id, period=merge_date, **args)
 
+            logging.warning('Merge {} executed successfully. Efficacy={}, cloudratio={}'.format(
+                res['file'],
+                res['efficacy'],
+                res['cloudratio']
+            ))
+
             merge_args = activity['args']
             merge_args.update(res)
 
@@ -93,6 +99,11 @@ def prepare_blend(merges):
     """
     activities = dict()
 
+    # Prepare map of efficacy/cloudratio based in quality merge result
+    quality_date_stats = {
+        m['date']: (m['args']['efficacy'], m['args']['cloudratio']) for m in merges if m['band'] == 'quality'
+    }
+
     for _merge in merges:
         if _merge['band'] in activities and _merge['args']['date'] in activities[_merge['band']]['scenes'] or \
                 _merge['band'] == 'quality':
@@ -107,6 +118,11 @@ def prepare_blend(merges):
         activity['period'] = _merge['period']
         activity['tile_id'] = _merge['tile_id']
         activity['nodata'] = _merge['args'].get('nodata')
+
+        # Map efficacy/cloud ratio to the respective merge date before pass to blend
+        efficacy, cloudratio = quality_date_stats[_merge['date']]
+        activity['scenes'][_merge['args']['date']]['efficacy'] = efficacy
+        activity['scenes'][_merge['args']['date']]['cloudratio'] = cloudratio
 
         activity['scenes'][_merge['args']['date']]['ARDfiles'] = {
             "quality": _merge['args']['file'].replace(_merge['band'], 'quality'),

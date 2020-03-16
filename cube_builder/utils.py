@@ -155,6 +155,8 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
                         source_nodata = nodata
                     else:
                         source_nodata = 1
+                elif 'CBERS' in dataset and band != 'quality':
+                    source_nodata = nodata
 
                 kwargs.update({
                     'nodata': source_nodata
@@ -303,7 +305,7 @@ def blend(activity, build_cnc=False):
     # The list will be ordered by efficacy/resolution
     masklist = []
     bandlist = []
-    efficacy = 0
+
     for m in sorted(mask_tuples, reverse=True):
         key = m[1]
         efficacy = m[0]
@@ -339,7 +341,6 @@ def blend(activity, build_cnc=False):
 
     absolute_prefix_path = Path(Config.DATA_DIR) / 'Repository/Mosaic'
 
-    #
     # MEDIAN will be generated in local disk
     medianfile = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(datacube, tile_id, period, output_name)
 
@@ -351,7 +352,7 @@ def blend(activity, build_cnc=False):
     medianfile.parent.mkdir(parents=True, exist_ok=True)
     stack_file.parent.mkdir(parents=True, exist_ok=True)
 
-    mediandataset = SmartDataSet(medianfile, 'w', **profile)
+    median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
 
     if build_cnc:
         logging.warning('Creating and computing Count No Cloud (CNC) file...')
@@ -365,6 +366,9 @@ def blend(activity, build_cnc=False):
         stackMA = numpy.ma.zeros((numscenes, window.height, window.width), dtype=numpy.int16)
 
         notdonemask = numpy.ones(shape=(window.height, window.width), dtype=numpy.bool_)
+
+        row_offset = window.row_off + window.height
+        col_offset = window.col_off + window.width
 
         # For all pair (quality,band) scenes
         for order in range(numscenes):
@@ -384,17 +388,17 @@ def blend(activity, build_cnc=False):
 
             # Evaluate the STACK image
             # Pixels that have been already been filled by previous rasters will be masked in the current raster
-            mask_raster[window.row_off: window.row_off + window.height, window.col_off: window.col_off + window.width] *= bmask.astype(profile['dtype'])
+            mask_raster[window.row_off: row_offset, window.col_off: col_offset] *= bmask.astype(profile['dtype'])
 
             raster[raster == nodata] = 0
             todomask = notdonemask * numpy.invert(bmask)
             notdonemask = notdonemask * bmask
-            stack_raster[window.row_off: window.row_off + window.height, window.col_off: window.col_off + window.width] += (todomask * raster.astype(profile['dtype']))
+            stack_raster[window.row_off: row_offset, window.col_off: col_offset] += (todomask * raster.astype(profile['dtype']))
 
-        median_raster = numpy.ma.median(stackMA, axis=0).data
-        median_raster[notdonemask.astype(numpy.bool_)] = nodata
+        median = numpy.ma.median(stackMA, axis=0).data
+        median[notdonemask.astype(numpy.bool_)] = nodata
 
-        mediandataset.dataset.write(median_raster.astype(profile['dtype']), window=window, indexes=1)
+        median_raster[window.row_off: row_offset, window.col_off: col_offset] = median.astype(profile['dtype'])
 
         if build_cnc:
             count_raster = numpy.ma.count(stackMA, axis=0)
@@ -407,16 +411,13 @@ def blend(activity, build_cnc=False):
         bandlist[order].close()
         masklist[order].close()
 
-    # Evaluate cloudcover
+    # Evaluate cloud cover
     cloudcover = 100. * ((height * width - numpy.count_nonzero(stack_raster)) / (height * width))
-
-    if band != 'quality':
-        mediandataset.dataset.nodata = nodata
 
     profile.update({
         'compress': 'LZW',
         'tiled': True,
-        "interleave": "pixel",
+        'interleave': 'pixel',
     })
 
     # Since count no cloud operator is specific for a band, we must ensure to manipulate data set only
@@ -432,11 +433,10 @@ def blend(activity, build_cnc=False):
 
         activity['cloud_count_file'] = str(count_cloud_data_set.path)
 
-    # # Close and upload the MEDIAN dataset
-    mediandataset.dataset.close()
-
-    with rasterio.open(str(medianfile), 'r+', **profile) as ds_median:
+    # Close and upload the MEDIAN dataset
+    with rasterio.open(str(medianfile), 'w', **profile) as ds_median:
         ds_median.nodata = nodata
+        ds_median.write_band(1, median_raster)
         ds_median.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
         ds_median.update_tags(ns='rio_overview', resampling='nearest')
 
