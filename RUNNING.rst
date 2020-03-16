@@ -43,7 +43,7 @@ After that, run local celery worker:
         cube-builder worker -l INFO --concurrency 8
 
 
-You may need to replace the definition of some environment variables:
+You may need to replace the definition of some parameters:
 
     - ``-l INFO``: defines the ``Logging level``. You may choose between ``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, ``CRITICAL``, or ``FATAL``.
     - ``--concurrency 8``: defines the number of concurrent processes to generate of data cube. The default is the number of CPUs available on your system.
