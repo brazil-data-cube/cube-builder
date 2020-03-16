@@ -12,6 +12,7 @@
 import logging
 import os
 from pathlib import Path
+from shutil import copy as copy_file
 
 # 3rdparty
 import numpy
@@ -427,9 +428,15 @@ def blend(activity, build_cnc=False):
         count_cloud_data_set.close()
         logging.warning('Count No Cloud (CNC) file generated successfully.')
 
-        with rasterio.open(str(count_cloud_data_set.path), 'r+', **profile) as dst_cnc:
+        cnc_path = str(count_cloud_file_path)
+
+        with rasterio.open(cnc_path, 'r+', **profile) as dst_cnc:
             dst_cnc.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
             dst_cnc.update_tags(ns='rio_overview', resampling='nearest')
+
+        # Copy CNC file to STK
+        # TODO: Remove it when run cube generation for specific composite function
+        copy_file(cnc_path, cnc_path.replace('MED', 'STK'))
 
         activity['cloud_count_file'] = str(count_cloud_data_set.path)
 
