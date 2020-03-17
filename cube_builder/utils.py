@@ -310,8 +310,10 @@ def blend(activity, build_cnc=False):
 
     for key in activity['scenes']:
         scene = activity['scenes'][key]
+        resolution = scene.get('resx') or scene.get('resy') or scene.get('resolution')
+
         efficacy = int(scene['efficacy'])
-        resolution = int(scene['resolution'])
+        resolution = int(resolution)
         mask_tuples.append((100. * efficacy / resolution, key))
 
     # Open all input files and save the datasets in two lists, one for masks and other for the current band.
@@ -565,10 +567,13 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
     """
     item_id = '{}_{}_{}'.format(datacube.id, tile_id, date)
     quick_look_name = '{}_{}_{}'.format(datacube.id, tile_id, date)
+
+    datacube_merge = '_'.join(datacube.id.split('_')[:2])
+
     quick_look_file = os.path.join(
         Config.DATA_DIR,
         'Repository/Warped/{}/{}/{}/{}'.format(
-            datacube.id.replace('_WARPED', ''), tile_id, date, quick_look_name
+            datacube_merge, tile_id, date, quick_look_name
         )
     )
 

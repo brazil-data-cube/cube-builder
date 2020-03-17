@@ -56,10 +56,10 @@ def warp_merge(activity, force=False):
 
     merge_date = activity['date']
     tile_id = activity['tile_id']
-    merge_name = '{}_{}_{}_{}'.format(record.warped_collection_id, tile_id, merge_date, record.band)
+    collection_name_resolution = '_'.join(record.warped_collection_id.split('_')[:2])
     data_set = activity['args'].get('dataset')
 
-    collection_name_resolution = '_'.join(record.warped_collection_id.split('_')[:2])
+    merge_name = '{}_{}_{}_{}'.format(collection_name_resolution, tile_id, merge_date, record.band)
 
     merge_file_path = (Path(Config.DATA_DIR) / 'Repository/Warped') / '{}/{}/{}/{}.tif'.format(
         collection_name_resolution,
@@ -74,10 +74,13 @@ def warp_merge(activity, force=False):
 
         if activity['band'] == 'quality':
             # When file exists, compute the file statistics
-            efficacy, cloudratio = compute_data_set_stats(activity['args']['file'], data_set)
+            efficacy, cloudratio = compute_data_set_stats(merge_file_path, data_set)
 
+        activity['args']['file'] = str(merge_file_path)
         activity['args']['efficacy'] = efficacy
         activity['args']['cloudratio'] = cloudratio
+        record.args = activity['args']
+        record.save()
     else:
         record.status = 'STARTED'
         record.save()
