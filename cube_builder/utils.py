@@ -565,10 +565,10 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
 
     TODO: Review it with publish_datacube
     """
-    item_id = '{}_{}_{}'.format(datacube.id, tile_id, date)
-    quick_look_name = '{}_{}_{}'.format(datacube.id, tile_id, date)
-
     datacube_merge = '_'.join(datacube.id.split('_')[:2])
+
+    item_id = '{}_{}_{}'.format(datacube_merge, tile_id, date)
+    quick_look_name = '{}_{}_{}'.format(datacube.id, tile_id, date)
 
     quick_look_file = os.path.join(
         Config.DATA_DIR,
