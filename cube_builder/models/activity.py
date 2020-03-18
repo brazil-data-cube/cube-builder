@@ -25,6 +25,7 @@ class Activity(BaseModel):
     activity_type = Column('activity_type', String(64), nullable=False)
     period = Column(String(64), nullable=False)
     date = Column(Date, nullable=False)
+    tile_id = Column(String, nullable=False)
     status = Column(String(64), nullable=False)
     args = Column('args', JSON)
     tags = Column('tags', ARRAY(String))

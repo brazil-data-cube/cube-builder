@@ -15,7 +15,7 @@ Cube Builder
         :alt: Software License
 
 .. image:: https://readthedocs.org/projects/cube-builder/badge/?version=latest
-        :target: https://bdc-db.readthedocs.io/en/latest/
+        :target: https://cube-builder.readthedocs.io/en/latest/
         :alt: Documentation Status
 
 .. image:: https://img.shields.io/badge/lifecycle-experimental-orange.svg

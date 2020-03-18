@@ -16,7 +16,6 @@ readme = open('README.rst').read()
 history = open('CHANGES.rst').read()
 
 docs_require = [
-    'bdc-readthedocs-theme @ git+git://github.com/brazil-data-cube/bdc-readthedocs-theme.git#egg=bdc-readthedocs-theme',
     'Sphinx>=2.1.2',
 ]
 
@@ -41,17 +40,16 @@ extras_require['all'] = [ req for exts, reqs in extras_require.items() for req i
 setup_requires = []
 
 install_requires = [
-    'bdc-core @ git+git://github.com/brazil-data-cube/bdc-core.git#egg=bdc-core',
+    'bdc-core @ git+git://github.com/brazil-data-cube/bdc-core.git@v0.2.0#egg=bdc-core',
     'bdc-db @ git+git://github.com/brazil-data-cube/bdc-db.git@v0.2.0#egg=bdc-db',
     'celery[librabbitmq]>=4.3.0',
-    'Flask>=1.1.1',
-    'GDAL>=2.3.3',
-    'marshmallow-sqlalchemy>=0.19.0',
+    'Flask>=1.1.1,<2',
+    'marshmallow-sqlalchemy>=0.19.0,<1',
     'numpy>=1.17.2',
     'numpngw>=0.0.8',
-    'rasterio>=1.1.2',
-    'SQLAlchemy-Utils>=0.34.2',
-    'stac @ git+git://github.com/brazil-data-cube/stac.py.git@b-0.7.0#egg=stac',
+    'rasterio>=1.1.2,<2',
+    'SQLAlchemy-Utils>=0.34.2,<1',
+    'stac @ git+git://github.com/brazil-data-cube/stac.py.git@v0.7.0-0#egg=stac',
     'scikit-image>=0.16.2',
 ]
 

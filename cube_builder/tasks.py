@@ -21,7 +21,6 @@ from celery import chain, group
 from .celery import celery_app
 from .models import Activity
 from .utils import blend as blend_processing
-from .utils import get_or_create_activity
 from .utils import merge as merge_processing
 from .utils import publish_datacube, publish_merge
 
@@ -59,14 +58,18 @@ def warp_merge(activity, force=False):
 
         try:
             args = deepcopy(activity.get('args'))
-            period = activity.get('period')
             warped_datacube = activity.get('warped_collection_id')
-            tile_id = args.pop('tile_id')
-            assets = args.pop('assets')
-            cols = args.pop('cols')
-            rows = args.pop('rows')
+            _ = args.pop('period', None)
+            merge_date = args.get('date')
+            tile_id = activity.get('tile_id')
 
-            res = merge_processing(warped_datacube, tile_id, assets, int(cols), int(rows), period, **args)
+            res = merge_processing(warped_datacube, tile_id=tile_id, period=merge_date, **args)
+
+            logging.warning('Merge {} executed successfully. Efficacy={}, cloudratio={}'.format(
+                res['file'],
+                res['efficacy'],
+                res['cloudratio']
+            ))
 
             merge_args = activity['args']
             merge_args.update(res)
@@ -87,14 +90,19 @@ def warp_merge(activity, force=False):
 
 
 @celery_app.task()
-def blend(merges):
-    """Receive merges and prepare task blend.
+def prepare_blend(merges):
+    """Receive merges by period and prepare task blend.
 
     This task aims to prepare celery task definition for blend.
     A blend requires both data set quality band and others bands. In this way, we must group
     these values by temporal resolution and then schedule blend tasks.
     """
     activities = dict()
+
+    # Prepare map of efficacy/cloudratio based in quality merge result
+    quality_date_stats = {
+        m['date']: (m['args']['efficacy'], m['args']['cloudratio']) for m in merges if m['band'] == 'quality'
+    }
 
     for _merge in merges:
         if _merge['band'] in activities and _merge['args']['date'] in activities[_merge['band']]['scenes'] or \
@@ -108,8 +116,13 @@ def blend(merges):
         activity['band'] = _merge['band']
         activity['scenes'].setdefault(_merge['args']['date'], dict(**_merge['args']))
         activity['period'] = _merge['period']
-        activity['tile_id'] = _merge['args']['tile_id']
+        activity['tile_id'] = _merge['tile_id']
         activity['nodata'] = _merge['args'].get('nodata')
+
+        # Map efficacy/cloud ratio to the respective merge date before pass to blend
+        efficacy, cloudratio = quality_date_stats[_merge['date']]
+        activity['scenes'][_merge['args']['date']]['efficacy'] = efficacy
+        activity['scenes'][_merge['args']['date']]['cloudratio'] = cloudratio
 
         activity['scenes'][_merge['args']['date']]['ARDfiles'] = {
             "quality": _merge['args']['file'].replace(_merge['band'], 'quality'),
@@ -122,16 +135,28 @@ def blend(merges):
 
     blends = []
 
-    for activity in activities.values():
+    # Prepare list of activities to dispatch
+    activity_list = list(activities.values())
+
+    # We must keep track of last activity to run
+    # Since the Count No Cloud (CNC) must only be execute by single process. It is important
+    # to avoid concurrent processes to write same data set in disk
+    last_activity = activity_list[-1]
+
+    # Trigger all except the last
+    for activity in activity_list[:-1]:
         # TODO: Persist
-        blends.append(_blend.s(activity))
+        blends.append(blend.s(activity))
+
+    # Trigger last blend to execute CNC
+    blends.append(blend.s(last_activity, build_cnc=True))
 
     task = chain(group(blends), publish.s())
     task.apply_async()
 
 
 @celery_app.task()
-def _blend(activity):
+def blend(activity, build_cnc=False):
     """Execute datacube blend task.
 
     TODO: Describe how it works.
@@ -144,7 +169,7 @@ def _blend(activity):
     """
     logging.warning('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
 
-    return blend_processing(activity)
+    return blend_processing(activity, build_cnc)
 
 
 @celery_app.task()
@@ -170,6 +195,9 @@ def publish(blends):
 
     for blend_result in blends:
         blend_files[blend_result['band']] = blend_result['blends']
+
+        if blend_result.get('cloud_count_file'):
+            blend_files['cnc'] = dict(MED=blend_result['cloud_count_file'], STK=blend_result['cloud_count_file'])
 
         for merge_date, definition in blend_result['scenes'].items():
             merges.setdefault(merge_date, dict(dataset=definition['dataset'],

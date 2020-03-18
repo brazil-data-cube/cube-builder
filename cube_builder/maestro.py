@@ -17,12 +17,13 @@ import numpy
 from bdc_db.models import (Band, Collection, CollectionItem, CollectionTile,
                            Tile, db)
 from geoalchemy2 import func
+from requests.exceptions import RequestException
 from stac import STAC
 
 # Cube Builder
 from .config import Config
 from .forms import ActivityForm
-from .models.activity import Activity
+from .forms import BandForm
 from .utils import get_or_create_activity
 
 
@@ -158,9 +159,6 @@ def decode_periods(temporal_schema, start_date, end_date, time_step):
     return requested_periods
 
 
-stac_cli = STAC(Config.STAC_URL)
-
-
 class Maestro:
     """Define class for handling data cube generation."""
 
@@ -186,6 +184,51 @@ class Maestro:
 
         force = properties.get('force', False)
         self.params['force'] = force
+
+    def get_stac(self, collection: str) -> STAC:
+        """Retrieve STAC client which provides the given collection.
+
+        By default, it searches for given collection on Brazil Data Cube STAC.
+        When collection not found, search on INPE STAC.
+
+        Args:
+            collection - Collection name to search
+
+        Returns
+        """
+        try:
+            return self._stac(collection, Config.STAC_URL)
+        except RuntimeError:
+            # Search in INPE STAC
+            return self._stac(collection, 'http://cdsr.dpi.inpe.br/inpe-stac')
+
+    @staticmethod
+    def _stac(collection: str, url: str) -> STAC:
+        """Check if collection is provided by given STAC url.
+
+        The provided STAC must follow the `SpatioTemporal Asset Catalogs spec <https://stacspec.org/>`_.
+
+        Exceptions:
+            RuntimeError for any exception during STAC connection.
+
+        Args:
+            collection: Collection name
+            url - STAC URL
+
+        Returns:
+            STAC client
+        """
+        try:
+            stac = STAC(url)
+
+            _ = stac.catalog
+
+            _ = stac.collections[collection]
+
+            return stac
+        except (KeyError, ValueError, RequestException) as e:
+            # STAC Error
+            raise RuntimeError('An error occurred in STAC {}'.format(str(e)))
 
     def create_tiles(self, tiles: List[str], collection: Collection):
         """Create Collection tiles on database.
@@ -240,16 +283,13 @@ class Maestro:
         # Create tiles
         self.create_tiles(self.params['tiles'], self.datacube)
 
-        # TODO: Check in STAC for cube item
-        # datacube_stac = stac_cli.collection(self.datacube.id)
-
         collections_items = CollectionItem.query().filter(
             CollectionItem.collection_id == self.datacube.id,
             CollectionItem.grs_schema_id == self.datacube.grs_schema_id
         ).order_by(CollectionItem.composite_start).all()
         cube_start_date = self.params['start_date']
-        if list(filter(lambda c_i: c_i.tile_id == self.params['tiles'][0], collections_items)):
-            cube_start_date = collections_items[0].composite_start
+        # if list(filter(lambda c_i: c_i.tile_id == self.params['tiles'][0], collections_items)):
+        #     cube_start_date = collections_items[0].composite_start
 
         dstart = self.params['start_date']
         dend = self.params['end_date']
@@ -270,8 +310,8 @@ class Maestro:
 
         self.bands = Band.query().filter(Band.collection_id == self.datacube.id).all()
 
-        number_cols = self.datacube.raster_size_schemas.raster_size_x
-        number_rows = self.datacube.raster_size_schemas.raster_size_y
+        number_cols = int(self.datacube.raster_size_schemas.raster_size_x)
+        number_rows = int(self.datacube.raster_size_schemas.raster_size_y)
 
         for tile in self.tiles:
             self.mosaics[tile.id] = dict(
@@ -293,17 +333,17 @@ class Maestro:
                     self.mosaics[tile.id]['periods'][periodkey]['end'] = enddate
                     self.mosaics[tile.id]['periods'][periodkey]['cols'] = number_cols
                     self.mosaics[tile.id]['periods'][periodkey]['rows'] = number_rows
-                    self.mosaics[tile.id]['periods'][periodkey]['dirname']  = '{}/{}/{}-{}/'.format(self.datacube.id, tile.id, startdate, enddate)
+                    self.mosaics[tile.id]['periods'][periodkey]['dirname'] = '{}/{}/{}-{}/'.format(self.datacube.id, tile.id, startdate, enddate)
 
     @property
-    def warped_datacube(self):
+    def warped_datacube(self) -> Collection:
         """Retrieve cached datacube defintion."""
         datacube_warped = '{}WARPED'.format(self.datacube.id[:-3])
 
         return Collection.query().filter(Collection.id == datacube_warped).first()
 
     @property
-    def datacube_bands(self):
+    def datacube_bands(self) -> List[Band]:
         """Retrieve data cube bands based int user input."""
         if self.params.get('bands'):
             return list(filter(lambda band: band.common_name in self.params['bands'], self.bands))
@@ -311,14 +351,7 @@ class Maestro:
 
     def prepare_merge(self):
         """Search on STAC for available collection images."""
-        # Remove this when https://github.com/brazil-data-cube/stac.py/issues/10 is fixed.
-        _ = stac_cli.catalog
-
         for tileid in self.mosaics:
-            if len(self.mosaics) != 1:
-                self.params['tileid'] = tileid
-                continue
-
             bbox_result = db.session.query(
                 Tile.id,
                 func.ST_AsText(func.ST_BoundingDiagonal(func.ST_Force2D(Tile.geom_wgs84)))
@@ -334,7 +367,7 @@ class Maestro:
                 end = self.mosaics[tileid]['periods'][periodkey]['end']
 
                 # Search all images
-                self.mosaics[tileid]['periods'][periodkey]['scenes'] = self.search_images(bbox, start, end)
+                self.mosaics[tileid]['periods'][periodkey]['scenes'] = self.search_images(bbox, start, end, tileid)
 
     def dispatch_celery(self):
         """Dispatch datacube generation on celery workers.
@@ -342,7 +375,7 @@ class Maestro:
         Make sure celery is running. Check RUNNING.rst for further details.
         """
         from celery import group, chain
-        from .tasks import blend, warp_merge
+        from .tasks import prepare_blend, warp_merge
         self.prepare_merge()
 
         datacube = self.datacube.id
@@ -407,15 +440,17 @@ class Maestro:
                 # Persist activities
                 db.session.commit()
 
-                task = chain(group(merges_tasks), blend.s())
-                blends.append(task)
+                if len(merges_tasks) > 0:
+                    task = chain(group(merges_tasks), prepare_blend.s())
+                    blends.append(task)
 
-            task = group(blends)
-            task.apply_async()
+            if len(blends) > 0:
+                task = group(blends)
+                task.apply_async()
 
         return self.mosaics
 
-    def search_images(self, bbox: str, start: str, end: str):
+    def search_images(self, bbox: str, start: str, end: str, tile_id: str):
         """Search and prepare images on STAC."""
         scenes = {}
         options = dict(
@@ -426,21 +461,31 @@ class Maestro:
 
         bands = self.datacube_bands
 
+        band_serializer = BandForm()
+
+        # Retrieve band definition in dict format.
+        # TODO: Should we use from STAC?
+        band_data = band_serializer.dump(bands, many=True)
+        collection_bands = {band_dump['common_name']: band_dump for band_dump in band_data}
+
         for band in bands:
             scenes[band.common_name] = dict()
 
         for dataset in self.params['collections']:
-            collection_metadata = stac_cli.collections[dataset]
+            stac = self.get_stac(dataset)
 
-            collection_bands = collection_metadata['properties']['bdc:bands']
+            token = ''
+            print('Searching for {} - {} ({}, {}) using {}...'.format(dataset, tile_id, start, end, stac.url))
 
-            items = stac_cli.collections[dataset].get_items(filter=options)
+            if 'CBERS' in dataset:
+                token = '?key={}'.format(Config.CBERS_AUTH_TOKEN)
+
+            items = stac.collections[dataset].get_items(filter=options)
 
             for feature in items['features']:
                 if feature['type'] == 'Feature':
                     date = feature['properties']['datetime'][0:10]
                     identifier = feature['id']
-                    tile = feature['properties']['bdc:tile']
 
                     for band in bands:
                         if band.common_name not in feature['assets']:
@@ -450,18 +495,20 @@ class Maestro:
 
                         link = feature['assets'][band.common_name]['href']
 
-                        # radiometric_processing = linfeature['radiometric_processing']
-                        # if radiometric_processing == 'DN' or radiometric_processing == 'TOA': continue
-
-                        scene = {**collection_bands[band.common_name]}
+                        scene = dict(**collection_bands[band.common_name])
                         scene['sceneid'] = identifier
-                        scene['tile'] = tile
+                        scene['tile'] = tile_id
                         scene['date'] = date
                         scene['band'] = band.common_name
+
+                        if token:
+                            link = '{}{}'.format(link.replace('cdsr.dpi.inpe.br/api/download',
+                                                              'chronos.dpi.inpe.br:8089/datastore'), token)
+
                         scene['link'] = link
 
                         if dataset == 'MOD13Q1' and band.common_name == 'quality':
-                            scene['link'] = scene['link'].replace('quality','reliability')
+                            scene['link'] = scene['link'].replace('quality', 'reliability')
 
                         scenes[band.common_name][dataset].setdefault(date, [])
                         scenes[band.common_name][dataset][date].append(scene)

@@ -8,7 +8,7 @@
 
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
-from bdc_db.models import Collection, db
+from bdc_db.models import Band, Collection, db
 from marshmallow_sqlalchemy.schema import ModelSchema
 
 from .models import Activity
@@ -31,4 +31,16 @@ class ActivityForm(ModelSchema):
         """Internal meta information of Form interface."""
 
         model = Activity
+        sqla_session = db.session
+
+
+class BandForm(ModelSchema):
+    """Define form definition for model Band.
+    Used to serialize band values.
+    """
+
+    class Meta:
+        """Internal meta information of Form interface."""
+
+        model = Band
         sqla_session = db.session
