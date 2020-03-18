@@ -62,15 +62,20 @@ class CubeBusiness:
         for cube in cubes:
             # save bands
             for band in params['bands']:
+                if band == 'cnc' and 'WARPED' in cube.id:
+                    continue
+
+                is_not_cloud = band != 'quality' and band != 'cnc'
+
                 band = band.strip()
                 bands.append(Band(
                     name=band,
                     collection_id=cube.id,
-                    min=0 if band != 'quality' else 0,
-                    max=10000 if band != 'quality' else 255,
-                    fill=-9999 if band != 'quality' else 0,
-                    scale=0.0001 if band != 'quality' else 1,
-                    data_type='int16' if band != 'quality' else 'Uint16',
+                    min=0 if is_not_cloud else 0,
+                    max=10000 if is_not_cloud else 255,
+                    fill=-9999 if is_not_cloud else 0,
+                    scale=0.0001 if is_not_cloud else 1,
+                    data_type='int16' if is_not_cloud else 'Uint16',
                     common_name=band,
                     resolution_x=params['resolution'],
                     resolution_y=params['resolution'],
