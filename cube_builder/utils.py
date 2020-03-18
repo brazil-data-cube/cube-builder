@@ -237,6 +237,7 @@ class SmartDataSet:
     """
 
     def __init__(self, file_path: str, mode='r', **properties):
+        """Initialize SmartDataSet definition and open rasterio data set."""
         self.path = Path(file_path)
         self.dataset = rasterio.open(file_path, mode=mode, **properties)
 

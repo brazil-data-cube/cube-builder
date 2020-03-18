@@ -194,7 +194,8 @@ class Maestro:
         Args:
             collection - Collection name to search
 
-        Returns
+        Returns:
+            STAC client
         """
         try:
             return self._stac(collection, Config.STAC_URL)

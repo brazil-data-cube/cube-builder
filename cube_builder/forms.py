@@ -36,6 +36,7 @@ class ActivityForm(ModelSchema):
 
 class BandForm(ModelSchema):
     """Define form definition for model Band.
+
     Used to serialize band values.
     """
 
