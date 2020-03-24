@@ -2,7 +2,7 @@
 # This file is part of Python Module for Cube Builder.
 # Copyright (C) 2019-2020 INPE.
 #
-# Cube Builder free software; you can redistribute it and/or modify it
+# Cube Builder is free software; you can redistribute it and/or modify it
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
@@ -84,22 +84,22 @@ def decode_periods(temporal_schema, start_date, end_date, time_step):
 
     # Find the exact start_date based on periods that start on yyyy-01-01
     firstyear = start_date.split('-')[0]
-    start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')
+    new_start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')
     if temporal_schema == 'A':
         dbase = datetime.datetime.strptime(firstyear+'-01-01', '%Y-%m-%d')
-        while dbase < start_date:
+        while dbase < new_start_date:
             dbase += td_time_step
-        if dbase > start_date:
+        if dbase > new_start_date:
             dbase -= td_time_step
         start_date = dbase.strftime('%Y-%m-%d')
-        start_date = dbase
+        new_start_date = dbase
 
     # Find the exact end_date based on periods that start on yyyy-01-01
     lastyear = end_date.split('-')[0]
-    end_date = datetime.datetime.strptime(end_date, '%Y-%m-%d')
+    new_end_date = datetime.datetime.strptime(end_date, '%Y-%m-%d')
     if temporal_schema == 'A':
         dbase = datetime.datetime.strptime(lastyear+'-12-31', '%Y-%m-%d')
-        while dbase > end_date:
+        while dbase > new_end_date:
             dbase -= td_time_step
         end_date = dbase
         if end_date == start_date:
@@ -108,11 +108,11 @@ def decode_periods(temporal_schema, start_date, end_date, time_step):
 
     # For annual periods
     if temporal_schema == 'A':
-        dbase = start_date
+        dbase = new_start_date
         yearold = dbase.year
         count = 0
         requested_period = []
-        while dbase < end_date:
+        while dbase < new_end_date:
             if yearold != dbase.year:
                 dbase = datetime.datetime(dbase.year,1,1)
             yearold = dbase.year
@@ -194,7 +194,8 @@ class Maestro:
         Args:
             collection - Collection name to search
 
-        Returns
+        Returns:
+            STAC client
         """
         try:
             return self._stac(collection, Config.STAC_URL)

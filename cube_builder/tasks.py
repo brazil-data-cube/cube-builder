@@ -2,7 +2,7 @@
 # This file is part of Python Module for Cube Builder.
 # Copyright (C) 2019-2020 INPE.
 #
-# Cube Builder free software; you can redistribute it and/or modify it
+# Cube Builder is free software; you can redistribute it and/or modify it
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
@@ -12,15 +12,18 @@
 import logging
 import traceback
 from copy import deepcopy
+from pathlib import Path
 
 # 3rdparty
 from bdc_db.models import Collection
 from celery import chain, group
 
 # Cube Builder
+from cube_builder.config import Config
 from .celery import celery_app
 from .models import Activity
 from .utils import blend as blend_processing
+from .utils import compute_data_set_stats
 from .utils import merge as merge_processing
 from .utils import publish_datacube, publish_merge
 
@@ -42,7 +45,7 @@ def warp_merge(activity, force=False):
 
     Args:
         activity - Datacube Activity Model
-        force - Flag to build datacube without cache.
+        force - Flag to build data cube without cache.
 
     Returns:
         Validated activity
@@ -51,19 +54,42 @@ def warp_merge(activity, force=False):
 
     record: Activity = Activity.query().filter(Activity.id == activity['id']).one()
 
-    # TODO: Validate in disk
-    if force or record.status != 'SUCCESS':
+    merge_date = activity['date']
+    tile_id = activity['tile_id']
+    collection_name_resolution = '_'.join(record.warped_collection_id.split('_')[:2])
+    data_set = activity['args'].get('dataset')
+
+    merge_name = '{}_{}_{}_{}'.format(collection_name_resolution, tile_id, merge_date, record.band)
+
+    merge_file_path = (Path(Config.DATA_DIR) / 'Repository/Warped') / '{}/{}/{}/{}.tif'.format(
+        collection_name_resolution,
+        tile_id,
+        merge_date.replace(data_set, ''),
+        merge_name
+    )
+
+    # Reuse merges already done. Rebuild only with flag ``--force``
+    if not force and merge_file_path.exists() and merge_file_path.is_file():
+        efficacy = cloudratio = 0
+
+        if activity['band'] == 'quality':
+            # When file exists, compute the file statistics
+            efficacy, cloudratio = compute_data_set_stats(merge_file_path, data_set)
+
+        activity['args']['file'] = str(merge_file_path)
+        activity['args']['efficacy'] = efficacy
+        activity['args']['cloudratio'] = cloudratio
+        record.args = activity['args']
+        record.save()
+    else:
         record.status = 'STARTED'
         record.save()
 
         try:
             args = deepcopy(activity.get('args'))
-            warped_datacube = activity.get('warped_collection_id')
             _ = args.pop('period', None)
-            merge_date = args.get('date')
-            tile_id = activity.get('tile_id')
 
-            res = merge_processing(warped_datacube, tile_id=tile_id, period=merge_date, **args)
+            res = merge_processing(merge_file_path, **args)
 
             logging.warning('Merge {} executed successfully. Efficacy={}, cloudratio={}'.format(
                 res['file'],

@@ -52,7 +52,7 @@ You may need to replace the definition of some parameters:
 .. note::
 
     The command line ``cube-builder worker`` is an auxiliary tool that wraps celery command line using ``cube_builder`` as context.
-    In this way, all ``celery worker`` parameters currently supported.
+    In this way, all ``celery worker`` parameters currently supported. See more in `Celery Workers Guide <https://docs.celeryproject.org/en/stable/userguide/workers.html>`_.
 
 
 .. warning::
@@ -76,7 +76,7 @@ Create datacube metadata
                  "temporal_schema": "M1month",
                  "bands_quicklook": ["swir2", "nir", "red"],
                  "composite_function_list": ["MEDIAN", "STACK"],
-                 "bands": ["coastal", "blue", "green", "red", "nir", "swir1", "swir2", "evi", "ndvi", "quality"],
+                 "bands": ["coastal", "blue", "green", "red", "nir", "swir1", "swir2", "evi", "ndvi", "quality", "cnc"],
                  "description": "Landsat8 Cubes 30m - Monthly"
              }'
 
@@ -143,9 +143,10 @@ Use the following code to create data cube metadata of Sentinel 2:
                     "swir2",
                     "ndvi",
                     "evi",
-                    "quality"
+                    "quality",
+                    "cnc"
                 ],
-                "description": "S2 10 Monthly"
+                "description": "S2 10m Monthly"
             }'
 
 
@@ -178,7 +179,7 @@ Use the following code to create data cube metadata of CBERS 4 AWFI:
                 "temporal_schema": "M1month",
                 "bands_quicklook": ["red", "nir", "green"],
                 "composite_function_list": ["MEDIAN", "STACK"],
-                "bands": ["blue", "green", "red", "nir", "evi", "ndvi", "quality"],
+                "bands": ["blue", "green", "red", "nir", "evi", "ndvi", "quality", "cnc"],
                 "description": "CBERS4 AWFI - Monthly"
             }'
 

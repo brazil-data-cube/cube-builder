@@ -2,7 +2,7 @@
 # This file is part of Python Module for Cube Builder.
 # Copyright (C) 2019-2020 INPE.
 #
-# Cube Builder free software; you can redistribute it and/or modify it
+# Cube Builder is free software; you can redistribute it and/or modify it
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
@@ -13,6 +13,7 @@ import logging
 import os
 from pathlib import Path
 from shutil import copy as copy_file
+from typing import List, Tuple
 
 # 3rdparty
 import numpy
@@ -84,7 +85,7 @@ def build_datacube_name(datacube, func):
     return '{}{}'.format(datacube[:-3], func)
 
 
-def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
+def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
     """Apply datacube merge scenes.
 
     TODO: Describe how it works.
@@ -98,22 +99,17 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
         period - Datacube merge period.
         **kwargs - Extra properties
     """
-    datacube = kwargs['datacube']
     nodata = kwargs.get('nodata', -9999)
     xmin = kwargs.get('xmin')
     ymax = kwargs.get('ymax')
     dataset = kwargs.get('dataset')
     band = assets[0]['band']
-    merge_date = kwargs.get('date').replace(dataset, '')
     resx, resy = kwargs.get('resx'), kwargs.get('resy')
 
-    srs = kwargs.get('srs', '+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-50 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs')
-
-    merge_name = '{}_{}_{}_{}'.format(warped_datacube, tile_id, merge_date, band)
-
-    folder_name = warped_datacube.replace('_WARPED', '')
-
-    merged_file = os.path.join(Config.DATA_DIR, 'Repository/Warped/{}/{}/{}/{}.tif'.format(folder_name, tile_id, merge_date, merge_name))
+    srs = kwargs.get(
+        'srs',
+        '+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-50 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs'
+    )
 
     transform = Affine(resx, 0, xmin, 0, -resy, ymax)
 
@@ -209,8 +205,8 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
         raster_merge, efficacy, cloudratio = getMask(raster_merge, dataset)
         template.update({'dtype': 'uint16'})
 
-    target_dir = os.path.dirname(merged_file)
-    os.makedirs(target_dir, exist_ok=True)
+    # Ensure file tree is created
+    Path(merge_file).parent.mkdir(parents=True, exist_ok=True)
 
     template.update({
         'compress': 'LZW',
@@ -218,22 +214,18 @@ def merge(warped_datacube, tile_id, assets, cols, rows, period, **kwargs):
         "interleave": "pixel",
     })
 
-    with rasterio.open(merged_file, 'w', **template) as merge_dataset:
+    with rasterio.open(str(merge_file), 'w', **template) as merge_dataset:
         merge_dataset.nodata = nodata
         merge_dataset.write_band(1, raster_merge)
         merge_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
         merge_dataset.update_tags(ns='rio_overview', resampling='nearest')
 
     return dict(
-        band=band,
-        file=merged_file,
+        file=str(merge_file),
         efficacy=efficacy,
         cloudratio=cloudratio,
         dataset=dataset,
         resolution=resx,
-        period=period,
-        date=merge_date,
-        datacube=datacube,
         nodata=nodata
     )
 
@@ -245,6 +237,7 @@ class SmartDataSet:
     """
 
     def __init__(self, file_path: str, mode='r', **properties):
+        """Initialize SmartDataSet definition and open rasterio data set."""
         self.path = Path(file_path)
         self.dataset = rasterio.open(file_path, mode=mode, **properties)
 
@@ -266,6 +259,26 @@ class SmartDataSet:
             logging.warning('Closing dataset {}'.format(str(self.path)))
 
             self.dataset.close()
+
+
+def compute_data_set_stats(file_path: str, data_set_name: str) -> Tuple[float, float]:
+    """Compute data set efficacy and cloud ratio.
+
+    It opens the given ``file_path`` and calculate the mask statistics, such efficacy and cloudratio.
+
+    Args:
+        file_path - Path to given data set
+        data_set_name - Data set name (LC8SR, S2SR_SEN28, CBERS, etc)
+
+    Returns:
+        Tuple consisting in efficacy and cloud ratio, respectively.
+    """
+    with rasterio.open(file_path, 'r') as data_set:
+        raster = data_set.read(1)
+
+        _, efficacy, cloudratio = getMask(raster, data_set_name)
+
+    return efficacy, cloudratio
 
 
 def blend(activity, build_cnc=False):
@@ -298,8 +311,10 @@ def blend(activity, build_cnc=False):
 
     for key in activity['scenes']:
         scene = activity['scenes'][key]
+        resolution = scene.get('resx') or scene.get('resy') or scene.get('resolution')
+
         efficacy = int(scene['efficacy'])
-        resolution = int(scene['resolution'])
+        resolution = int(resolution)
         mask_tuples.append((100. * efficacy / resolution, key))
 
     # Open all input files and save the datasets in two lists, one for masks and other for the current band.
@@ -551,12 +566,15 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
 
     TODO: Review it with publish_datacube
     """
-    item_id = '{}_{}_{}'.format(datacube.id, tile_id, date)
-    quick_look_name = '{}_{}_{}'.format(datacube.id, tile_id, date)
+    datacube_merge = '_'.join(datacube.id.split('_')[:2])
+
+    item_id = '{}_{}_{}'.format(datacube_merge, tile_id, date)
+    quick_look_name = '{}_{}_{}'.format(datacube_merge, tile_id, date)
+
     quick_look_file = os.path.join(
         Config.DATA_DIR,
         'Repository/Warped/{}/{}/{}/{}'.format(
-            datacube.id.replace('_WARPED', ''), tile_id, date, quick_look_name
+            datacube_merge, tile_id, date, quick_look_name
         )
     )
 
