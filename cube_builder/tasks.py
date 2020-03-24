@@ -83,6 +83,7 @@ def warp_merge(activity, force=False):
         record.save()
     else:
         record.status = 'STARTED'
+        record.args = activity['args']
         record.save()
 
         try:
@@ -90,12 +91,6 @@ def warp_merge(activity, force=False):
             _ = args.pop('period', None)
 
             res = merge_processing(merge_file_path, **args)
-
-            logging.warning('Merge {} executed successfully. Efficacy={}, cloudratio={}'.format(
-                res['file'],
-                res['efficacy'],
-                res['cloudratio']
-            ))
 
             merge_args = activity['args']
             merge_args.update(res)
@@ -112,6 +107,12 @@ def warp_merge(activity, force=False):
         finally:
             record.save()
 
+    logging.warning('Merge {} executed successfully. Efficacy={}, cloud_ratio={}'.format(
+        str(merge_file_path),
+        record.args['efficacy'],
+        record.args['cloudratio']
+    ))
+
     return activity
 
 
@@ -125,7 +126,7 @@ def prepare_blend(merges):
     """
     activities = dict()
 
-    # Prepare map of efficacy/cloudratio based in quality merge result
+    # Prepare map of efficacy/cloud_ratio based in quality merge result
     quality_date_stats = {
         m['date']: (m['args']['efficacy'], m['args']['cloudratio']) for m in merges if m['band'] == 'quality'
     }

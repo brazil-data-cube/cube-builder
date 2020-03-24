@@ -264,7 +264,7 @@ class SmartDataSet:
 def compute_data_set_stats(file_path: str, data_set_name: str) -> Tuple[float, float]:
     """Compute data set efficacy and cloud ratio.
 
-    It opens the given ``file_path`` and calculate the mask statistics, such efficacy and cloudratio.
+    It opens the given ``file_path`` and calculate the mask statistics, such efficacy and cloud ratio.
 
     Args:
         file_path - Path to given data set
@@ -276,9 +276,18 @@ def compute_data_set_stats(file_path: str, data_set_name: str) -> Tuple[float, f
     with rasterio.open(file_path, 'r') as data_set:
         raster = data_set.read(1)
 
-        _, efficacy, cloudratio = getMask(raster, data_set_name)
+        totpix = raster.size
+        clearpix = numpy.count_nonzero(raster == 1)
+        cloudpix = numpy.count_nonzero(raster == 2)
+        imagearea = clearpix + cloudpix
 
-    return efficacy, cloudratio
+        cloud_ratio = 100
+        if imagearea != 0:
+            cloud_ratio = round(100. * cloudpix / imagearea, 1)
+
+        efficacy = round(100. * clearpix / totpix, 2)
+
+    return efficacy, cloud_ratio
 
 
 def blend(activity, build_cnc=False):
