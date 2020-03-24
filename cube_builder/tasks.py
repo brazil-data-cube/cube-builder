@@ -74,7 +74,7 @@ def warp_merge(activity, force=False):
 
         if activity['band'] == 'quality':
             # When file exists, compute the file statistics
-            efficacy, cloudratio = compute_data_set_stats(merge_file_path, data_set)
+            efficacy, cloudratio = compute_data_set_stats(merge_file_path)
 
         activity['args']['file'] = str(merge_file_path)
         activity['args']['efficacy'] = efficacy

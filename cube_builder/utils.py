@@ -261,7 +261,7 @@ class SmartDataSet:
             self.dataset.close()
 
 
-def compute_data_set_stats(file_path: str, data_set_name: str) -> Tuple[float, float]:
+def compute_data_set_stats(file_path: str) -> Tuple[float, float]:
     """Compute data set efficacy and cloud ratio.
 
     It opens the given ``file_path`` and calculate the mask statistics, such efficacy and cloud ratio.
