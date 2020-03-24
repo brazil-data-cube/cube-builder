@@ -62,7 +62,8 @@ class CubeBusiness:
         for cube in cubes:
             # save bands
             for band in params['bands']:
-                if band == 'cnc' and 'WARPED' in cube.id:
+                if (band == 'cnc' and 'WARPED' in cube.id) or \
+                    (band == 'quality' and not 'WARPED' in cube.id):
                     continue
 
                 is_not_cloud = band != 'quality' and band != 'cnc'
