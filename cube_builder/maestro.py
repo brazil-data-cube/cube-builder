@@ -224,7 +224,7 @@ class Maestro:
 
             _ = stac.catalog
 
-            _ = stac.collections[collection]
+            _ = stac.collection(collection)
 
             return stac
         except (KeyError, ValueError, RequestException) as e:
@@ -435,7 +435,10 @@ class Maestro:
                             )
                             activity_obj.save()
 
-                            task = warp_merge.s(ActivityForm().dump(activity_obj), self.params['force'])
+                            activity = ActivityForm().dump(activity_obj)
+                            activity['args'] = properties
+
+                            task = warp_merge.s(activity, self.params['force'])
                             merges_tasks.append(task)
 
                 # Persist activities
@@ -481,7 +484,7 @@ class Maestro:
             if 'CBERS' in dataset:
                 token = '?key={}'.format(Config.CBERS_AUTH_TOKEN)
 
-            items = stac.collections[dataset].get_items(filter=options)
+            items = stac.collection(dataset).get_items(filter=options)
 
             for feature in items['features']:
                 if feature['type'] == 'Feature':
