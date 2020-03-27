@@ -47,6 +47,7 @@ install_requires = [
     'marshmallow-sqlalchemy>=0.19.0,<1',
     'numpy>=1.17.2',
     'numpngw>=0.0.8',
+    'python-dateutil>=2.8,<3',
     'rasterio>=1.1.2,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
     'stac @ git+git://github.com/brazil-data-cube/stac.py.git@v0.7.0-0#egg=stac',

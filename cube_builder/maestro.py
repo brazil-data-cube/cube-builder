@@ -14,16 +14,15 @@ from typing import List
 
 # 3rdparty
 import numpy
-from bdc_db.models import (Band, Collection, CollectionItem, CollectionTile,
-                           Tile, db)
+from bdc_db.models import Band, Collection, CollectionTile, Tile, db
+from dateutil.relativedelta import relativedelta
 from geoalchemy2 import func
 from requests.exceptions import RequestException
 from stac import STAC
 
 # Cube Builder
 from .config import Config
-from .forms import ActivityForm
-from .forms import BandForm
+from .forms import ActivityForm, BandForm
 from .utils import get_or_create_activity
 
 
@@ -31,7 +30,7 @@ def days_in_month(date):
     """Retrieve days in month from date."""
     year = int(date.split('-')[0])
     month = int(date.split('-')[1])
-    nday = day = int(date.split('-')[2])
+    nday = int(date.split('-')[2])
     if month == 12:
         nmonth = 1
         nyear = year + 1
@@ -71,12 +70,13 @@ def decode_periods(temporal_schema, start_date, end_date, time_step):
         return requested_periods
 
     if temporal_schema == 'M':
-        start_date = numpy.datetime64(start_date)
-        end_date = numpy.datetime64(end_date)
+        start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')
+        end_date = datetime.datetime.strptime(end_date, '%Y-%m-%d')
+        delta = relativedelta(months=time_step)
         requested_period = []
         while start_date <= end_date:
-            next_date = start_date + days_in_month(str(start_date))
-            periodkey = str(start_date)[:10] + '_' + str(start_date)[:10] + '_' + str(next_date - numpy.timedelta64(1, 'D'))[:10]
+            next_date = start_date + delta
+            periodkey = str(start_date)[:10] + '_' + str(start_date)[:10] + '_' + str(next_date - relativedelta(days=1))[:10]
             requested_period.append(periodkey)
             requested_periods[start_date] = requested_period
             start_date = next_date
@@ -163,6 +163,7 @@ class Maestro:
     """Define class for handling data cube generation."""
 
     datacube = None
+    _warped = None
     bands = []
     tiles = []
     mosaics = dict()
@@ -245,7 +246,6 @@ class Maestro:
                 Tile.id.in_(tiles)
             ).all()
 
-        collection_tiles = []
         tiles = list(set(tiles))
         tiles_infos = {}
 
@@ -284,13 +284,7 @@ class Maestro:
         # Create tiles
         self.create_tiles(self.params['tiles'], self.datacube)
 
-        collections_items = CollectionItem.query().filter(
-            CollectionItem.collection_id == self.datacube.id,
-            CollectionItem.grs_schema_id == self.datacube.grs_schema_id
-        ).order_by(CollectionItem.composite_start).all()
         cube_start_date = self.params['start_date']
-        # if list(filter(lambda c_i: c_i.tile_id == self.params['tiles'][0], collections_items)):
-        #     cube_start_date = collections_items[0].composite_start
 
         dstart = self.params['start_date']
         dend = self.params['end_date']
@@ -309,7 +303,7 @@ class Maestro:
 
         self.tiles = Tile.query().filter(*where).all()
 
-        self.bands = Band.query().filter(Band.collection_id == self.datacube.id).all()
+        self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
 
         number_cols = int(self.datacube.raster_size_schemas.raster_size_x)
         number_rows = int(self.datacube.raster_size_schemas.raster_size_y)
@@ -341,7 +335,10 @@ class Maestro:
         """Retrieve cached datacube defintion."""
         datacube_warped = '{}WARPED'.format(self.datacube.id[:-3])
 
-        return Collection.query().filter(Collection.id == datacube_warped).first()
+        if not self._warped:
+            self._warped = Collection.query().filter(Collection.id == datacube_warped).first()
+
+        return self._warped
 
     @property
     def datacube_bands(self) -> List[Band]:
