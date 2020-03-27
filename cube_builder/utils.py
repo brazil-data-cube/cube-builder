@@ -159,8 +159,6 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
                     'nodata': source_nodata
                 })
 
-                template = kwargs
-
                 with MemoryFile() as mem_file:
                     with mem_file.open(**kwargs) as dst:
                         reproject(
