@@ -56,7 +56,7 @@ def get_or_create_model(model_class, defaults=None, **restrictions):
 def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_type: str, band: str,
                            period: str, tile_id: str, activity_date: str, **parameters):
     """Define a utility method for create activity."""
-    defaults = dict(
+    return dict(
         band=band,
         collection_id=cube,
         warped_collection_id=warped,
@@ -66,18 +66,9 @@ def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_typ
         date=activity_date,
         period=period,
         scene_type=scene_type,
-        args=parameters
-    )
-
-    where = dict(
-        band=band,
-        collection_id=cube,
-        period=period,
-        date=activity_date,
+        args=parameters,
         tile_id=tile_id
     )
-
-    return get_or_create_model(Activity, defaults=defaults, **where)
 
 
 def build_datacube_name(datacube, func):

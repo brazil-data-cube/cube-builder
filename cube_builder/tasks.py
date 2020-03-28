@@ -24,6 +24,7 @@ from .celery import celery_app
 from .models import Activity
 from .utils import blend as blend_processing
 from .utils import compute_data_set_stats
+from .utils import get_or_create_model
 from .utils import merge as merge_processing
 from .utils import publish_datacube, publish_merge
 
@@ -31,6 +32,30 @@ from .utils import publish_datacube, publish_merge
 def capture_traceback(exception=None):
     """Retrieve stacktrace as string."""
     return traceback.format_exc() or str(exception)
+
+
+def create_execution(activity: dict) -> Activity:
+    """Create cube-builder activity and prepare celery execution.
+
+    Args:
+        activity - Cube Builder Activity dict
+
+    Returns:
+        Activity the cube build activity model
+    """
+    where = dict(
+        band=activity.get('band'),
+        collection_id=activity.get('collection_id'),
+        period=activity.get('period'),
+        date=activity.get('date'),
+        tile_id=activity.get('tile_id')
+    )
+
+    model, created = get_or_create_model(Activity, defaults=activity, **where)
+
+    logging.info('Activity {}, {} - {}'.format(model.tile_id, model.band, created))
+
+    return model
 
 
 @celery_app.task()
@@ -52,7 +77,7 @@ def warp_merge(activity, force=False):
     """
     logging.warning('Executing merge {}'.format(activity.get('warped_collection_id')))
 
-    record: Activity = Activity.query().filter(Activity.id == activity['id']).one()
+    record = create_execution(activity)
 
     merge_date = activity['date']
     tile_id = activity['tile_id']
