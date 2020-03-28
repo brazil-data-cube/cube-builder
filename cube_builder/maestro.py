@@ -385,18 +385,19 @@ class Maestro:
         """
         from celery import group, chain
         from .tasks import prepare_blend, warp_merge
-        self.prepare_merge()
-
-        datacube = self.datacube.id
-
-        if datacube is None:
-            datacube = self.params['datacube']
-
-        bands = self.datacube_bands
-
-        warped_datacube = self.warped_datacube.id
 
         with timing('Time total to dispatch'):
+            self.prepare_merge()
+
+            datacube = self.datacube.id
+
+            if datacube is None:
+                datacube = self.params['datacube']
+
+            bands = self.datacube_bands
+
+            warped_datacube = self.warped_datacube.id
+
             for tileid in self.mosaics:
                 blends = []
 

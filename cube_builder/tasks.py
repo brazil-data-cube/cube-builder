@@ -53,7 +53,8 @@ def create_execution(activity: dict) -> Activity:
 
     model, created = get_or_create_model(Activity, defaults=activity, **where)
 
-    logging.info('Activity {}, {} - {}'.format(model.tile_id, model.band, created))
+    logging.debug('Activity {}, {}, {}, {} - {}'.format(model.tile_id, model.band, model.date,
+                                                        model.collection_id, created))
 
     return model
 
