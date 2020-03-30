@@ -105,6 +105,7 @@ def warp_merge(activity, force=False):
         activity['args']['file'] = str(merge_file_path)
         activity['args']['efficacy'] = efficacy
         activity['args']['cloudratio'] = cloudratio
+        record.traceback = ''
         record.args = activity['args']
         record.save()
     else:
