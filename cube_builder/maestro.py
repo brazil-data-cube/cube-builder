@@ -513,8 +513,7 @@ class Maestro:
                             scene['band'] = band.common_name
 
                             if token:
-                                link = '{}{}'.format(link.replace('cdsr.dpi.inpe.br/api/download/TIFF',
-                                                                  'chronos.dpi.inpe.br:8089/datastore'), token)
+                                link = '{}{}'.format(link, token)
 
                             scene['link'] = link
 
