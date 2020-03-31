@@ -124,7 +124,7 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
 
     for asset in assets:
         count += 1
-        with rasterio.Env(CPL_CURL_VERBOSE=False):
+        with rasterio.Env(CPL_CURL_VERBOSE=False, GDAL_DISABLE_READDIR_ON_OPEN=True, CPL_VSIL_CURL_ALLOWED_EXTENSIONS='.tif'):
             with rasterio.open(asset['link']) as src:
                 kwargs = src.meta.copy()
                 kwargs.update({
