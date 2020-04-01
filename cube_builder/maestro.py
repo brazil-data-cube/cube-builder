@@ -488,7 +488,7 @@ class Maestro:
 
             with timing(' total'):
 
-                if 'CBERS' in dataset:
+                if 'CBERS' in dataset and Config.CBERS_AUTH_TOKEN:
                     token = '?key={}'.format(Config.CBERS_AUTH_TOKEN)
 
                 items = stac.collection(dataset).get_items(filter=options)
@@ -513,7 +513,8 @@ class Maestro:
                             scene['band'] = band.common_name
 
                             if token:
-                                link = '{}{}'.format(link, token)
+                                link = '{}{}'.format(link.replace('cdsr.dpi.inpe.br/api/download/TIFF',
+                                                                  'www.dpi.inpe.br/newcatalog/tmp'), token)
 
                             scene['link'] = link
 
