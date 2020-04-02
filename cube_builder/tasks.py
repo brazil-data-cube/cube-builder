@@ -76,19 +76,19 @@ def warp_merge(activity, force=False):
     Returns:
         Validated activity
     """
-    logging.warning('Executing merge {}'.format(activity.get('warped_collection_id')))
+    logging.warning('Executing merge {} - {}'.format(activity.get('warped_collection_id'), activity['band']))
 
     record = create_execution(activity)
 
+    record.warped_collection_id = activity['warped_collection_id']
     merge_date = activity['date']
     tile_id = activity['tile_id']
-    collection_name_resolution = '_'.join(record.warped_collection_id.split('_')[:2])
     data_set = activity['args'].get('dataset')
 
-    merge_name = '{}_{}_{}_{}'.format(collection_name_resolution, tile_id, merge_date, record.band)
+    merge_name = '{}_{}_{}_{}'.format(record.warped_collection_id, tile_id, merge_date, record.band)
 
     merge_file_path = (Path(Config.DATA_DIR) / 'Repository/Warped') / '{}/{}/{}/{}.tif'.format(
-        collection_name_resolution,
+        record.warped_collection_id,
         tile_id,
         merge_date.replace(data_set, ''),
         merge_name

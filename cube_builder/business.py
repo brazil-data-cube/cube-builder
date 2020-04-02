@@ -22,16 +22,22 @@ class CubeBusiness:
     @classmethod
     def create(cls, params: dict):
         """Create and persist datacube on database."""
-        params['composite_function_list'] = ['WARPED', 'STK', 'MED']
+        params['composite_function_list'] = ['IDENTITY', 'STK', 'MED']
 
         # generate cubes metadata
         cubes_db = Collection.query().filter().all()
         cubes = []
         cubes_serealized = []
 
+        cube_fragments = params['datacube'].split('_')
+
         for composite_function in params['composite_function_list']:
             c_function_id = composite_function.upper()
-            cube_id = '{}_{}'.format(params['datacube'], c_function_id)
+
+            if c_function_id == 'IDENTITY':
+                cube_id = '_'.join(cube_fragments[:-1])
+            else:
+                cube_id = '{}_{}'.format(params['datacube'], c_function_id)
 
             raster_size_id = '{}-{}'.format(params['grs'], int(params['resolution']))
 
@@ -47,7 +53,7 @@ class CubeBusiness:
                     radiometric_processing=None,
                     geometry_processing=None,
                     sensor=None,
-                    is_cube=True,
+                    is_cube=c_function_id != 'IDENTITY',
                     oauth_scope=None,
                     bands_quicklook=','.join(params['bands_quicklook'])
                 )
@@ -60,10 +66,16 @@ class CubeBusiness:
         bands = []
 
         for cube in cubes:
+            fragments = cube.id.split('_')
+
+            # A IDENTITY data cube is composed by CollectionName and Resolution (LC8_30, S2_10)
+            is_identity = len(fragments) == 2
+
             # save bands
             for band in params['bands']:
-                if (band == 'cnc' and 'WARPED' in cube.id) or \
-                    (band == 'quality' and not 'WARPED' in cube.id):
+                # Skip creation of band CNC for IDENTITY data cube
+                # or band quality for composite data cube
+                if (band == 'cnc' and is_identity) or (band == 'quality' and not is_identity):
                     continue
 
                 is_not_cloud = band != 'quality' and band != 'cnc'

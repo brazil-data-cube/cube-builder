@@ -20,10 +20,12 @@ def get_settings(env):
 class Config:
     """Base configuration with default flags."""
 
-    CELERYD_PREFETCH_MULTIPLIER = 1  # disable
+    # Factor to reserve tasks of the broker. By default, multiply by 1
+    CELERYD_PREFETCH_MULTIPLIER = 1 * int(os.environ.get('CELERYD_PREFETCH_MULTIPLIER', 1))
     CBERS_AUTH_TOKEN = os.environ.get('CBERS_AUTH_TOKEN', '')
     DEBUG = False
     TESTING = False
+    # Path to store data
     DATA_DIR = os.environ.get('DATA_DIR', '/data')
     ACTIVITIES_SCHEMA = 'cube_builder'
     RABBIT_MQ_URL = os.environ.get('RABBIT_MQ_URL', 'pyamqp://guest@localhost')
