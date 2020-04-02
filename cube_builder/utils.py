@@ -140,7 +140,10 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
                     source_nodata = src.profile['nodata']
                 elif 'LC8SR' in dataset:
                     if band != 'quality':
-                        source_nodata = nodata
+                        # Temporary workaround for landsat
+                        # Sometimes, the laSRC does not generate the data set properly and
+                        # the data maybe UInt16 instead Int16
+                        source_nodata = nodata if src.profile['dtype'] == 'int16' else 0
                     else:
                         source_nodata = 1
                 elif 'CBERS' in dataset and band != 'quality':
