@@ -14,6 +14,7 @@ from bdc_db.models.base_sql import BaseModel
 
 from .forms import CollectionForm
 from .maestro import Maestro
+from .utils import get_cube_id, get_cube_parts
 
 
 class CubeBusiness:
@@ -22,7 +23,7 @@ class CubeBusiness:
     @classmethod
     def create(cls, params: dict):
         """Create and persist datacube on database."""
-        params['composite_function_list'] = ['WARPED', 'STK', 'MED']
+        params['composite_function_list'] = ['IDENTITY', 'STK', 'MED']
 
         # generate cubes metadata
         cubes_db = Collection.query().filter().all()
@@ -31,15 +32,18 @@ class CubeBusiness:
 
         for composite_function in params['composite_function_list']:
             c_function_id = composite_function.upper()
-            cube_id = '{}_{}'.format(params['datacube'], c_function_id)
+
+            cube_id = get_cube_id(params['datacube'], c_function_id)
 
             raster_size_id = '{}-{}'.format(params['grs'], int(params['resolution']))
+
+            temporal_composition = params['temporal_schema'] if c_function_id.upper() != 'IDENTITY' else 'Anull'
 
             # add cube
             if not list(filter(lambda x: x.id == cube_id, cubes)) and not list(filter(lambda x: x.id == cube_id, cubes_db)):
                 cube = Collection(
                     id=cube_id,
-                    temporal_composition_schema_id=params['temporal_schema'],
+                    temporal_composition_schema_id=temporal_composition,
                     raster_size_schema_id=raster_size_id,
                     composite_function_schema_id=c_function_id,
                     grs_schema_id=params['grs'],
@@ -48,8 +52,9 @@ class CubeBusiness:
                     geometry_processing=None,
                     sensor=None,
                     is_cube=True,
-                    oauth_scope=None,
-                    bands_quicklook=','.join(params['bands_quicklook'])
+                    oauth_scope=params.get('oauth_scope', None),
+                    bands_quicklook=','.join(params['bands_quicklook']),
+                    license=params.get('license')
                 )
 
                 cubes.append(cube)
@@ -60,10 +65,16 @@ class CubeBusiness:
         bands = []
 
         for cube in cubes:
+            fragments = get_cube_parts(cube.id)
+
+            # A IDENTITY data cube is composed by CollectionName and Resolution (LC8_30, S2_10)
+            is_identity = len(fragments) == 2
+
             # save bands
             for band in params['bands']:
-                if (band == 'cnc' and 'WARPED' in cube.id) or \
-                    (band == 'quality' and not 'WARPED' in cube.id):
+                # Skip creation of band CNC for IDENTITY data cube
+                # or band quality for composite data cube
+                if (band == 'cnc' and is_identity) or (band == 'quality' and not is_identity):
                     continue
 
                 is_not_cloud = band != 'quality' and band != 'cnc'

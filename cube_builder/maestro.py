@@ -10,6 +10,8 @@
 
 # Python
 import datetime
+from contextlib import contextmanager
+from time import time
 from typing import List
 
 # 3rdparty
@@ -22,7 +24,7 @@ from stac import STAC
 
 # Cube Builder
 from .config import Config
-from .forms import ActivityForm, BandForm
+from .forms import BandForm
 from .utils import get_or_create_activity
 
 
@@ -42,12 +44,26 @@ def days_in_month(date):
     return td
 
 
+@contextmanager
+def timing(description: str) -> None:
+    """Measure execution time of context.
+
+    Examples:
+        >>> with timing('Total'):
+        ...     pass # logic here
+    """
+    start = time()
+    yield
+    ellapsed_time = time() - start
+
+    print(f'{description}: {ellapsed_time} seconds')
+
+
 def decode_periods(temporal_schema, start_date, end_date, time_step):
     """Retrieve datacube temporal resolution by periods.
 
     TODO: Describe how it works.
     """
-    print('decode_periods - {} {} {} {}'.format(temporal_schema,start_date, end_date, time_step))
     requested_periods = {}
     if start_date is None:
         return requested_periods
@@ -228,9 +244,23 @@ class Maestro:
             _ = stac.collection(collection)
 
             return stac
-        except (KeyError, ValueError, RequestException) as e:
+        except Exception as e:
             # STAC Error
             raise RuntimeError('An error occurred in STAC {}'.format(str(e)))
+
+    @staticmethod
+    def create_tile(datacube, tile_id, grs_schema_id):
+        collection_tile = CollectionTile.query().filter(
+            CollectionTile.collection_id == datacube,
+            CollectionTile.grs_schema_id == grs_schema_id,
+            CollectionTile.tile_id == tile_id
+        ).first()
+        if not collection_tile:
+            CollectionTile(
+                collection_id=datacube,
+                grs_schema_id=grs_schema_id,
+                tile_id=tile_id
+            ).save(commit=False)
 
     def create_tiles(self, tiles: List[str], collection: Collection):
         """Create Collection tiles on database.
@@ -259,18 +289,11 @@ class Maestro:
                     raise RuntimeError('Tile ({}) not found in GRS ({})'.format(tile, collection.grs_schema_id))
 
                 tiles_infos[tile] = tile_info[0]
-                for function in ['WARPED', 'STK', 'MED']:
-                    collection_tile = CollectionTile.query().filter(
-                        CollectionTile.collection_id == '{}_{}'.format(datacube, function),
-                        CollectionTile.grs_schema_id == collection.grs_schema_id,
-                        CollectionTile.tile_id == tile
-                    ).first()
-                    if not collection_tile:
-                        CollectionTile(
-                            collection_id='{}_{}'.format(datacube, function),
-                            grs_schema_id=collection.grs_schema_id,
-                            tile_id=tile
-                        ).save(commit=False)
+
+                self.create_tile(self.warped_datacube.id, tile, collection.grs_schema_id)
+
+                for function in ['STK', 'MED']:
+                    self.create_tile('{}_{}'.format(datacube, function), tile, collection.grs_schema_id)
 
         db.session.commit()
 
@@ -333,9 +356,9 @@ class Maestro:
     @property
     def warped_datacube(self) -> Collection:
         """Retrieve cached datacube defintion."""
-        datacube_warped = '{}WARPED'.format(self.datacube.id[:-3])
-
         if not self._warped:
+            datacube_warped = '_'.join(self.datacube.id.split('_')[:2])
+
             self._warped = Collection.query().filter(Collection.id == datacube_warped).first()
 
         return self._warped
@@ -347,25 +370,20 @@ class Maestro:
             return list(filter(lambda band: band.common_name in self.params['bands'], self.bands))
         return self.bands
 
-    def prepare_merge(self):
-        """Search on STAC for available collection images."""
-        for tileid in self.mosaics:
-            bbox_result = db.session.query(
-                Tile.id,
-                func.ST_AsText(func.ST_BoundingDiagonal(func.ST_Force2D(Tile.geom_wgs84)))
-            ).filter(
-                Tile.id == tileid
-            ).first()
+    @staticmethod
+    def get_bbox(tile_id: str) -> str:
+        """Retrieve the bounding box representation as string."""
+        bbox_result = db.session.query(
+            Tile.id,
+            func.ST_AsText(func.ST_BoundingDiagonal(func.ST_Force2D(Tile.geom_wgs84)))
+        ).filter(
+            Tile.id == tile_id
+        ).first()
 
-            bbox = bbox_result[1][bbox_result[1].find('(') + 1:bbox_result[0].find(')')]
-            bbox = bbox.replace(' ', ',')
+        bbox = bbox_result[1][bbox_result[1].find('(') + 1:bbox_result[0].find(')')]
+        bbox = bbox.replace(' ', ',')
 
-            for periodkey in self.mosaics[tileid]['periods']:
-                start = self.mosaics[tileid]['periods'][periodkey]['start']
-                end = self.mosaics[tileid]['periods'][periodkey]['end']
-
-                # Search all images
-                self.mosaics[tileid]['periods'][periodkey]['scenes'] = self.search_images(bbox, start, end, tileid)
+        return bbox
 
     def dispatch_celery(self):
         """Dispatch datacube generation on celery workers.
@@ -374,80 +392,80 @@ class Maestro:
         """
         from celery import group, chain
         from .tasks import prepare_blend, warp_merge
-        self.prepare_merge()
 
-        datacube = self.datacube.id
+        with timing('Time total to dispatch'):
+            datacube = self.datacube.id
 
-        if datacube is None:
-            datacube = self.params['datacube']
+            if datacube is None:
+                datacube = self.params['datacube']
 
-        bands = self.datacube_bands
+            bands = self.datacube_bands
 
-        warped_datacube = self.warped_datacube.id
+            warped_datacube = self.warped_datacube.id
 
-        for tileid in self.mosaics:
-            blends = []
+            for tileid in self.mosaics:
+                blends = []
 
-            tile = next(filter(lambda t: t.id == tileid, self.tiles))
+                bbox = self.get_bbox(tileid)
 
-            # For each blend
-            for period in self.mosaics[tileid]['periods']:
-                merges_tasks = []
+                tile = next(filter(lambda t: t.id == tileid, self.tiles))
 
-                cols = self.mosaics[tileid]['periods'][period]['cols']
-                rows = self.mosaics[tileid]['periods'][period]['rows']
-                start_date = self.mosaics[tileid]['periods'][period]['start']
-                end_date = self.mosaics[tileid]['periods'][period]['end']
-                period_start_end = '{}_{}'.format(start_date, end_date)
+                # For each blend
+                for period in self.mosaics[tileid]['periods']:
+                    start = self.mosaics[tileid]['periods'][period]['start']
+                    end = self.mosaics[tileid]['periods'][period]['end']
 
-                for band in bands:
-                    collections = self.mosaics[tileid]['periods'][period]['scenes'][band.common_name]
+                    assets_by_period = self.search_images(bbox, start, end, tileid)
 
-                    for collection, merges in collections.items():
-                        for merge_date, assets in merges.items():
-                            properties = dict(
-                                date=merge_date,
-                                dataset=collection,
-                                xmin=tile.min_x,
-                                ymax=tile.max_y,
-                                datacube=datacube,
-                                resx=band.resolution_x,
-                                resy=band.resolution_y,
-                                cols=cols,
-                                rows=rows,
-                                tile_id=tileid,
-                                assets=assets,
-                                nodata=band.fill
-                            )
+                    merges_tasks = []
 
-                            activity_obj, _ = get_or_create_activity(
-                                cube=self.datacube.id,
-                                warped=warped_datacube,
-                                activity_type='MERGE',
-                                scene_type='WARPED',
-                                band=band.common_name,
-                                period=period_start_end,
-                                activity_date=merge_date,
-                                **properties
-                            )
-                            activity_obj.save()
+                    cols = self.mosaics[tileid]['periods'][period]['cols']
+                    rows = self.mosaics[tileid]['periods'][period]['rows']
+                    start_date = self.mosaics[tileid]['periods'][period]['start']
+                    end_date = self.mosaics[tileid]['periods'][period]['end']
+                    period_start_end = '{}_{}'.format(start_date, end_date)
 
-                            activity = ActivityForm().dump(activity_obj)
-                            activity['args'] = properties
+                    for band in bands:
+                        collections = assets_by_period[band.common_name]
 
-                            task = warp_merge.s(activity, self.params['force'])
-                            merges_tasks.append(task)
+                        for collection, merges in collections.items():
+                            for merge_date, assets in merges.items():
+                                properties = dict(
+                                    date=merge_date,
+                                    dataset=collection,
+                                    xmin=tile.min_x,
+                                    ymax=tile.max_y,
+                                    datacube=datacube,
+                                    resx=band.resolution_x,
+                                    resy=band.resolution_y,
+                                    cols=cols,
+                                    rows=rows,
+                                    tile_id=tileid,
+                                    assets=assets,
+                                    nodata=band.fill
+                                )
 
-                # Persist activities
-                db.session.commit()
+                                activity = get_or_create_activity(
+                                    cube=self.datacube.id,
+                                    warped=warped_datacube,
+                                    activity_type='MERGE',
+                                    scene_type='WARPED',
+                                    band=band.common_name,
+                                    period=period_start_end,
+                                    activity_date=merge_date,
+                                    **properties
+                                )
 
-                if len(merges_tasks) > 0:
-                    task = chain(group(merges_tasks), prepare_blend.s())
-                    blends.append(task)
+                                task = warp_merge.s(activity, self.params['force'])
+                                merges_tasks.append(task)
 
-            if len(blends) > 0:
-                task = group(blends)
-                task.apply_async()
+                    if len(merges_tasks) > 0:
+                        task = chain(group(merges_tasks), prepare_blend.s())
+                        blends.append(task)
+
+                if len(blends) > 0:
+                    task = group(blends)
+                    task.apply_async()
 
         return self.mosaics
 
@@ -476,42 +494,47 @@ class Maestro:
             stac = self.get_stac(dataset)
 
             token = ''
-            print('Searching for {} - {} ({}, {}) using {}...'.format(dataset, tile_id, start, end, stac.url))
 
-            if 'CBERS' in dataset:
-                token = '?key={}'.format(Config.CBERS_AUTH_TOKEN)
+            print('Searching for {} - {} ({}, {}) using {}...'.format(dataset, tile_id, start,
+                                                                      end, stac.url), end='', flush=True)
 
-            items = stac.collection(dataset).get_items(filter=options)
+            with timing(' total'):
 
-            for feature in items['features']:
-                if feature['type'] == 'Feature':
-                    date = feature['properties']['datetime'][0:10]
-                    identifier = feature['id']
+                if 'CBERS' in dataset and Config.CBERS_AUTH_TOKEN:
+                    token = '?key={}'.format(Config.CBERS_AUTH_TOKEN)
 
-                    for band in bands:
-                        if band.common_name not in feature['assets']:
-                            continue
+                items = stac.collection(dataset).get_items(filter=options)
 
-                        scenes[band.common_name].setdefault(dataset, dict())
+                for feature in items['features']:
+                    if feature['type'] == 'Feature':
+                        date = feature['properties']['datetime'][0:10]
+                        identifier = feature['id']
 
-                        link = feature['assets'][band.common_name]['href']
+                        for band in bands:
+                            if band.common_name not in feature['assets']:
+                                continue
 
-                        scene = dict(**collection_bands[band.common_name])
-                        scene['sceneid'] = identifier
-                        scene['tile'] = tile_id
-                        scene['date'] = date
-                        scene['band'] = band.common_name
+                            scenes[band.common_name].setdefault(dataset, dict())
 
-                        if token:
-                            link = '{}{}'.format(link.replace('cdsr.dpi.inpe.br/api/download',
-                                                              'chronos.dpi.inpe.br:8089/datastore'), token)
+                            link = feature['assets'][band.common_name]['href']
 
-                        scene['link'] = link
+                            scene = dict(**collection_bands[band.common_name])
+                            scene['sceneid'] = identifier
+                            scene['tile'] = tile_id
+                            scene['date'] = date
+                            scene['band'] = band.common_name
 
-                        if dataset == 'MOD13Q1' and band.common_name == 'quality':
-                            scene['link'] = scene['link'].replace('quality', 'reliability')
+                            link = link.replace('cdsr.dpi.inpe.br/api/download/TIFF', 'www.dpi.inpe.br/newcatalog/tmp')
 
-                        scenes[band.common_name][dataset].setdefault(date, [])
-                        scenes[band.common_name][dataset][date].append(scene)
+                            if token:
+                                link = '{}{}'.format(link, token)
+
+                            scene['link'] = link
+
+                            if dataset == 'MOD13Q1' and band.common_name == 'quality':
+                                scene['link'] = scene['link'].replace('quality', 'reliability')
+
+                            scenes[band.common_name][dataset].setdefault(date, [])
+                            scenes[band.common_name][dataset][date].append(scene)
 
         return scenes

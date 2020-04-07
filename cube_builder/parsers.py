@@ -33,6 +33,7 @@ class DataCubeParser(Schema):
     composite_function_list = fields.List(fields.String, required=True, allow_none=False)
     bands = fields.List(fields.String, required=True, allow_none=False)
     description = fields.String(required=True, allow_none=False)
+    license = fields.String(required=False, allow_none=True)
 
 
 class DataCubeProcessParser(Schema):
