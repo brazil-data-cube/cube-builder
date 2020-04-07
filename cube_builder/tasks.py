@@ -263,9 +263,9 @@ def publish(blends):
     publish_datacube(cube, quick_look_bands, cube.id, tile_id, period, blend_files, cloudratio)
 
     # Generate quick looks of irregular cube
+    wcube = Collection.query().filter(Collection.id == warped_datacube).first()
+
     for merge_date, definition in merges.items():
         date = merge_date.replace(definition['dataset'], '')
-
-        wcube = Collection.query().filter(Collection.id == warped_datacube).first()
 
         publish_merge(quick_look_bands, wcube, definition['dataset'], tile_id, period, date, definition)

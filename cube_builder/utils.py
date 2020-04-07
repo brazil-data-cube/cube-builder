@@ -71,9 +71,50 @@ def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_typ
     )
 
 
-def build_datacube_name(datacube, func):
+def get_cube_parts(datacube: str) -> List[str]:
+    """Parse a data cube name and retrieve their parts.
+
+    A data cube is composed by the following structure:
+    ``Collections_Resolution_TemporalPeriod_CompositeFunction``.
+
+    An IDENTITY data cube does not have TemporalPeriod and CompositeFunction.
+
+    Examples:
+        >>> # Parse Sentinel 2 Monthly MEDIAN
+        >>> get_cube_parts('S2_10_1M_MED') # ['S2', '10', '1M', 'MED']
+        >>> # Parse Sentinel 2 IDENTITY
+        >>> get_cube_parts('S2_10') # ['S2', '10']
+        >>> # Invalid data cubes
+        >>> get_cube_parts('S2-10')
+
+    Raises:
+        ValueError when data cube name is invalid.
+    """
+    cube_fragments = datacube.split('_')
+
+    if len(cube_fragments) > 4 or len(cube_fragments) < 2:
+        raise ValueError('Invalid data cube name. "{}"'.format(datacube))
+
+    return cube_fragments
+
+
+def get_cube_id(datacube: str, func=None):
     """Prepare data cube name based on temporal function."""
-    return '{}{}'.format(datacube[:-3], func)
+    cube_fragments = get_cube_parts(datacube)
+
+    if not func or func.upper() == 'IDENTITY':
+        return '_'.join(cube_fragments[:2])
+
+    # Ensure that data cube with composite function must have a
+    # temporal resolution
+    if len(cube_fragments) == 2:
+        raise ValueError('Invalid cube id without temporal resolution. "{}"'.format(datacube))
+
+    # When data cube have temporal resolution (S2_10_1M) use it
+    # Otherwise, just remove last cube part (composite function)
+    cube = datacube if len(cube_fragments) == 3 else '_'.join(cube_fragments[:-1])
+
+    return '{}_{}'.format(cube, func)
 
 
 def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
@@ -361,7 +402,7 @@ def blend(activity, build_cnc=False):
     # MEDIAN will be generated in local disk
     medianfile = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(datacube, tile_id, period, output_name)
 
-    stack_datacube = build_datacube_name(datacube, 'STK')
+    stack_datacube = get_cube_id(datacube, 'STK')
     output_name = output_name.replace(datacube, stack_datacube)
 
     stack_file = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(stack_datacube, tile_id, period, output_name)
@@ -491,7 +532,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
         item_id = '{}_{}_{}'.format(item_datacube, tile_id, period)
 
-        _datacube = build_datacube_name(datacube, composite_function)
+        _datacube = get_cube_id(datacube, composite_function)
 
         quick_look_name = '{}_{}_{}'.format(_datacube, tile_id, period)
 
@@ -532,18 +573,18 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
                 if band == 'quality':
                     continue
 
-                band_model = next(filter(lambda b: b.common_name == band, cube_bands))
+                band_model = list(filter(lambda b: b.common_name == band, cube_bands))
 
                 # Band does not exists on model
                 if not band_model:
-                    logging.warning('Band {} of {} does not exist on database'.format(band, cube.id))
+                    logging.warning('Band {} of {} does not exist on database. Skipping'.format(band, cube.id))
                     continue
 
                 asset_relative_path = scenes[band][composite_function].replace(Config.DATA_DIR, '')
 
                 Asset(
                     collection_id=item_datacube,
-                    band_id=band_model.id,
+                    band_id=band_model[0].id,
                     grs_schema_id=cube.grs_schema_id,
                     tile_id=tile_id,
                     collection_item_id=item_id,
@@ -606,7 +647,7 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
         ).save(commit=False)
 
         for band in scenes['ARDfiles']:
-            band_model = next(filter(lambda b: b.common_name == band, cube_bands))
+            band_model = list(filter(lambda b: b.common_name == band, cube_bands))
 
             # Band does not exists on model
             if not band_model:
@@ -617,7 +658,7 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
 
             Asset(
                 collection_id=datacube.id,
-                band_id=band_model.id,
+                band_id=band_model[0].id,
                 grs_schema_id=datacube.grs_schema_id,
                 tile_id=tile_id,
                 collection_item_id=item_id,

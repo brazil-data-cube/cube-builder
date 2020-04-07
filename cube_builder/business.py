@@ -14,6 +14,7 @@ from bdc_db.models.base_sql import BaseModel
 
 from .forms import CollectionForm
 from .maestro import Maestro
+from .utils import get_cube_id, get_cube_parts
 
 
 class CubeBusiness:
@@ -29,23 +30,20 @@ class CubeBusiness:
         cubes = []
         cubes_serealized = []
 
-        cube_fragments = params['datacube'].split('_')
-
         for composite_function in params['composite_function_list']:
             c_function_id = composite_function.upper()
 
-            if c_function_id == 'IDENTITY':
-                cube_id = '_'.join(cube_fragments[:-1])
-            else:
-                cube_id = '{}_{}'.format(params['datacube'], c_function_id)
+            cube_id = get_cube_id(params['datacube'], c_function_id)
 
             raster_size_id = '{}-{}'.format(params['grs'], int(params['resolution']))
+
+            temporal_composition = params['temporal_schema'] if c_function_id.upper() != 'IDENTITY' else 'Anull'
 
             # add cube
             if not list(filter(lambda x: x.id == cube_id, cubes)) and not list(filter(lambda x: x.id == cube_id, cubes_db)):
                 cube = Collection(
                     id=cube_id,
-                    temporal_composition_schema_id=params['temporal_schema'],
+                    temporal_composition_schema_id=temporal_composition,
                     raster_size_schema_id=raster_size_id,
                     composite_function_schema_id=c_function_id,
                     grs_schema_id=params['grs'],
@@ -53,9 +51,10 @@ class CubeBusiness:
                     radiometric_processing=None,
                     geometry_processing=None,
                     sensor=None,
-                    is_cube=c_function_id != 'IDENTITY',
-                    oauth_scope=None,
-                    bands_quicklook=','.join(params['bands_quicklook'])
+                    is_cube=True,
+                    oauth_scope=params.get('oauth_scope', None),
+                    bands_quicklook=','.join(params['bands_quicklook']),
+                    license=params.get('license')
                 )
 
                 cubes.append(cube)
@@ -66,7 +65,7 @@ class CubeBusiness:
         bands = []
 
         for cube in cubes:
-            fragments = cube.id.split('_')
+            fragments = get_cube_parts(cube.id)
 
             # A IDENTITY data cube is composed by CollectionName and Resolution (LC8_30, S2_10)
             is_identity = len(fragments) == 2
