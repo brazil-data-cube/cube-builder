@@ -8,7 +8,8 @@
 
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
-from bdc_db.models import Band, Collection, db
+from bdc_db.models import Band, Collection, TemporalCompositionSchema, db
+from marshmallow.fields import Method, String
 from marshmallow_sqlalchemy.schema import ModelSchema
 
 from .models import Activity
@@ -45,3 +46,26 @@ class BandForm(ModelSchema):
 
         model = Band
         sqla_session = db.session
+
+
+DEFAULT_TEMPORAL_UNITS = ['day', 'month']
+
+
+class TemporalSchemaForm(ModelSchema):
+    """Define form definition for model TemporalCompositionSchema."""
+
+    class Meta:
+        """Internal meta information of Form interface."""
+
+        model = TemporalCompositionSchema
+        sqla_session = db.session
+
+    id = String(dump_only=True)
+    temporal_composite_unit = Method(deserialize='load_temporal_composite')
+
+    def load_temporal_composite(self, value):
+        """Validate temporal composite with all supported values."""
+        if value in DEFAULT_TEMPORAL_UNITS:
+            return value
+
+        raise RuntimeError('Invalid temporal unit. Supported values: {}'.format(DEFAULT_TEMPORAL_UNITS))
