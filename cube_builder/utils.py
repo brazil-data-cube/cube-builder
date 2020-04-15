@@ -28,6 +28,16 @@ from .config import Config
 from .models import Activity
 
 
+def get_rasterio_config() -> dict:
+    """Retrieve cube-builder global config for the rasterio module."""
+    options = dict()
+
+    if Config.RASTERIO_ENV and isinstance(Config.RASTERIO_ENV, dict):
+        options.update(Config.RASTERIO_ENV)
+
+    return options
+
+
 def get_or_create_model(model_class, defaults=None, **restrictions):
     """Define a utility method for looking up an object with the given restrictions, creating one if necessary.
 
@@ -163,9 +173,8 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
     mask_array = numpy.ones((rows, cols), dtype=numpy.int16)
     notdonetask = numpy.ones((rows, cols), dtype=numpy.int16)
 
-    for asset in assets:
-        count += 1
-        with rasterio.Env(CPL_CURL_VERBOSE=False):
+    with rasterio.Env(CPL_CURL_VERBOSE=False, **get_rasterio_config()):
+        for asset in assets:
             with rasterio.open(asset['link']) as src:
                 kwargs = src.meta.copy()
                 kwargs.update({
