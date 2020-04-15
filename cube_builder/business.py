@@ -8,16 +8,18 @@
 
 """Define Cube Builder business interface."""
 
-# 3rdparty
-from bdc_db.models import Band, Collection
-from bdc_db.models.base_sql import BaseModel
-from werkzeug.exceptions import NotFound
+from typing import Tuple
 
-from .forms import CollectionForm
+# 3rdparty
+from bdc_db.models import Band, Collection, TemporalCompositionSchema
+from bdc_db.models.base_sql import BaseModel
+from werkzeug.exceptions import Conflict, NotFound
+
+from .forms import CollectionForm, TemporalSchemaForm
 from .image import validate_merges
 from .maestro import Maestro
 from .models import Activity
-from .utils import get_cube_id, get_cube_parts
+from .utils import get_cube_id, get_cube_parts, get_or_create_model
 
 
 class CubeBusiness:
@@ -148,3 +150,36 @@ class CubeBusiness:
         result = validate_merges(res)
 
         return result, 200
+
+    @classmethod
+    def create_temporal_composition(cls, params: dict) -> Tuple[dict, int]:
+        """Create a temporal composition schema on database.
+
+        The TemporalCompositionSchema is used to describe how the data cube will be created.
+
+        You can define a data cube montly, each 16 days, season, etc. Once defined,
+        the ``cube_builder`` will seek for all images within period given and will
+        generate data cube passing these images to a composite function.
+
+        Raises:
+            Conflict when a duplicated composition is given.
+
+        Args:
+            params - Required parameters for a ``TemporalCompositionSchema``.
+
+        Returns:
+            Tuple with object created and respective HTTP Status code
+        """
+        object_id = '{}{}{}'.format(params['temporal_schema'],
+                                    params['temporal_composite_t'],
+                                    params['temporal_composite_unit'])
+
+        temporal_schema, created = get_or_create_model(TemporalCompositionSchema, defaults=params, id=object_id)
+
+        if created:
+            # Persist
+            temporal_schema.save()
+
+            return TemporalSchemaForm().dump(temporal_schema), 201
+
+        raise Conflict('Schema "{}" already exists.'.format(object_id))

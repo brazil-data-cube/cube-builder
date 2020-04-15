@@ -15,6 +15,7 @@ from werkzeug.exceptions import BadRequest
 
 # BDC Scripts
 from .business import CubeBusiness
+from .forms import TemporalSchemaForm
 from .parsers import DataCubeParser, DataCubeProcessParser
 
 api = Namespace('cubes', description='cubes')
@@ -79,3 +80,26 @@ class CubeMergeStatusController(Resource):
         res = CubeBusiness.check_for_invalid_merges(**args)
 
         return res
+
+
+@api.route('/create-temporal-schema')
+class TemporalSchemaController(Resource):
+    """Define route for TemporalCompositeSchema creation."""
+
+    def post(self):
+        """Create the temporal composite schema using HTTP Post method.
+
+        Expects a JSON that matches with ``TemporalSchemaParser``.
+        """
+        form = TemporalSchemaForm()
+
+        args = request.get_json()
+
+        errors = form.validate(args)
+
+        if errors:
+            return errors, 400
+
+        cubes, status = CubeBusiness.create_temporal_composition(args)
+
+        return cubes, status
