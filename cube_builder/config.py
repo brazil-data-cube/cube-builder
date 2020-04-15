@@ -39,10 +39,11 @@ class Config:
         'http://brazildatacube.dpi.inpe.br/bdc-stac/0.7.0'
     )
     SECRET_KEY = 'cube-builder'
+    MAX_THREADS_IMAGE_VALIDATOR = int(os.environ.get('MAX_THREADS_IMAGE_VALIDATOR', os.cpu_count()))
     # rasterio
     RASTERIO_ENV = dict(
-        GDAL_DISABLE_READDIR_ON_OPEN = True,
-        CPL_VSIL_CURL_ALLOWED_EXTENSIONS = '.tif'
+        GDAL_DISABLE_READDIR_ON_OPEN=True,
+        CPL_VSIL_CURL_ALLOWED_EXTENSIONS='.tif'
     )
 
 

@@ -63,3 +63,19 @@ class CubeProcessController(Resource):
         proc = CubeBusiness.maestro(**data)
 
         return proc
+
+
+@api.route('/list-merges')
+class CubeMergeStatusController(Resource):
+    """Define route for datacube execution."""
+
+    def get(self):
+        """Define POST handler for datacube execution.
+
+        Expects a JSON that matches with ``DataCubeProcessParser``.
+        """
+        args = request.args
+
+        res = CubeBusiness.check_for_invalid_merges(**args)
+
+        return res

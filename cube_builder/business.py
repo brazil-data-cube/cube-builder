@@ -11,14 +11,17 @@
 # 3rdparty
 from bdc_db.models import Band, Collection
 from bdc_db.models.base_sql import BaseModel
+from werkzeug.exceptions import NotFound
 
 from .forms import CollectionForm
+from .image import validate_merges
 from .maestro import Maestro
+from .models import Activity
 from .utils import get_cube_id, get_cube_parts
 
 
 class CubeBusiness:
-    """Define Cube Builder interface for datacube creation."""
+    """Define Cube Builder interface for data cube creation."""
 
     @classmethod
     def create(cls, params: dict):
@@ -119,3 +122,29 @@ class CubeBusiness:
         maestro.dispatch_celery()
 
         return dict(ok=True)
+
+    @classmethod
+    def check_for_invalid_merges(cls, datacube: str, tile: str, start_date: str, end_date: str) -> dict:
+        """List merge files used in data cube and check for invalid scenes.
+
+        Args:
+            datacube: Data cube name
+            tile: Brazil Data Cube Tile identifier
+            start_date: Activity start date (period)
+            end_date: Activity End (period)
+
+        Returns:
+            List of Images used in period
+        """
+        cube = Collection.query().filter(Collection.id == datacube).first()
+
+        if cube is None or not cube.is_cube:
+            raise NotFound('Cube {} not found'.format(datacube))
+
+        # TODO validate schema to avoid start/end too abroad
+
+        res = Activity.list_merge_files(datacube, tile, start_date, end_date)
+
+        result = validate_merges(res)
+
+        return result, 200
