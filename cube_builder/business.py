@@ -126,14 +126,14 @@ class CubeBusiness:
         return dict(ok=True)
 
     @classmethod
-    def check_for_invalid_merges(cls, datacube: str, tile: str, start_date: str, end_date: str) -> dict:
+    def check_for_invalid_merges(cls, datacube: str, tile: str, start_date: str, last_date: str) -> dict:
         """List merge files used in data cube and check for invalid scenes.
 
         Args:
             datacube: Data cube name
             tile: Brazil Data Cube Tile identifier
             start_date: Activity start date (period)
-            end_date: Activity End (period)
+            last_date: Activity End (period)
 
         Returns:
             List of Images used in period
@@ -145,7 +145,7 @@ class CubeBusiness:
 
         # TODO validate schema to avoid start/end too abroad
 
-        res = Activity.list_merge_files(datacube, tile, start_date, end_date)
+        res = Activity.list_merge_files(datacube, tile, start_date, last_date)
 
         result = validate_merges(res)
 
