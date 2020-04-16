@@ -39,6 +39,11 @@ class Config:
         'http://brazildatacube.dpi.inpe.br/bdc-stac/0.7.0'
     )
     SECRET_KEY = 'cube-builder'
+    # rasterio
+    RASTERIO_ENV = dict(
+        GDAL_DISABLE_READDIR_ON_OPEN = True,
+        CPL_VSIL_CURL_ALLOWED_EXTENSIONS = '.tif'
+    )
 
 
 class ProductionConfig(Config):

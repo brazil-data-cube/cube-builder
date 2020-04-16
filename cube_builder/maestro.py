@@ -25,7 +25,7 @@ from stac import STAC
 # Cube Builder
 from .config import Config
 from .forms import BandForm
-from .utils import get_or_create_activity
+from .utils import get_cube_id, get_or_create_activity
 
 
 def days_in_month(date):
@@ -357,7 +357,7 @@ class Maestro:
     def warped_datacube(self) -> Collection:
         """Retrieve cached datacube defintion."""
         if not self._warped:
-            datacube_warped = '_'.join(self.datacube.id.split('_')[:2])
+            datacube_warped = get_cube_id(self.datacube.id)
 
             self._warped = Collection.query().filter(Collection.id == datacube_warped).first()
 
@@ -394,11 +394,6 @@ class Maestro:
         from .tasks import prepare_blend, warp_merge
 
         with timing('Time total to dispatch'):
-            datacube = self.datacube.id
-
-            if datacube is None:
-                datacube = self.params['datacube']
-
             bands = self.datacube_bands
 
             warped_datacube = self.warped_datacube.id
@@ -435,7 +430,6 @@ class Maestro:
                                     dataset=collection,
                                     xmin=tile.min_x,
                                     ymax=tile.max_y,
-                                    datacube=datacube,
                                     resx=band.resolution_x,
                                     resy=band.resolution_y,
                                     cols=cols,
