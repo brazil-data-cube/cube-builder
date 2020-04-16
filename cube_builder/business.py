@@ -191,7 +191,7 @@ class CubeBusiness:
         Args:
             schema: Temporal Schema (M, A)
             step: Temporal Step
-            start_date: Start date offset. Default is '2017-01-01'.
+            start_date: Start date offset. Default is '2016-01-01'.
             last_date: End data offset. Default is '2019-12-31'
             **kwargs: Optional parameters
 
