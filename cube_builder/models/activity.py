@@ -41,14 +41,15 @@ class Activity(BaseModel):
     def list_merge_files(cls, collection: str, tile: str,
                          start_date: Union[str, datetime],
                          end_date: Union[str, datetime]) -> ResultProxy:
+        """List all merge files used in data cube generation."""
         sql = """
-        SELECT id, tile_id, band, date::VARCHAR as date, collection_id, (elem->>'link')::VARCHAR as link, status, traceback::TEXT
+        SELECT id, tile_id, band, date::VARCHAR as date, collection_id, args->'dataset'::VARCHAR AS data_set, (elem->>'link')::VARCHAR as link, status, traceback::TEXT
           FROM cube_builder.activities
          CROSS JOIN json_array_elements(args->'assets') elem
          WHERE collection_id = '{}'
            AND tile_id = '{}'
            AND date BETWEEN '{}'::DATE AND '{}'::DATE
-         ORDER BY id;
+         ORDER BY id
         """.format(
             collection,
             tile,
@@ -59,4 +60,3 @@ class Activity(BaseModel):
         res = db.session.execute(sql)
 
         return res.fetchall()
-

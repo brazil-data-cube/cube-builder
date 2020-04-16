@@ -86,10 +86,16 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
             output.setdefault(row.date, dict())
             output[row.date].setdefault('bands', dict())
             output[row.date].setdefault('errors', list())
+            output[row.date].setdefault('collections', set())
+
+            output[row.date]['collections'].add(row.data_set)
 
             output[row.date]['errors'].extend(errors)
 
             output[row.date]['bands'].setdefault(row.band, list())
             output[row.date]['bands'][row.band].append(row.link)
+
+        for element in output.values():
+            element['collections'] = list(element['collections'])
 
         return output
