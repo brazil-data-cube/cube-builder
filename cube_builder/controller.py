@@ -16,7 +16,7 @@ from werkzeug.exceptions import BadRequest
 # BDC Scripts
 from .business import CubeBusiness
 from .forms import TemporalSchemaForm
-from .parsers import DataCubeParser, DataCubeProcessParser
+from .parsers import DataCubeParser, DataCubeProcessParser, PeriodParser
 
 api = Namespace('cubes', description='cubes')
 
@@ -103,3 +103,28 @@ class TemporalSchemaController(Resource):
         cubes, status = CubeBusiness.create_temporal_composition(args)
 
         return cubes, status
+
+
+@api.route('/list-periods')
+class DecodePeriodController(Resource):
+    """Define route to List Data cube periods."""
+
+    def get(self):
+        """List data cube periods.
+
+        The user must provide the following query-string parameters:
+        - schema: Temporal Schema
+        - step: Temporal Step
+        - start_date: Start offset
+        - last_date: End date offset
+        """
+        parser = PeriodParser()
+
+        args = request.args
+
+        errors = parser.validate(args)
+
+        if errors:
+            return errors, 400
+
+        return CubeBusiness.generate_periods(**args)

@@ -46,3 +46,12 @@ class DataCubeProcessParser(Schema):
     end_date = fields.Date()
     bands = fields.List(fields.String, required=False)
     force = fields.Boolean(required=False, default=False)
+
+
+class PeriodParser(Schema):
+    """Define parser for Data Cube Periods."""
+
+    schema = fields.String(required=True, allow_none=False)
+    step = fields.Integer(required=True)
+    start_date = fields.String(required=False)
+    last_date = fields.String(required=False)

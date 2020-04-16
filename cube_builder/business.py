@@ -17,7 +17,7 @@ from werkzeug.exceptions import Conflict, NotFound
 
 from .forms import CollectionForm, TemporalSchemaForm
 from .image import validate_merges
-from .maestro import Maestro
+from .maestro import Maestro, decode_periods
 from .models import Activity
 from .utils import get_cube_id, get_cube_parts, get_or_create_model
 
@@ -183,3 +183,32 @@ class CubeBusiness:
             return TemporalSchemaForm().dump(temporal_schema), 201
 
         raise Conflict('Schema "{}" already exists.'.format(object_id))
+
+    @classmethod
+    def generate_periods(cls, schema, step, start_date=None, last_date=None, **kwargs) -> Tuple[str]:
+        """Generate data cube periods using temporal composition schema.
+
+        Args:
+            schema: Temporal Schema (M, A)
+            step: Temporal Step
+            start_date: Start date offset. Default is '2017-01-01'.
+            last_date: End data offset. Default is '2019-12-31'
+            **kwargs: Optional parameters
+
+        Returns:
+            List of periods between start/last date
+        """
+        start_date = start_date or '2016-01-01'
+        last_date = last_date or '2019-12-31'
+
+        total_periods = decode_periods(schema, start_date, last_date, int(step))
+
+        periods = set()
+
+        for period_array in total_periods.values():
+            for period in period_array:
+                date = period.split('_')[0]
+
+                periods.add(date)
+
+        return sorted(list(periods))
