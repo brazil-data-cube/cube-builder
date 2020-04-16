@@ -8,9 +8,13 @@
 
 """Define Cube Builder Task Activity to track celery execution."""
 
+from datetime import datetime
+from typing import List, Union
+
 # 3rdparty
 from sqlalchemy import Column, Date, String, ARRAY, Integer, JSON, Text
-from bdc_db.models.base_sql import BaseModel
+from sqlalchemy.engine.result import ResultProxy
+from bdc_db.models.base_sql import BaseModel, db
 
 
 class Activity(BaseModel):
@@ -32,3 +36,27 @@ class Activity(BaseModel):
     scene_type = Column('scene_type', String)
     band = Column('band', String(64), nullable=False)
     traceback = Column(Text(), nullable=True)
+
+    @classmethod
+    def list_merge_files(cls, collection: str, tile: str,
+                         start_date: Union[str, datetime],
+                         end_date: Union[str, datetime]) -> ResultProxy:
+        """List all merge files used in data cube generation."""
+        sql = """
+        SELECT id, tile_id, band, date::VARCHAR as date, collection_id, args->'dataset'::VARCHAR AS data_set, (elem->>'link')::VARCHAR as link, status, traceback::TEXT
+          FROM cube_builder.activities
+         CROSS JOIN json_array_elements(args->'assets') elem
+         WHERE collection_id = '{}'
+           AND tile_id = '{}'
+           AND date BETWEEN '{}'::DATE AND '{}'::DATE
+         ORDER BY id
+        """.format(
+            collection,
+            tile,
+            start_date,
+            end_date
+        )
+
+        res = db.session.execute(sql)
+
+        return res.fetchall()

@@ -15,7 +15,8 @@ from werkzeug.exceptions import BadRequest
 
 # BDC Scripts
 from .business import CubeBusiness
-from .parsers import DataCubeParser, DataCubeProcessParser
+from .forms import TemporalSchemaForm
+from .parsers import DataCubeParser, DataCubeProcessParser, PeriodParser
 
 api = Namespace('cubes', description='cubes')
 
@@ -63,3 +64,67 @@ class CubeProcessController(Resource):
         proc = CubeBusiness.maestro(**data)
 
         return proc
+
+
+@api.route('/list-merges')
+class CubeMergeStatusController(Resource):
+    """Define route for datacube execution."""
+
+    def get(self):
+        """Define POST handler for datacube execution.
+
+        Expects a JSON that matches with ``DataCubeProcessParser``.
+        """
+        args = request.args
+
+        res = CubeBusiness.check_for_invalid_merges(**args)
+
+        return res
+
+
+@api.route('/create-temporal-schema')
+class TemporalSchemaController(Resource):
+    """Define route for TemporalCompositeSchema creation."""
+
+    def post(self):
+        """Create the temporal composite schema using HTTP Post method.
+
+        Expects a JSON that matches with ``TemporalSchemaParser``.
+        """
+        form = TemporalSchemaForm()
+
+        args = request.get_json()
+
+        errors = form.validate(args)
+
+        if errors:
+            return errors, 400
+
+        cubes, status = CubeBusiness.create_temporal_composition(args)
+
+        return cubes, status
+
+
+@api.route('/list-periods')
+class DecodePeriodController(Resource):
+    """Define route to List Data cube periods."""
+
+    def get(self):
+        """List data cube periods.
+
+        The user must provide the following query-string parameters:
+        - schema: Temporal Schema
+        - step: Temporal Step
+        - start_date: Start offset
+        - last_date: End date offset
+        """
+        parser = PeriodParser()
+
+        args = request.args
+
+        errors = parser.validate(args)
+
+        if errors:
+            return errors, 400
+
+        return CubeBusiness.generate_periods(**args)

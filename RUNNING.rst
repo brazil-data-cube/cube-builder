@@ -60,6 +60,51 @@ You may need to replace the definition of some parameters:
     **Beware**: The ``cube-builder`` may use much memory for each concurrent process, since it opens multiple image collection in memory.
 
 
+Temporal Composition Schema
+---------------------------
+
+A Temporal Composition Schema is used to describe how the data cube will be created.
+
+You can define a data cube with temporal schema ``monthly``, ``annual`` with interval of 16 days, ``seasonal``, etc. Once defined,
+the ``cube_builder`` will seek for all images within period given and will generate data cube passing these images to a composite function.
+
+
+Creating temporal composition schema
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. note::
+
+    If you already have a composition schema *monthly* (``M1month``) in your database, you can skip this step.
+
+Use the following command to create a temporal composition schema ``Monthly``:
+
+.. code-block:: shell
+
+        curl --location --request POST '127.0.0.1:5000/api/cubes/create-temporal-schema' \
+             --header 'Content-Type: application/json' \
+            --data-raw '{
+                "temporal_composite_unit": "month",
+                "temporal_schema": "M",
+                "temporal_composite_t": "1"
+            }'
+
+It will create a temporal composition schema ``M1month``. The response will have status code ``201`` and the body:
+
+.. code-block:: json
+
+    {
+        "id": "M1month",
+        "temporal_schema": "M",
+        "temporal_composite_t": "1"
+    }
+
+
+.. warning::::
+
+    If you try to insert a already registered temporal composite schema, the response will have status code ``409`` representing
+    duplicated.
+
+
 Creating datacube Landsat8
 --------------------------
 
@@ -77,7 +122,7 @@ Create datacube metadata
                  "bands_quicklook": ["swir2", "nir", "red"],
                  "composite_function_list": ["MEDIAN", "STACK"],
                  "bands": ["coastal", "blue", "green", "red", "nir", "swir1", "swir2", "evi", "ndvi", "quality", "cnc"],
-                 "description": "Landsat8 Cubes 30m - Monthly"
+                 "description": "Landsat 8 30m - Monthly"
              }'
 
 
@@ -146,7 +191,7 @@ Use the following code to create data cube metadata of Sentinel 2:
                     "quality",
                     "cnc"
                 ],
-                "description": "S2 10m Monthly"
+                "description": "Sentinel 2 10m - Monthly"
             }'
 
 

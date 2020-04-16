@@ -8,17 +8,22 @@
 
 """Define Cube Builder business interface."""
 
-# 3rdparty
-from bdc_db.models import Band, Collection
-from bdc_db.models.base_sql import BaseModel
+from typing import Tuple
 
-from .forms import CollectionForm
-from .maestro import Maestro
-from .utils import get_cube_id, get_cube_parts
+# 3rdparty
+from bdc_db.models import Band, Collection, TemporalCompositionSchema
+from bdc_db.models.base_sql import BaseModel
+from werkzeug.exceptions import Conflict, NotFound
+
+from .forms import CollectionForm, TemporalSchemaForm
+from .image import validate_merges
+from .maestro import Maestro, decode_periods
+from .models import Activity
+from .utils import get_cube_id, get_cube_parts, get_or_create_model
 
 
 class CubeBusiness:
-    """Define Cube Builder interface for datacube creation."""
+    """Define Cube Builder interface for data cube creation."""
 
     @classmethod
     def create(cls, params: dict):
@@ -119,3 +124,91 @@ class CubeBusiness:
         maestro.dispatch_celery()
 
         return dict(ok=True)
+
+    @classmethod
+    def check_for_invalid_merges(cls, datacube: str, tile: str, start_date: str, end_date: str) -> dict:
+        """List merge files used in data cube and check for invalid scenes.
+
+        Args:
+            datacube: Data cube name
+            tile: Brazil Data Cube Tile identifier
+            start_date: Activity start date (period)
+            end_date: Activity End (period)
+
+        Returns:
+            List of Images used in period
+        """
+        cube = Collection.query().filter(Collection.id == datacube).first()
+
+        if cube is None or not cube.is_cube:
+            raise NotFound('Cube {} not found'.format(datacube))
+
+        # TODO validate schema to avoid start/end too abroad
+
+        res = Activity.list_merge_files(datacube, tile, start_date, end_date)
+
+        result = validate_merges(res)
+
+        return result, 200
+
+    @classmethod
+    def create_temporal_composition(cls, params: dict) -> Tuple[dict, int]:
+        """Create a temporal composition schema on database.
+
+        The TemporalCompositionSchema is used to describe how the data cube will be created.
+
+        You can define a data cube montly, each 16 days, season, etc. Once defined,
+        the ``cube_builder`` will seek for all images within period given and will
+        generate data cube passing these images to a composite function.
+
+        Raises:
+            Conflict when a duplicated composition is given.
+
+        Args:
+            params - Required parameters for a ``TemporalCompositionSchema``.
+
+        Returns:
+            Tuple with object created and respective HTTP Status code
+        """
+        object_id = '{}{}{}'.format(params['temporal_schema'],
+                                    params['temporal_composite_t'],
+                                    params['temporal_composite_unit'])
+
+        temporal_schema, created = get_or_create_model(TemporalCompositionSchema, defaults=params, id=object_id)
+
+        if created:
+            # Persist
+            temporal_schema.save()
+
+            return TemporalSchemaForm().dump(temporal_schema), 201
+
+        raise Conflict('Schema "{}" already exists.'.format(object_id))
+
+    @classmethod
+    def generate_periods(cls, schema, step, start_date=None, last_date=None, **kwargs) -> Tuple[str]:
+        """Generate data cube periods using temporal composition schema.
+
+        Args:
+            schema: Temporal Schema (M, A)
+            step: Temporal Step
+            start_date: Start date offset. Default is '2016-01-01'.
+            last_date: End data offset. Default is '2019-12-31'
+            **kwargs: Optional parameters
+
+        Returns:
+            List of periods between start/last date
+        """
+        start_date = start_date or '2016-01-01'
+        last_date = last_date or '2019-12-31'
+
+        total_periods = decode_periods(schema, start_date, last_date, int(step))
+
+        periods = set()
+
+        for period_array in total_periods.values():
+            for period in period_array:
+                date = period.split('_')[0]
+
+                periods.add(date)
+
+        return sorted(list(periods))
