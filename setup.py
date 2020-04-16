@@ -44,6 +44,7 @@ install_requires = [
     'bdc-db @ git+git://github.com/brazil-data-cube/bdc-db.git@v0.2.0#egg=bdc-db',
     'celery[librabbitmq]>=4.3.0',
     'Flask>=1.1.1,<2',
+    'flask-cors>=3.0,<4',
     'marshmallow-sqlalchemy>=0.19.0,<1',
     'numpy>=1.17.2',
     'numpngw>=0.0.8',

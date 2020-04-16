@@ -10,6 +10,7 @@
 
 from bdc_db.ext import BDCDatabase
 from flask import Flask
+from flask_cors import CORS
 
 from . import celery, config
 
@@ -37,5 +38,7 @@ def create_app(config_name='DevelopmentConfig'):
         # Setup blueprint
         from .blueprint import bp
         app.register_blueprint(bp)
+
+        CORS(app)
 
     return app
