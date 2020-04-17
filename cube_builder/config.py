@@ -36,7 +36,7 @@ class Config:
     )
     STAC_URL = os.environ.get(
         'STAC_URL',
-        'http://brazildatacube.dpi.inpe.br/bdc-stac/0.7.0'
+        'http://brazildatacube.dpi.inpe.br/bdc-stac/0.8.0'
     )
     SECRET_KEY = 'cube-builder'
     MAX_THREADS_IMAGE_VALIDATOR = int(os.environ.get('MAX_THREADS_IMAGE_VALIDATOR', os.cpu_count()))

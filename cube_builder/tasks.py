@@ -15,8 +15,9 @@ from copy import deepcopy
 from pathlib import Path
 
 # 3rdparty
-from bdc_db.models import Collection
+from bdc_db.models import AssetMV, Collection, db
 from celery import chain, group
+from sqlalchemy_utils import refresh_materialized_view
 
 # Cube Builder
 from cube_builder.config import Config
@@ -269,3 +270,10 @@ def publish(blends):
         date = merge_date.replace(definition['dataset'], '')
 
         publish_merge(quick_look_bands, wcube, definition['dataset'], tile_id, period, date, definition)
+
+    try:
+        refresh_materialized_view(db.session, AssetMV.__table__)
+        db.session.commit()
+        logging.info('View refreshed.')
+    except:
+        db.session.rollback()
