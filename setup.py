@@ -41,7 +41,7 @@ setup_requires = []
 
 install_requires = [
     'bdc-core @ git+git://github.com/brazil-data-cube/bdc-core.git@v0.2.0#egg=bdc-core',
-    'bdc-db @ git+git://github.com/brazil-data-cube/bdc-db.git@v0.2.0#egg=bdc-db',
+    'bdc-db @ git+git://github.com/brazil-data-cube/bdc-db.git@b-0.2#egg=bdc-db',
     'celery[librabbitmq]>=4.3.0',
     'Flask>=1.1.1,<2',
     'flask-cors>=3.0,<4',
@@ -51,7 +51,7 @@ install_requires = [
     'python-dateutil>=2.8,<3',
     'rasterio>=1.1.2,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
-    'stac @ git+git://github.com/brazil-data-cube/stac.py.git@v0.7.0-0#egg=stac',
+    'stac @ git+git://github.com/brazil-data-cube/stac.py.git@b-0.8.0#egg=stac',
     'scikit-image>=0.16.2',
 ]
 
