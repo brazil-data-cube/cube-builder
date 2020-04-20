@@ -17,7 +17,7 @@ Documentation
    :caption: Contents:
 
    installation
-   running
+   deploy
    license
 
 
