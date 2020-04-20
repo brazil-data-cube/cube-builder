@@ -6,58 +6,38 @@
     under the terms of the MIT License; see LICENSE file for more details.
 
 
-Prepare and initialize database
--------------------------------
+Deploying
+=========
 
-.. note::
-
-    The ``cube-builder`` uses `bdc-db <https://github.com/brazil-data-cube/bdc-db/>`_ as database definition to store data cube metadata.
-    Make sure you have a prepared database on PostgreSQL. You can follow steps `here <https://github.com/brazil-data-cube/bdc-db/blob/master/RUNNING.rst>`_.
+The ``docker-compose.yml`` in the root of the source tree can be used to run cube-builder as a multi-container application.
 
 
-Edit file **cube_builder/config.py** the following variables:
-
-1. **SQLALCHEMY_DATABASE_URI** URI Connection to database
-2. **DATA_DIR** Path to store datacubes
-
-.. code-block:: shell
-
-        cube-builder db create # Create database and schema
-        cube-builder db upgrade # Up migrations
+This section explains how to get the cube-builder service up and running with Docker and Docker Compose.
+If you do not have Docker installed, take a look at `this tutorial on how to install it in your system <https://docs.docker.com/install/>`_.
+See also the `tutorial on how to install Docker Compose <https://docs.docker.com/compose/install/>`_.
 
 
-Running http server and worker
-------------------------------
+Building the Docker Image and Launching cube-builder
+----------------------------------------------------
 
-Once everything configured, run local server:
+Use the following command in order to launch all the containers needed to run cube-builder [#f1]_:
 
 .. code-block:: shell
 
-        cube-builder run
+    $ docker-compose up -d
 
 
-After that, run local celery worker:
+If the above command runs successfully, you will be able to list the launched containers:
 
 .. code-block:: shell
 
-        cube-builder worker -l INFO --concurrency 8
+    $ docker container ls
 
+    CONTAINER ID        IMAGE                                                    COMMAND                  CREATED             STATUS              PORTS                    NAMES
+    a3bb86d2df56        rabbitmq:3-management                                    "docker-entrypoint.s…"   3 minutes ago       Up 2 minutes        4369/tcp, 5671/tcp, 0.0.0.0:5672->5672/tcp, 15671/tcp, 25672/tcp, 0.0.0.0:15672->15672/tcp   cube-builder-rabbitmq
+    e3862ab6e756        registry.dpi.inpe.br/brazildatacube/cube-builder:latest  "bash -c 'cube-build…"   2 minutes ago       Up 2 minutes        0.0.0.0:5001->5000/tcp   cube-builder-api
+    13caa0f27030        registry.dpi.inpe.br/brazildatacube/cube-builder:latest  "cube-builder worker…"   2 minutes ago       Up 2 minutes                                 cube-builder-worker
 
-You may need to replace the definition of some parameters:
-
-    - ``-l INFO``: defines the ``Logging level``. You may choose between ``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, ``CRITICAL``, or ``FATAL``.
-    - ``--concurrency 8``: defines the number of concurrent processes to generate of data cube. The default is the number of CPUs available on your system.
-
-
-.. note::
-
-    The command line ``cube-builder worker`` is an auxiliary tool that wraps celery command line using ``cube_builder`` as context.
-    In this way, all ``celery worker`` parameters currently supported. See more in `Celery Workers Guide <https://docs.celeryproject.org/en/stable/userguide/workers.html>`_.
-
-
-.. warning::
-
-    **Beware**: The ``cube-builder`` may use much memory for each concurrent process, since it opens multiple image collection in memory.
 
 
 Temporal Composition Schema
@@ -245,3 +225,13 @@ Trigger datacube generation with following command:
     In order to restart data cube generation, just pass the same command line to trigger a data cube.
     It will reuse the entire process, executing only the failed tasks. You can also pass optional parameter
     ``--force`` to build data cube without cache.
+
+
+.. rubric:: Footnotes
+
+.. [#f1]
+
+    | For now you will need to login into the BDC registry:
+    | ``$ docker login registry.dpi.inpe.br``
+    |
+    | In the next releases we will get ride of this internal registry.

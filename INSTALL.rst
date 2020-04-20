@@ -131,8 +131,8 @@ Edit file **cube_builder/config.py** the following variables:
 
 
 
-Launch the Python Service
-~~~~~~~~~~~~~~~~~~~~~~~~~
+Launch the cube-builder service
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
 In the source code folder, enter the following command:
@@ -164,6 +164,35 @@ The above command should output some messages in the console as showed below:
     * Restarting with stat
     * Debugger is active!
     * Debugger PIN: 319-592-254
+
+
+Launch the cube-builder worker
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Enter the following command to start cube-builder worker
+
+.. code-block:: shell
+
+        cube-builder worker -l INFO --concurrency 8
+
+
+You may need to replace the definition of some parameters:
+
+    - ``-l INFO``: defines the ``Logging level``. You may choose between ``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``, ``CRITICAL``, or ``FATAL``.
+    - ``--concurrency 8``: defines the number of concurrent processes to generate of data cube. The default is the number of CPUs available on your system.
+
+
+.. note::
+
+    The command line ``cube-builder worker`` is an auxiliary tool that wraps celery command line using ``cube_builder`` as context.
+    In this way, all ``celery worker`` parameters currently supported. See more in `Celery Workers Guide <https://docs.celeryproject.org/en/stable/userguide/workers.html>`_.
+
+
+.. warning::
+
+    **Beware**: The ``cube-builder`` may use much memory for each concurrent process, since it opens multiple image collection in memory.
+    You can limit the concurrent processes in order to prevent it.
+
 
 
 .. rubric:: Footnotes
