@@ -41,10 +41,10 @@ Installation
 See `INSTALL.rst <./INSTALL.rst>`_.
 
 
-Running
-=======
+Deploy
+======
 
-See `RUNNING.rst <./RUNNING.rst>`_.
+See `DEPLOY.rst <./DEPLOY.rst>`_.
 
 
 Developer Documentation
