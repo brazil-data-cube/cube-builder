@@ -62,7 +62,7 @@ Creating Raster Schema
     If you already have the raster size schema *BRAZIL-10*, *BRAZIL-30* and *BRAZIL-64* in your database, you can skip this step.
 
 
-First of all, you need to create a Raster Size Schema. In order to create a RasterSizeSchema, use the following command:
+The following sections describe how to create Raster Size Schemas for different resolutions.
 
 
 Resolution 10 meters (Sentinel 2)
@@ -89,7 +89,7 @@ It will create a raster size schema ``BRAZIL-10``. The response will have status
         "raster_size_y": 11723,
         "raster_size_x": 15737,
         "chunk_size_t": 1.0,
-        "id": "BDC_GRID-10",
+        "id": "BRAZIL-10",
         "raster_size_t": 1.0
     }
 
