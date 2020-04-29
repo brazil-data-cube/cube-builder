@@ -35,6 +35,41 @@ def create_db(ctx: click.Context):
     db.session.commit()
 
 
+@cli.command('load-data')
+@with_appcontext
+def load_data():
+    """Create Cube Builder composite functions supported."""
+    from bdc_db.models import CompositeFunctionSchema, TemporalCompositionSchema, db
+    from .utils import get_or_create_model
+
+    with db.session.begin_nested():
+        _, _ = get_or_create_model(
+            CompositeFunctionSchema,
+            defaults=dict(id='MED', description='Median by pixels'),
+            id='MED'
+        )
+
+        _, _ = get_or_create_model(
+            CompositeFunctionSchema,
+            defaults=dict(id='STK', description='Best pixel'),
+            id='STK'
+        )
+
+        _, _ = get_or_create_model(
+            CompositeFunctionSchema,
+            defaults=dict(id='IDENTITY', description=''),
+            id='IDENTITY'
+        )
+
+        _, _ = get_or_create_model(
+            TemporalCompositionSchema,
+            defaults=dict(id='Anull', temporal_composite_unit='', temporal_schema='', temporal_composite_t=''),
+            id='Anull'
+        )
+
+    db.session.commit()
+
+
 @cli.command(context_settings=dict(
     ignore_unknown_options=True,
     allow_extra_args=True,

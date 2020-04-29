@@ -11,11 +11,9 @@
 # 3rdparty
 from flask import request
 from flask_restplus import Namespace, Resource
-from werkzeug.exceptions import BadRequest
-
 # BDC Scripts
 from .business import CubeBusiness
-from .forms import TemporalSchemaForm
+from .forms import GrsSchemaForm, RasterSchemaForm, TemporalSchemaForm
 from .parsers import DataCubeParser, DataCubeProcessParser, PeriodParser
 
 api = Namespace('cubes', description='cubes')
@@ -101,6 +99,46 @@ class TemporalSchemaController(Resource):
             return errors, 400
 
         cubes, status = CubeBusiness.create_temporal_composition(args)
+
+        return cubes, status
+
+
+@api.route('/create-raster-schema')
+class RasterSchemaController(Resource):
+    """Define route for RasterSizeSchema creation."""
+
+    def post(self):
+        """Create the raster schema using HTTP Post method."""
+        form = RasterSchemaForm()
+
+        args = request.get_json()
+
+        errors = form.validate(args)
+
+        if errors:
+            return errors, 400
+
+        cubes, status = CubeBusiness.create_raster_schema(**args)
+
+        return cubes, status
+
+
+@api.route('/create-grs-schema')
+class RasterSchemaController(Resource):
+    """Define route for RasterSizeSchema creation."""
+
+    def post(self):
+        """Create the raster schema using HTTP Post method."""
+        form = GrsSchemaForm()
+
+        args = request.get_json()
+
+        errors = form.validate(args)
+
+        if errors:
+            return errors, 400
+
+        cubes, status = CubeBusiness.create_grs_schema(**args)
 
         return cubes, status
 

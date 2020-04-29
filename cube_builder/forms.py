@@ -8,8 +8,8 @@
 
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
-from bdc_db.models import Band, Collection, TemporalCompositionSchema, db
-from marshmallow.fields import Method, String
+from bdc_db.models import Band, Collection, GrsSchema, RasterSizeSchema, TemporalCompositionSchema, db
+from marshmallow.fields import Float, Integer, Method, String
 from marshmallow_sqlalchemy.schema import ModelSchema
 
 from .models import Activity
@@ -69,3 +69,39 @@ class TemporalSchemaForm(ModelSchema):
             return value
 
         raise RuntimeError('Invalid temporal unit. Supported values: {}'.format(DEFAULT_TEMPORAL_UNITS))
+
+
+class RasterSchemaForm(ModelSchema):
+    """Define form definition for the model RasterSizeSchema."""
+
+    id = String(dump_only=True)
+    grs_schema = String(required=True, load_only=True)
+    resolution = Integer(required=True, load_only=True)
+    raster_size_x = Integer(required=True, dump_only=True)
+    raster_size_y = Integer(required=True, dump_only=True)
+    chunk_size_x = Integer(required=True, load_only=True)
+    chunk_size_y = Integer(required=True, load_only=True)
+
+    class Meta:
+        """Internal meta information of form interface."""
+
+        model = RasterSizeSchema
+        sqla_session = db.session
+
+
+class GrsSchemaForm(ModelSchema):
+    """Form definition for the model GrsSchema."""
+
+    id = String(dump_only=True)
+    name = String(required=True, load_only=True)
+    projection = String(required=True, load_only=True)
+    meridian = Integer(required=True, load_only=True)
+    degreesx = Float(required=True, load_only=True)
+    degreesy = Float(required=True, load_only=True)
+    bbox = String(required=True, load_only=True)
+
+    class Meta:
+        """Internal meta information of form interface."""
+
+        model = GrsSchema
+        sqla_session = db.session
