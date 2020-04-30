@@ -17,7 +17,7 @@ from .models import Activity
 
 
 class CollectionForm(ModelSchema):
-    """Define Form definition for Model Collection."""
+    """Form definition for Model Collection."""
 
     class Meta:
         """Internal meta information of Form interface."""
@@ -27,7 +27,7 @@ class CollectionForm(ModelSchema):
 
 
 class ActivityForm(ModelSchema):
-    """Define Form definition for Model Activity."""
+    """Form definition for Model Activity."""
 
     class Meta:
         """Internal meta information of Form interface."""
@@ -37,7 +37,7 @@ class ActivityForm(ModelSchema):
 
 
 class BandForm(ModelSchema):
-    """Define form definition for model Band.
+    """Form definition for model Band.
 
     Used to serialize band values.
     """
@@ -53,7 +53,7 @@ DEFAULT_TEMPORAL_UNITS = ['day', 'month']
 
 
 class TemporalSchemaForm(ModelSchema):
-    """Define form definition for model TemporalCompositionSchema."""
+    """Form definition for model TemporalCompositionSchema."""
 
     class Meta:
         """Internal meta information of Form interface."""
@@ -73,7 +73,7 @@ class TemporalSchemaForm(ModelSchema):
 
 
 class RasterSchemaForm(ModelSchema):
-    """Define form definition for the model RasterSizeSchema."""
+    """Form definition for the model RasterSizeSchema."""
 
     id = String(dump_only=True)
     grs_schema = String(required=True, load_only=True)
