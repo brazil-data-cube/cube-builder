@@ -31,12 +31,11 @@ In order to create a GrsSchema ``BRAZIL``, use the following command:
             "name": "BRAZIL",
             "description": "albers equal area - 250k by tiles Brazil",
             "projection": "aea",
-            "meridian": -45,
+            "meridian": -46,
             "degreesx": 1.5,
             "degreesy": 1,
-            "bbox": "-73.9872354804,-33.7683777809,-34.7299934555,5.24448639569"
+            "bbox": "-73.9872354804,5.24448639569,-34.7299934555,-33.7683777809"
          }'
-
 
 The response will have status code ``201`` and the body:
 
@@ -86,8 +85,8 @@ It will create a raster size schema ``BRAZIL-10``. The response will have status
 .. code-block:: json
 
     {
-        "raster_size_y": 11723,
-        "raster_size_x": 15737,
+        "raster_size_y": 11727,
+        "raster_size_x": 15744,
         "chunk_size_t": 1.0,
         "id": "BRAZIL-10",
         "raster_size_t": 1.0
@@ -115,8 +114,8 @@ It will create a raster size schema ``BRAZIL-30``. The response will have status
 .. code-block:: json
 
     {
-        "raster_size_y": 3908,
-        "raster_size_x": 5246,
+        "raster_size_y": 3909,
+        "raster_size_x": 5248,
         "chunk_size_t": 1.0,
         "id": "BRAZIL-30",
         "raster_size_t": 1.0
@@ -145,7 +144,7 @@ It will create a raster size schema ``BRAZIL-64``. The response will have status
 
     {
         "raster_size_y": 1832,
-        "raster_size_x": 2459,
+        "raster_size_x": 2460,
         "chunk_size_t": 1.0,
         "id": "BRAZIL-64",
         "raster_size_t": 1.0

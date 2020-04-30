@@ -437,6 +437,7 @@ class Maestro:
                                     resy=band.resolution_y,
                                     cols=cols,
                                     rows=rows,
+                                    srs=tile.grs_schema.crs,
                                     tile_id=tileid,
                                     assets=assets,
                                     nodata=band.fill

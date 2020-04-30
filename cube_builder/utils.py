@@ -133,12 +133,12 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
     TODO: Describe how it works.
 
     Args:
-        warped_datacube - Warped datacube name
+        warped_datacube - Warped data cube name
         tile_id - Tile Id of merge
         assets - List of collections assets during period
         cols - Number of cols for Raster
         rows - Number of rows for Raster
-        period - Datacube merge period.
+        period - Data cube merge period.
         **kwargs - Extra properties
     """
     nodata = kwargs.get('nodata', -9999)
@@ -148,10 +148,7 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
     band = assets[0]['band']
     resx, resy = kwargs.get('resx'), kwargs.get('resy')
 
-    srs = kwargs.get(
-        'srs',
-        '+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-50 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs'
-    )
+    srs = kwargs['srs']
 
     transform = Affine(resx, 0, xmin, 0, -resy, ymax)
 
@@ -167,7 +164,6 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
         raster = numpy.zeros((rows, cols,), dtype=numpy.int16)
         raster_merge = numpy.zeros((rows, cols,), dtype=numpy.int16)
 
-    count = 0
     template = None
 
     mask_array = numpy.ones((rows, cols), dtype=numpy.int16)
@@ -216,7 +212,7 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
                             dst_nodata=nodata,
                             resampling=resampling)
 
-                        # Transform resampled data into boolean array
+                        # Transform re-sampled data into boolean array
                         bmask = numpy.invert(raster.astype(numpy.bool_))
                         # Mask all dummy values
                         bmask[raster == nodata] = True

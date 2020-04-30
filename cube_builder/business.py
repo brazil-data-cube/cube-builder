@@ -16,7 +16,7 @@ from bdc_db.models import (Band, Collection, GrsSchema, RasterSizeSchema,
 from bdc_db.models.base_sql import BaseModel, db
 from rasterio.warp import transform
 from sqlalchemy import func
-from werkzeug.exceptions import Conflict, NotFound
+from werkzeug.exceptions import BadRequest, Conflict, NotFound
 
 from .forms import (CollectionForm, GrsSchemaForm, RasterSchemaForm,
                     TemporalSchemaForm)
@@ -228,7 +228,7 @@ class CubeBusiness:
             Tile.grs_schema_id == grs_schema
         ).first()
         if not tile:
-            raise NotFound('GrsSchema "{}" not found.'.format(grs_schema))
+            raise BadRequest('GrsSchema "{}" not found.'.format(grs_schema))
 
         # x = Xmax - Xmin || y = Ymax - Ymin
         raster_size_x = int(round((tile[2] - tile[1]) / int(resolution), 0))

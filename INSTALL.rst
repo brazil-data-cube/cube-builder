@@ -109,31 +109,36 @@ After that command, check which port was binded from the host to the container:
 Prepare the Database System
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. note::
 
-    The ``cube-builder`` uses `bdc-db <https://github.com/brazil-data-cube/bdc-db/>`_ as database definition to store data cube metadata.
-    Make sure you have a prepared database on PostgreSQL. You can follow steps `here <https://github.com/brazil-data-cube/bdc-db/blob/master/RUNNING.rst>`_.
+The ``cube-builder`` uses `bdc-db <https://github.com/brazil-data-cube/bdc-db/>`_ as database definition to store data cube metadata.
 
-
-Edit file **cube_builder/config.py** the following variables:
-
-1. **SQLALCHEMY_DATABASE_URI** URI Connection to database
-2. **DATA_DIR** Path to store data cubes. Make sure the directory exists.
+In order to prepare a Brazil Data Cube database model, you must clone the ``bdc-db`` and run the migrations:
 
 .. code-block:: shell
 
-        SQLALCHEMY_DATABASE_URI=postgresql://postgres:password@host:port/bdc \
-        DATA_DIR=/data \
-        cube-builder db create # Create database and schema
+    git clone https://github.com/brazil-data-cube/bdc-db.git /tmp/bdc-db
+    (
+        cd /tmp/bdc-db
+        SQLALCHEMY_DATABASE_URI="postgresql://postgres:bdc-collection-builder2019@localhost:5432/cube-builder" \
+        bdc-db db create-db
+        SQLALCHEMY_DATABASE_URI="postgresql://postgres:bdc-collection-builder2019@localhost:5432/cube-builder" \
+        bdc-db db upgrade
+    )
 
-        SQLALCHEMY_DATABASE_URI=postgresql://postgres:password@host:port/bdc \
-        DATA_DIR=/data \
-        cube-builder db upgrade # Up migrations
+After that, you can initialize Cube Builder migrations with the following commands:
 
-        # Register cube-builder composite functions supported
-        SQLALCHEMY_DATABASE_URI=postgresql://postgres:password@host:port/bdc \
-        DATA_DIR=/data \
-        cube-builder load-data
+
+.. code-block:: shell
+
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:bdc-collection-builder2019@localhost:5432/cube-builder" \
+    cube-builder db create-db # Create database and schema
+
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:bdc-collection-builder2019@localhost:5432/cube-builder" \
+    cube-builder db upgrade # Up migrations
+
+    # Load default functions for cube-builder
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:bdc-collection-builder2019@localhost:5432/cube-builder" \
+    cube-builder load-data
 
 
 Launch the cube-builder service
