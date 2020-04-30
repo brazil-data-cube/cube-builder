@@ -2,7 +2,7 @@
     This file is part of Python Module for Cube Builder.
     Copyright (C) 2019-2020 INPE.
 
-    Cube Builder free software; you can redistribute it and/or modify it
+    Cube Builder is free software; you can redistribute it and/or modify it
     under the terms of the MIT License; see LICENSE file for more details.
 
 
@@ -26,7 +26,7 @@ docker-compose.yml
 Open and edit **docker-compose.yml** with the following variables:
 
 1. **DATA_DIR** - Path to store collections.
-2. **SQLALCHEMY_DATABASE_URI** - BDC Collection Builder Database URI.
+2. **SQLALCHEMY_DATABASE_URI** - Database URI.
 3. **RABBIT_MQ_URL** - URI to connect on RabbitMQ protocol.
 
 

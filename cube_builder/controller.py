@@ -11,7 +11,8 @@
 # 3rdparty
 from flask import request
 from flask_restplus import Namespace, Resource
-# BDC Scripts
+
+# Cube Builder
 from .business import CubeBusiness
 from .forms import GrsSchemaForm, RasterSchemaForm, TemporalSchemaForm
 from .parsers import DataCubeParser, DataCubeProcessParser, PeriodParser

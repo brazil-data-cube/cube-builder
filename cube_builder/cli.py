@@ -9,7 +9,8 @@
 """Create a python click context and inject it to the global flask commands."""
 
 import click
-from bdc_db.cli import create_cli, create_db as bdc_create_db
+from bdc_db.cli import create_cli
+from bdc_db.cli import create_db as bdc_create_db
 from bdc_db.models import db
 from flask.cli import with_appcontext
 from flask_migrate.cli import db as flask_migrate_db

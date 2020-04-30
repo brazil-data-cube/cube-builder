@@ -11,13 +11,15 @@
 from typing import Tuple
 
 # 3rdparty
-from bdc_db.models import Band, Collection, GrsSchema, RasterSizeSchema, TemporalCompositionSchema, Tile
+from bdc_db.models import (Band, Collection, GrsSchema, RasterSizeSchema,
+                           TemporalCompositionSchema, Tile)
 from bdc_db.models.base_sql import BaseModel, db
 from rasterio.warp import transform
 from sqlalchemy import func
 from werkzeug.exceptions import Conflict, NotFound
 
-from .forms import CollectionForm, GrsSchemaForm, RasterSchemaForm, TemporalSchemaForm
+from .forms import (CollectionForm, GrsSchemaForm, RasterSchemaForm,
+                    TemporalSchemaForm)
 from .image import validate_merges
 from .maestro import Maestro, decode_periods
 from .models import Activity

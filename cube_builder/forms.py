@@ -8,7 +8,8 @@
 
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
-from bdc_db.models import Band, Collection, GrsSchema, RasterSizeSchema, TemporalCompositionSchema, db
+from bdc_db.models import (Band, Collection, GrsSchema, RasterSizeSchema,
+                           TemporalCompositionSchema, db)
 from marshmallow.fields import Float, Integer, Method, String
 from marshmallow_sqlalchemy.schema import ModelSchema
 
