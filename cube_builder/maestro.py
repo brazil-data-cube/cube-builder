@@ -19,7 +19,6 @@ import numpy
 from bdc_db.models import Band, Collection, CollectionTile, Tile, db
 from dateutil.relativedelta import relativedelta
 from geoalchemy2 import func
-from requests.exceptions import RequestException
 from stac import STAC
 
 # Cube Builder
@@ -253,6 +252,7 @@ class Maestro:
 
     @staticmethod
     def create_tile(datacube, tile_id, grs_schema_id):
+        """Create a Brazil Data Cube Tile and associate with data cube collection."""
         collection_tile = CollectionTile.query().filter(
             CollectionTile.collection_id == datacube,
             CollectionTile.grs_schema_id == grs_schema_id,
@@ -437,6 +437,7 @@ class Maestro:
                                     resy=band.resolution_y,
                                     cols=cols,
                                     rows=rows,
+                                    srs=tile.grs_schema.crs,
                                     tile_id=tileid,
                                     assets=assets,
                                     nodata=band.fill

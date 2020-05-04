@@ -20,12 +20,11 @@ from celery import chain, group
 from sqlalchemy_utils import refresh_materialized_view
 
 # Cube Builder
-from cube_builder.config import Config
 from .celery import celery_app
+from .config import Config
 from .models import Activity
 from .utils import blend as blend_processing
-from .utils import compute_data_set_stats
-from .utils import get_or_create_model
+from .utils import compute_data_set_stats, get_or_create_model
 from .utils import merge as merge_processing
 from .utils import publish_datacube, publish_merge
 

@@ -8,6 +8,8 @@
 
 """Define a structure component to run celery worker."""
 
+from celery.signals import celeryd_after_setup
+
 # Builder
 from cube_builder import create_app
 from cube_builder.celery import create_celery_app
@@ -15,3 +17,13 @@ from cube_builder.celery import create_celery_app
 
 app = create_app()
 celery = create_celery_app(app)
+
+
+@celeryd_after_setup.connect()
+def load_models(*args, **kwargs):
+    """Load celery models when worker is ready."""
+    from celery.backends.database import SessionManager
+
+    session = SessionManager()
+    engine = session.get_engine(celery.backend.url)
+    session.prepare_models(engine)

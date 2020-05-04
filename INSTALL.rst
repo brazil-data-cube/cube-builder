@@ -51,9 +51,6 @@ Go to the source code folder:
     $ cd cube-builder
 
 
-Using pip
-~~~~~~~~~
-
 Install in development mode:
 
 .. code-block:: shell
@@ -105,35 +102,47 @@ After that command, check which port was binded from the host to the container:
 .. note::
 
         Note that in the above output the RabbitMQ service is attached to the ports ``5672`` for socket client and
-        ``15672`` the RabbitMQ User Interface. You can check `<http://127.0.0.1:15672>`_. The default credentiais are ``guest`` and ``guest`` for
+        ``15672`` the RabbitMQ User Interface. You can check `<http://127.0.0.1:15672>`_. The default credentials are ``guest`` and ``guest`` for
         user and password respectively.
 
 
-
-Prepare and initialize database
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. note::
-
-    The ``cube-builder`` uses `bdc-db <https://github.com/brazil-data-cube/bdc-db/>`_ as database definition to store data cube metadata.
-    Make sure you have a prepared database on PostgreSQL. You can follow steps `here <https://github.com/brazil-data-cube/bdc-db/blob/master/RUNNING.rst>`_.
+Prepare the Database System
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-Edit file **cube_builder/config.py** the following variables:
+The ``cube-builder`` uses `bdc-db <https://github.com/brazil-data-cube/bdc-db/>`_ as database definition to store data cube metadata.
 
-1. **SQLALCHEMY_DATABASE_URI** URI Connection to database
-2. **DATA_DIR** Path to store datacubes. Make sure the directory exists.
+In order to prepare a Brazil Data Cube database model, you must clone the ``bdc-db`` and run the migrations:
 
 .. code-block:: shell
 
-        cube-builder db create # Create database and schema
-        cube-builder db upgrade # Up migrations
+    git clone https://github.com/brazil-data-cube/bdc-db.git /tmp/bdc-db
+    (
+        cd /tmp/bdc-db
+        SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
+        bdc-db db create-db
+        SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
+        bdc-db db upgrade
+    )
 
+After that, you can initialize Cube Builder migrations with the following commands:
+
+
+.. code-block:: shell
+
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
+    cube-builder db create-db # Create database and schema
+
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
+    cube-builder db upgrade # Up migrations
+
+    # Load default functions for cube-builder
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
+    cube-builder load-data
 
 
 Launch the cube-builder service
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 
 In the source code folder, enter the following command:
 
@@ -169,7 +178,7 @@ The above command should output some messages in the console as showed below:
 Launch the cube-builder worker
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Enter the following command to start cube-builder worker
+Enter the following command to start cube-builder worker:
 
 .. code-block:: shell
 
@@ -192,6 +201,12 @@ You may need to replace the definition of some parameters:
 
     **Beware**: The ``cube-builder`` may use much memory for each concurrent process, since it opens multiple image collection in memory.
     You can limit the concurrent processes in order to prevent it.
+
+
+Using the Cube Builder
+----------------------
+
+Please, refer to the document `USING.rst <./USING.rst>`_ for information on how to use the cube builder.
 
 
 
@@ -257,3 +272,46 @@ You may need to replace the definition of some parameters:
     .. code-block:: shell
 
         $ sudo apt-get install libgdal-dev=2.4.2+dfsg-1~bionic0
+
+
+.. [#f3]
+
+    During ``librabbitmq`` installation, if you have a build message such as the one showed below:
+
+    .. code-block::
+
+        ...
+        Running setup.py install for SQLAlchemy-Utils ... done
+        Running setup.py install for bdc-db ... done
+        Running setup.py install for librabbitmq ... error
+        ERROR: Command errored out with exit status 1:
+         command: /home/gribeiro/Devel/github/brazil-data-cube/bdc-collection-builder/venv/bin/python3.7 -u -c 'import sys, setuptools, tokenize; sys.argv[0] = '"'"'/tmp/pip-install-1i7mp5js/librabbitmq/setup.py'"'"'; __file__='"'"'/tmp/pip-install-1i7mp5js/librabbitmq/setup.py'"'"';f=getattr(tokenize, '"'"'open'"'"', open)(__file__);code=f.read().replace('"'"'\r\n'"'"', '"'"'\n'"'"');f.close();exec(compile(code, __file__, '"'"'exec'"'"'))' install --record /tmp/pip-record-m9lm5kjn/install-record.txt --single-version-externally-managed --compile --install-headers /home/gribeiro/Devel/github/brazil-data-cube/bdc-collection-builder/venv/include/site/python3.7/librabbitmq
+             cwd: /tmp/pip-install-1i7mp5js/librabbitmq/
+        Complete output (107 lines):
+        /tmp/pip-install-1i7mp5js/librabbitmq/setup.py:167: DeprecationWarning: 'U' mode is deprecated
+          long_description = open(os.path.join(BASE_PATH, 'README.rst'), 'U').read()
+        running build
+        - pull submodule rabbitmq-c...
+        Cloning into 'rabbitmq-c'...
+        Note: checking out 'caad0ef1533783729c7644a226c989c79b4c497b'.
+
+        You are in 'detached HEAD' state. You can look around, make experimental
+        changes and commit them, and you can discard any commits you make in this
+        state without impacting any branches by performing another checkout.
+
+        If you want to create a new branch to retain commits you create, you may
+        do so (now or later) by using -b with the checkout command again. Example:
+
+          git checkout -b <new-branch-name>
+
+        - autoreconf
+        sh: 1: autoreconf: not found
+        - configure rabbitmq-c...
+        /bin/sh: 0: Can't open configure
+
+
+    You will need to install ``autoconf``:
+
+    .. code-block:: shell
+
+        $ sudo apt install autoconf

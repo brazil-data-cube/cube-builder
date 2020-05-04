@@ -9,7 +9,8 @@
 """Create a python click context and inject it to the global flask commands."""
 
 import click
-from bdc_db.cli import create_cli, create_db as bdc_create_db
+from bdc_db.cli import create_cli
+from bdc_db.cli import create_db as bdc_create_db
 from bdc_db.models import db
 from flask.cli import with_appcontext
 from flask_migrate.cli import db as flask_migrate_db
@@ -31,6 +32,41 @@ def create_db(ctx: click.Context):
     click.secho('Creating schema {}...'.format(Config.ACTIVITIES_SCHEMA), fg='green')
     with db.session.begin_nested():
         db.session.execute('CREATE SCHEMA IF NOT EXISTS {}'.format(Config.ACTIVITIES_SCHEMA))
+
+    db.session.commit()
+
+
+@cli.command('load-data')
+@with_appcontext
+def load_data():
+    """Create Cube Builder composite functions supported."""
+    from bdc_db.models import CompositeFunctionSchema, TemporalCompositionSchema, db
+    from .utils import get_or_create_model
+
+    with db.session.begin_nested():
+        _, _ = get_or_create_model(
+            CompositeFunctionSchema,
+            defaults=dict(id='MED', description='Median by pixels'),
+            id='MED'
+        )
+
+        _, _ = get_or_create_model(
+            CompositeFunctionSchema,
+            defaults=dict(id='STK', description='Best pixel'),
+            id='STK'
+        )
+
+        _, _ = get_or_create_model(
+            CompositeFunctionSchema,
+            defaults=dict(id='IDENTITY', description=''),
+            id='IDENTITY'
+        )
+
+        _, _ = get_or_create_model(
+            TemporalCompositionSchema,
+            defaults=dict(id='Anull', temporal_composite_unit='', temporal_schema='', temporal_composite_t=''),
+            id='Anull'
+        )
 
     db.session.commit()
 
