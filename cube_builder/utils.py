@@ -574,6 +574,9 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
                 compressed_file=None
             ).save(commit=False)
 
+            assets_json = dict()
+            assets_json['thumbnail'] = {'href': quick_look_file.replace(Config.DATA_DIR, '')}
+
             for band in scenes:
                 if band == 'quality':
                     continue
@@ -586,6 +589,8 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
                     continue
 
                 asset_relative_path = scenes[band][composite_function].replace(Config.DATA_DIR, '')
+
+                assets_json[band] = {'href': asset_relative_path}
 
                 Asset(
                     collection_id=item_datacube,
@@ -602,6 +607,9 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
                     chunk_size_y=raster_size_schemas.chunk_size_y,
                     chunk_size_t=1
                 ).save(commit=False)
+
+
+            CollectionItem.query().filter(CollectionItem.id == item_id).update({'assets_json': assets_json})
 
         db.session.commit()
 
