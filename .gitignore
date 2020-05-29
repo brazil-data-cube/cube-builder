@@ -132,3 +132,6 @@ dmypy.json
 .vscode
 .idea
 doc/sphinx/_build
+
+# General Mac Files
+.DS_Store
