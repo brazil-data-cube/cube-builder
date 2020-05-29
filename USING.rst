@@ -12,14 +12,14 @@ Using Cube Builder
 This section explains how to use the Cube Builder application to generate data cubes from Sentinel 2, Landsat 8 and CBERS collections.
 
 
-If you have not read yet how to install or deploy the system, please refer to `INSTALL.rst <./INSTALL.rst>`_ or `DEPLOY.rst <./DEPLOY.rst>`_ documentation.
+If you have not read yet how to install or deploy the system, please refer to `INSTALL.rst <./INSTALL.rst>`_ or `DEPLOY.rst <DEPLOY.rst>`_ documentation.
 
 
-Creating Grid Schema
---------------------
+Creating a Grid for the Data Cubes
+----------------------------------
 
-First of all, you need to create a Grid schema. In this example, we will create a Grid for ``BRAZIL``.
-In order to create a GrsSchema ``BRAZIL``, use the following command:
+
+A Data Cube must have an associated grid. The example showed below will create a grid over the Brazil bounds, named ``BRAZIL``:
 
 
 .. code-block:: shell
@@ -37,7 +37,9 @@ In order to create a GrsSchema ``BRAZIL``, use the following command:
             "bbox": "-73.9872354804,5.24448639569,-34.7299934555,-33.7683777809"
          }'
 
+
 The response will have status code ``201`` and the body:
+
 
 .. code-block:: shell
 
@@ -53,8 +55,9 @@ The response will have status code ``201`` and the body:
     Remember that the bounding box ``bbox`` order is defined by: ``west,north,east,south``.
 
 
-Creating Raster Schema
-----------------------
+Registering a new Spatial Dimension for Data Cubes
+--------------------------------------------------
+
 
 .. note::
 
@@ -65,7 +68,8 @@ The following sections describe how to create Raster Size Schemas for different 
 
 
 Resolution 10 meters (Sentinel 2)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*********************************
+
 
 .. code-block:: shell
 
@@ -94,7 +98,8 @@ It will create a raster size schema ``BRAZIL-10``. The response will have status
 
 
 Resolution 30 meters (Landsat-8)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+********************************
+
 
 .. code-block:: shell
 
@@ -111,6 +116,7 @@ Resolution 30 meters (Landsat-8)
 
 It will create a raster size schema ``BRAZIL-30``. The response will have status code ``201`` and the body:
 
+
 .. code-block:: json
 
     {
@@ -123,7 +129,7 @@ It will create a raster size schema ``BRAZIL-30``. The response will have status
 
 
 Resolution 64 meters (CBERS4)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*****************************
 
 .. code-block:: shell
 
@@ -139,6 +145,7 @@ Resolution 64 meters (CBERS4)
 
 
 It will create a raster size schema ``BRAZIL-64``. The response will have status code ``201`` and the body:
+
 
 .. code-block:: json
 
@@ -157,8 +164,9 @@ It will create a raster size schema ``BRAZIL-64``. The response will have status
     duplicated.
 
 
-Creating Temporal Composition Schema
-------------------------------------
+Creating a Temporal Composition Schema
+--------------------------------------
+
 
 .. note::
 
@@ -166,7 +174,7 @@ Creating Temporal Composition Schema
 
 
 Period Monthly
-~~~~~~~~~~~~~~
+**************
 
 Use the following command to create a temporal composition schema ``Monthly``:
 
@@ -180,7 +188,9 @@ Use the following command to create a temporal composition schema ``Monthly``:
             "temporal_composite_t": "1"
         }'
 
+
 It will create a temporal composition schema ``M1month``. The response will have status code ``201`` and the body:
+
 
 .. code-block:: json
 
@@ -191,10 +201,12 @@ It will create a temporal composition schema ``M1month``. The response will have
     }
 
 
-Period 16 day in year
-~~~~~~~~~~~~~~~~~~~~~
+Period 16 day, recycled by year
+*******************************
+
 
 Use the following command to create a temporal composition schema ``A16day``:
+
 
 .. code-block:: shell
 
@@ -206,7 +218,9 @@ Use the following command to create a temporal composition schema ``A16day``:
             "temporal_composite_t": "16"
         }'
 
+
 It will create a temporal composition schema ``A16day``. The response will have status code ``201`` and the body:
+
 
 .. code-block:: json
 
@@ -219,14 +233,15 @@ It will create a temporal composition schema ``A16day``. The response will have 
 
 .. warning::
 
-    If you try to insert a already registered temporal composite schema, the response will have status code ``409`` representing
-    duplicated.
+    If you try to insert a already registered temporal composite schema, the response will have status code ``409`` representing duplicated.
 
 
-Creating data cube Landsat-8
-----------------------------
+Creating the Definition of Landsat-8 based Data Cube
+----------------------------------------------------
+
 
 In order to create data cube Landsat-8, use the following command to create data cube metadata:
+
 
 .. code-block:: shell
 

@@ -187,6 +187,8 @@ Enter the following command to start ``Cube Builder`` worker:
 
 .. code-block:: shell
 
+        DATA_DIR="/data" \
+        SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
         cube-builder worker -l INFO --concurrency 8
 
 
@@ -211,7 +213,6 @@ Using the Cube Builder
 ----------------------
 
 Please, refer to the document `USING.rst <./USING.rst>`_ for more information on how to use the ``Cube Builder``.
-
 
 
 .. rubric:: Footnotes
