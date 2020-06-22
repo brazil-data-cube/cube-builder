@@ -152,22 +152,32 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
 
     transform = Affine(resx, 0, xmin, 0, -resy, ymax)
 
-    # Quality band is resampled by nearest, other are bilinear
+    is_sentinel_landsat_quality_fmask = ('LC8SR' in dataset or 'S2_MSI' in dataset) and band == 'quality'
+    source_nodata = 0
+
     if band == 'quality':
         resampling = Resampling.nearest
 
+        fill_nodata = nodata = 0
+
+        # TODO: Remove it when a custom mask feature is done
+        # Identifies when the collection is Sentinel or Landsat
+        # In this way, we must keep in mind that fmask 4.2 uses 0 as valid value and 255 for nodata. So, we need
+        # to track the dummy data in re-project step in order to prevent store "nodata" as "valid" data (0).
+        if is_sentinel_landsat_quality_fmask:
+            fill_nodata = 255  # Uses 255 based in Fmask 4.2
+            nodata = 255  # temporally set nodata to 255 in order to reproject without losing valid 0 values
+            source_nodata = fill_nodata
+
         raster = numpy.zeros((rows, cols,), dtype=numpy.uint16)
-        raster_merge = numpy.zeros((rows, cols,), dtype=numpy.uint16)
-        nodata = 0
+        raster_merge = numpy.full((rows, cols,), dtype=numpy.uint16, fill_value=fill_nodata)
+        raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint16)
     else:
         resampling = Resampling.bilinear
         raster = numpy.zeros((rows, cols,), dtype=numpy.int16)
-        raster_merge = numpy.zeros((rows, cols,), dtype=numpy.int16)
+        raster_merge = numpy.full((rows, cols,), fill_value=nodata, dtype=numpy.int16)
 
     template = None
-
-    mask_array = numpy.ones((rows, cols), dtype=numpy.int16)
-    notdonetask = numpy.ones((rows, cols), dtype=numpy.int16)
 
     with rasterio.Env(CPL_CURL_VERBOSE=False, **get_rasterio_config()):
         for asset in assets:
@@ -180,8 +190,6 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
                     'height': rows
                 })
 
-                source_nodata = 0
-
                 if src.profile['nodata'] is not None:
                     source_nodata = src.profile['nodata']
                 elif 'LC8SR' in dataset:
@@ -190,8 +198,6 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
                         # Sometimes, the laSRC does not generate the data set properly and
                         # the data maybe UInt16 instead Int16
                         source_nodata = nodata if src.profile['dtype'] == 'int16' else 0
-                    else:
-                        source_nodata = 1
                 elif 'CBERS' in dataset and band != 'quality':
                     source_nodata = nodata
 
@@ -212,19 +218,12 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
                             dst_nodata=nodata,
                             resampling=resampling)
 
-                        # Transform re-sampled data into boolean array
-                        bmask = numpy.invert(raster.astype(numpy.bool_))
-                        # Mask all dummy values
-                        bmask[raster == nodata] = True
-
-                        # Map array fragments to do
-                        todomask = notdonetask * numpy.invert(bmask)
-                        # Set masked values to mask_array
-                        mask_array *= bmask
-                        # Remap not done task
-                        notdonetask *= bmask
-
-                        raster_merge = raster_merge + raster * todomask
+                        if band != 'quality' or is_sentinel_landsat_quality_fmask:
+                            valid_data_scene = raster[raster != nodata]
+                            raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
+                        else:
+                            raster_merge = raster_merge + raster * raster_mask
+                            raster_mask[raster != nodata] = 0
 
                         if template is None:
                             template = dst.profile
@@ -234,14 +233,17 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
                                 template['dtype'] = 'int16'
                                 template['nodata'] = nodata
 
-    raster_merge[mask_array.astype(numpy.bool_)] = nodata
-
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
     cloudratio = 100
     if band == 'quality':
         raster_merge, efficacy, cloudratio = getMask(raster_merge, dataset)
         template.update({'dtype': 'uint16'})
+
+    # Enforce that BDC Quality products uses 0 as nodata on .tif saving
+    if is_sentinel_landsat_quality_fmask:
+        nodata = 0
+        template['nodata'] = nodata
 
     # Ensure file tree is created
     Path(merge_file).parent.mkdir(parents=True, exist_ok=True)
@@ -714,40 +716,17 @@ def getMask(raster, dataset):
 
     TODO: Implement with plugin on entry_points
     """
-    from skimage import morphology
     # Output Cloud Mask codes
     # 0 - fill
     # 1 - clear data
     # 0 - cloud
-    if 'LC8SR' in dataset:
-        # Input pixel_qa codes
-        fill = 1 				# warped images have 0 as fill area
-        # terrain = 2					# 0000 0000 0000 0010
-        radsat = 4+8				# 0000 0000 0000 1100
-        cloud = 16+32+64			# 0000 0000 0110 0000
-        shadow = 128+256			# 0000 0001 1000 0000
-        snowice = 512+1024			# 0000 0110 0000 0000
-        cirrus = 2048+4096			# 0001 1000 0000 0000
-
-        # Start with a zeroed image imagearea
-        imagearea = numpy.zeros(raster.shape, dtype=numpy.bool_)
-        # Mark with True the pixels that contain valid data
-        imagearea = imagearea + raster > fill
-        # Create a notcleararea mask with True where the quality criteria is as follows
-        notcleararea = (raster & radsat > 4) + \
-            (raster & cloud > 64) + \
-            (raster & shadow > 256) + \
-            (raster & snowice > 512) + \
-            (raster & cirrus > 4096)
-
-        strel = morphology.selem.square(6)
-        notcleararea = morphology.binary_dilation(notcleararea,strel)
-        morphology.remove_small_holes(notcleararea, area_threshold=80, connectivity=1, in_place=True)
-
-        # Clear area is the area with valid data and with no Cloud or Snow
-        cleararea = imagearea * numpy.invert(notcleararea)
-        # Code the output image rastercm as the output codes
-        rastercm = (2*notcleararea + cleararea).astype(numpy.uint16)  # .astype(numpy.uint8)
+    if 'LC8SR' in dataset or 'S2_MSI_L2_SR_LASRC' in dataset:
+        lut = numpy.zeros(256, dtype=numpy.uint8)
+        lut[0] = 1  # 0 is valid data in Fmask 4.2
+        lut[1] = 1  # 1 is water in Fmask 4.2
+        lut[2:] = 2  # Rest cloud
+        lut[-1] = 0  # 255 is nodata
+        rastercm = numpy.take(lut, raster).astype(numpy.uint8)
 
     elif dataset == 'MOD13Q1' or dataset == 'MYD13Q1':
         # MOD13Q1 Pixel Reliability !!!!!!!!!!!!!!!!!!!!
