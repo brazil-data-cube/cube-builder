@@ -125,6 +125,8 @@ def warp_merge(activity, force=False):
             record.traceback = ''
             record.status = 'SUCCESS'
             record.args = merge_args
+
+            activity['args'].update(merge_args)
         except BaseException as e:
             record.status = 'FAILURE'
             record.traceback = capture_traceback(e)
@@ -159,8 +161,7 @@ def prepare_blend(merges):
     }
 
     for _merge in merges:
-        if _merge['band'] in activities and _merge['args']['date'] in activities[_merge['band']]['scenes'] or \
-                _merge['band'] == 'quality':
+        if _merge['band'] in activities and _merge['args']['date'] in activities[_merge['band']]['scenes']:
             continue
 
         activity = activities.get(_merge['band'], dict(scenes=dict()))
@@ -184,6 +185,8 @@ def prepare_blend(merges):
         }
 
         activities[_merge['band']] = activity
+
+    # TODO: Generate Vegetation Index
 
     logging.warning('Scheduling blend....')
 
