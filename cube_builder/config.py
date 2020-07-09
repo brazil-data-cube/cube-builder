@@ -12,8 +12,11 @@ import os
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 
-def get_settings(env):
+def get_settings(env=None):
     """Retrieve Config class from environment."""
+    if env is None:
+        env = os.getenv('FLASK_ENV', 'development')
+
     return CONFIG.get(env)
 
 
@@ -36,7 +39,7 @@ class Config:
     )
     STAC_URL = os.environ.get(
         'STAC_URL',
-        'http://brazildatacube.dpi.inpe.br/bdc-stac/0.8.0'
+        'http://brazildatacube.dpi.inpe.br/bdc-stac/0.8.1'
     )
     SECRET_KEY = 'cube-builder'
     MAX_THREADS_IMAGE_VALIDATOR = int(os.environ.get('MAX_THREADS_IMAGE_VALIDATOR', os.cpu_count()))
@@ -70,7 +73,7 @@ class TestingConfig(Config):
 key = Config.SECRET_KEY
 
 CONFIG = {
-    "DevelopmentConfig": DevelopmentConfig(),
-    "ProductionConfig": ProductionConfig(),
-    "TestingConfig": TestingConfig()
+    "development": DevelopmentConfig(),
+    "production": ProductionConfig(),
+    "testing": TestingConfig()
 }

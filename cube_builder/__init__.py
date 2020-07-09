@@ -15,7 +15,7 @@ from flask_cors import CORS
 from . import celery, config
 
 
-def create_app(config_name='DevelopmentConfig'):
+def create_app(config_name=None):
     """Create Brazil Data Cube application from config object.
 
     Args:

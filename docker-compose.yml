@@ -38,6 +38,7 @@ services:
       - "DATA_DIR=/gfs"
       - "LC_ALL=C.UTF-8"
       - "LANG=C.UTF-8"
+      - "FLASK_ENV=production"
 
     networks:
       - cube_builder_net
@@ -65,7 +66,8 @@ services:
       - "DATA_DIR=/gfs"
       - "LC_ALL=C.UTF-8"
       - "LANG=C.UTF-8"
+      - "FLASK_ENV=production"
     command: >
-      cube-builder worker -l INFO --concurrency 8
+      cube-builder worker -l INFO --concurrency 8 --max-tasks-per-child=30
     networks:
       - cube_builder_net
