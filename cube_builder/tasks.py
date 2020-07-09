@@ -160,8 +160,17 @@ def prepare_blend(merges):
         m['date']: (m['args']['efficacy'], m['args']['cloudratio']) for m in merges if m['band'] == 'quality'
     }
 
+    def _is_not_stk(_merge):
+        """Control flag to generate cloud mask.
+
+        This function is a utility to dispatch the cloud mask generation only for STK data cubes.
+        """
+        return _merge['band'] == 'quality' and not _merge['collection_id'].endswith('STK')
+
     for _merge in merges:
-        if _merge['band'] in activities and _merge['args']['date'] in activities[_merge['band']]['scenes']:
+        # Skip quality generation for MEDIAN, AVG
+        if _merge['band'] in activities and _merge['args']['date'] in activities[_merge['band']]['scenes'] or \
+                _is_not_stk(_merge):
             continue
 
         activity = activities.get(_merge['band'], dict(scenes=dict()))
