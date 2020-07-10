@@ -9,6 +9,7 @@
 """Define Cube Builder parsers."""
 
 from marshmallow import Schema, fields
+from marshmallow.validate import OneOf, Regexp
 
 
 class DataCubeBandParser(Schema):
@@ -22,15 +23,18 @@ class DataCubeBandParser(Schema):
     data_type = fields.String(required=True, allow_none=False)
 
 
+INVALID_CUBE_NAME = 'Invalid data cube name. Expected only letters and numbers.'
+
+
 class DataCubeParser(Schema):
     """Define parser for datacube creation."""
 
-    datacube = fields.String(required=True, allow_none=False)
+    datacube = fields.String(required=True, allow_none=False, validate=Regexp('^[a-zA-Z0-9]*$', error=INVALID_CUBE_NAME))
     grs = fields.String(required=True, allow_none=False)
     resolution = fields.Integer(required=True, allow_none=False)
     temporal_schema = fields.String(required=True, allow_none=False)
     bands_quicklook = fields.List(fields.String, required=True, allow_none=False)
-    composite_function_list = fields.List(fields.String, required=True, allow_none=False)
+    composite_function = fields.String(required=True, allow_none=False, validate=OneOf(['MED', 'STK', 'IDENTITY']))
     bands = fields.List(fields.String, required=True, allow_none=False)
     description = fields.String(required=True, allow_none=False)
     license = fields.String(required=False, allow_none=True)

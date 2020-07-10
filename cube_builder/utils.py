@@ -19,6 +19,7 @@ from typing import List, Tuple
 import numpy
 import rasterio
 from bdc_db.models import Asset, Band, CollectionItem, db
+from flask import abort
 from numpngw import write_png
 from rasterio import Affine, MemoryFile
 from rasterio.warp import Resampling, reproject
@@ -80,7 +81,7 @@ def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_typ
     )
 
 
-def get_cube_parts(datacube: str) -> List[str]:
+class DataCubeFragments(list):
     """Parse a data cube name and retrieve their parts.
 
     A data cube is composed by the following structure:
@@ -90,21 +91,56 @@ def get_cube_parts(datacube: str) -> List[str]:
 
     Examples:
         >>> # Parse Sentinel 2 Monthly MEDIAN
-        >>> get_cube_parts('S2_10_1M_MED') # ['S2', '10', '1M', 'MED']
+        >>> cube_parts = DataCubeFragments('S2_10_1M_MED') # ['S2', '10', '1M', 'MED']
+        >>> cube_parts.composite_function
+        ... 'MED'
         >>> # Parse Sentinel 2 IDENTITY
-        >>> get_cube_parts('S2_10') # ['S2', '10']
-        >>> # Invalid data cubes
-        >>> get_cube_parts('S2-10')
-
-    Raises:
-        ValueError when data cube name is invalid.
+        >>> cube_parts = DataCubeFragments('S2_10') # ['S2', '10']
+        >>> cube_parts.composite_function
+        ... 'IDENTITY'
+        >>> DataCubeFragments('S2-10') # ValueError Invalid data cube name
     """
-    cube_fragments = datacube.split('_')
 
-    if len(cube_fragments) > 4 or len(cube_fragments) < 2:
-        raise ValueError('Invalid data cube name. "{}"'.format(datacube))
+    def __init__(self, datacube: str):
+        """Construct a Data Cube Fragments parser.
 
-    return cube_fragments
+        Exceptions:
+            ValueError when data cube name is invalid.
+        """
+        cube_fragments = self.parse(datacube)
+
+        self.datacube = '_'.join(cube_fragments)
+
+        super(DataCubeFragments, self).__init__(cube_fragments)
+
+    @staticmethod
+    def parse(datacube: str) -> List[str]:
+        cube_fragments = datacube.split('_')
+
+        if len(cube_fragments) > 4 or len(cube_fragments) < 2:
+            abort(400, 'Invalid data cube name. "{}"'.format(datacube))
+
+        return cube_fragments
+
+    def __str__(self):
+        """Retrieve the data cube name."""
+        return self.datacube
+
+    @property
+    def composite_function(self):
+        """Retrieve data cube composite function based.
+
+        TODO: Add reference to document User Guide - Convention Data Cube Names
+        """
+        if len(self) < 4:
+            return 'IDENTITY'
+
+        return self[-1]
+
+
+def get_cube_parts(datacube: str) -> DataCubeFragments:
+    """Builds a `DataCubeFragments` and validate data cube name policy."""
+    return DataCubeFragments(datacube)
 
 
 def get_cube_id(datacube: str, func=None):
@@ -521,31 +557,32 @@ def blend(activity, build_cnc=False):
             dst_cnc.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
             dst_cnc.update_tags(ns='rio_overview', resampling='nearest')
 
-        # Copy CNC file to STK
-        # TODO: Remove it when run cube generation for specific composite function
-        copy_file(cnc_path, cnc_path.replace('MED', 'STK'))
-
         activity['cloud_count_file'] = str(count_cloud_data_set.path)
 
-    # Close and upload the MEDIAN dataset
-    with rasterio.open(str(medianfile), 'w', **profile) as ds_median:
-        ds_median.nodata = nodata
-        ds_median.write_band(1, median_raster)
-        ds_median.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-        ds_median.update_tags(ns='rio_overview', resampling='nearest')
+    cube_function = DataCubeFragments(datacube).composite_function
 
-    with rasterio.open(str(stack_file), 'w', **profile) as stack_dataset:
-        stack_dataset.nodata = nodata
-        stack_dataset.write_band(1, stack_raster)
-        stack_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-        stack_dataset.update_tags(ns='rio_overview', resampling='nearest')
+    if cube_function == 'MED':
+        # Close and upload the MEDIAN dataset
+        cube_file = str(medianfile)
+        with rasterio.open(str(medianfile), 'w', **profile) as ds_median:
+            ds_median.nodata = nodata
+            ds_median.write_band(1, median_raster)
+            ds_median.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+            ds_median.update_tags(ns='rio_overview', resampling='nearest')
+    else:
+        cube_file = str(stack_file)
+        with rasterio.open(str(stack_file), 'w', **profile) as stack_dataset:
+            stack_dataset.nodata = nodata
+            stack_dataset.write_band(1, stack_raster)
+            stack_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+            stack_dataset.update_tags(ns='rio_overview', resampling='nearest')
+
+    activity['blends'] = {
+        cube_function: cube_file
+    }
 
     activity['efficacy'] = efficacy
     activity['cloudratio'] = cloudcover
-    activity['blends'] = {
-        "MED": str(medianfile),
-        "STK": str(stack_file)
-    }
 
     return activity
 
@@ -554,15 +591,18 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
 
-    cube_bands = Band.query().filter(Band.collection_id == cube.id).all()
     raster_size_schemas = cube.raster_size_schemas
 
-    for composite_function in ['MED', 'STK']:
+    cube_parts = get_cube_parts(cube.id)
+
+    for composite_function in [cube_parts.composite_function]:
         item_datacube = '{}_{}'.format("_".join(cube.id.split('_')[:-1]), composite_function)
 
         item_id = '{}_{}_{}'.format(item_datacube, tile_id, period)
 
         _datacube = get_cube_id(datacube, composite_function)
+
+        cube_bands = Band.query().filter(Band.collection_id == _datacube).all()
 
         quick_look_name = '{}_{}_{}'.format(_datacube, tile_id, period)
 
@@ -579,6 +619,17 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
             ql_files.append(scenes[band][composite_function])
 
         quick_look_file = generate_quick_look(quick_look_file, ql_files)
+
+        # Generate VI
+        evi_path = build_cube_path(cube.id, 'evi', period, tile_id)
+        ndvi_path = build_cube_path(cube.id, 'ndvi', period, tile_id)
+
+        generate_evi_ndvi(scenes['red'][composite_function],
+                          scenes['nir'][composite_function],
+                          scenes['blue'][composite_function],
+                          str(evi_path), str(ndvi_path))
+        scenes['evi'] = {composite_function: str(evi_path)}
+        scenes['ndvi'] = {composite_function: str(ndvi_path)}
 
         Asset.query().filter(Asset.collection_item_id == item_id).delete()
 
@@ -600,9 +651,6 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
             ).save(commit=False)
 
             for band in scenes:
-                if band == 'quality':
-                    continue
-
                 band_model = list(filter(lambda b: b.common_name == band, cube_bands))
 
                 # Band does not exists on model
@@ -660,6 +708,17 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
     Asset.query().filter(Asset.collection_item_id == item_id).delete()
 
     CollectionItem.query().filter(CollectionItem.id == item_id).delete()
+
+    # Generate VI
+    evi_path = build_cube_path(datacube.id, 'evi', date, tile_id)
+    ndvi_path = build_cube_path(datacube.id, 'ndvi', date, tile_id)
+
+    generate_evi_ndvi(scenes['ARDfiles']['red'],
+                      scenes['ARDfiles']['nir'],
+                      scenes['ARDfiles']['blue'],
+                      str(evi_path), str(ndvi_path))
+    scenes['ARDfiles']['evi'] = str(evi_path)
+    scenes['ARDfiles']['ndvi'] = str(ndvi_path)
 
     with db.session.begin_nested():
         CollectionItem(
@@ -807,3 +866,55 @@ def _qa_statistics(raster) -> Tuple[float, float]:
     efficacy = round(100.*clearpix/totpix, 2)
 
     return efficacy, cloudratio
+
+
+def generate_evi_ndvi(red_band_path: str, nir_band_path: str, blue_bland_path: str, evi_name_path: str, ndvi_name_path: str):
+    """Generate Normalized Difference Vegetation Index (NDVI) and Enhanced Vegetation Index (EVI).
+
+    Args:
+        red_band_path: Path to the RED band
+        nir_band_path: Path to the NIR band
+        blue_bland_path: Path to the BLUE band
+        evi_name_path: Path to save EVI file
+        ndvi_name_path: Path to save NDVI file
+    """
+    with rasterio.open(nir_band_path) as ds_nir:
+        nir = ds_nir.read(1)
+        profile = ds_nir.profile
+        nir_ma = numpy.ma.array(nir, mask=nir == profile['nodata'], fill_value=-9999)
+
+        with rasterio.open(red_band_path) as ds_red:
+            red = ds_red.read(1)
+            red_ma = numpy.ma.array(red, mask=red == profile['nodata'], fill_value=-9999)
+
+            # Calculate NDVI
+            raster_ndvi = (10000. * ((nir_ma - red_ma) / (nir_ma + red_ma))).astype(numpy.int16)
+            raster_ndvi[raster_ndvi == numpy.ma.masked] = profile['nodata']
+
+            with rasterio.open(ndvi_name_path, 'w', **profile) as ds_ndvi:  # type of raster byte
+                ds_ndvi.write(raster_ndvi, 1)
+
+                with rasterio.open(blue_bland_path) as ds_blue:
+                    blue = ds_blue.read(1)
+                    blue_ma = numpy.ma.array(blue, mask=blue == profile['nodata'], fill_value=-9999)
+                    # Calculate EVI
+                    raster_evi = (10000. * 2.5 * (nir_ma - red_ma) / (nir_ma + 6. * red_ma - 7.5 * blue_ma + 10000.)).astype(numpy.int16)
+                    raster_evi[raster_evi == numpy.ma.masked] = profile['nodata']
+
+                    with rasterio.open(evi_name_path, 'w', **profile) as ds_evi:  # type of raster byte
+                        ds_evi.write(raster_evi, 1)
+
+
+def build_cube_path(datacube: str, band: str, period: str, tile_id: str) -> Path:
+    """Retrieve the path to the Data cube file in Brazil Data Cube Cluster."""
+    folder = 'Warped'
+    date = period
+
+    fragments = DataCubeFragments(datacube)
+
+    file_name = '{}_{}_{}_{}.tif'.format(datacube, tile_id, period, band)
+
+    if fragments.composite_function != 'IDENTITY':  # For cube with temporal composition
+        folder = 'Mosaic'
+
+    return Path(Config.DATA_DIR) / 'Repository' / folder / datacube / tile_id / date / file_name
