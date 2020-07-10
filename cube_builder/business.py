@@ -75,6 +75,10 @@ class CubeBusiness:
             cube.save(commit=False)
 
             bands = []
+
+            if 'TotalOb' not in params['bands']:
+                params['bands'].append('TotalOb')
+
             for band in params['bands']:
                 band = band.strip()
 
@@ -83,14 +87,21 @@ class CubeBusiness:
 
                 is_not_cloud = band != 'quality' and band != 'cnc'
 
+                if is_not_cloud:
+                    data_type = 'int16'
+                elif band == 'TotalOb':
+                    data_type = 'Uint8'
+                else:
+                    data_type = 'Uint16'
+
                 band_model = Band(
                     name=band,
                     collection_id=cube.id,
-                    min=0 if is_not_cloud else 0,
-                    max=10000 if is_not_cloud else 255,
-                    fill=-9999 if is_not_cloud else 0,
-                    scale=0.0001 if is_not_cloud else 1,
-                    data_type='int16' if is_not_cloud else 'Uint16',
+                    min=0,
+                    max=10000 if is_not_cloud and band != 'TotalOb' else 255,
+                    fill=-9999 if is_not_cloud and band != 'TotalOb' else 0,
+                    scale=0.0001 if is_not_cloud and band != 'TotalOb' else 1,
+                    data_type=data_type,
                     common_name=band,
                     resolution_x=params['resolution'],
                     resolution_y=params['resolution'],

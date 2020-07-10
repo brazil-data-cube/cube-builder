@@ -422,6 +422,8 @@ def blend(activity, build_cnc=False):
 
     # STACK will be generated in memory
     stack_raster = numpy.full((height, width), dtype=profile['dtype'], fill_value=nodata)
+    # Build the stack total observation
+    stack_total_observation = numpy.zeros((height, width), dtype=numpy.uint8)
 
     datacube = activity.get('datacube')
     period = activity.get('period')
@@ -468,6 +470,7 @@ def blend(activity, build_cnc=False):
             msrc = masklist[order]
             raster = ssrc.read(1, window=window)
             mask = msrc.read(1, window=window)
+            copy_mask = numpy.array(mask, copy=True)
 
             # Mask valid data (0 and 1) as True
             mask[mask < 2] = 1
@@ -482,6 +485,12 @@ def blend(activity, build_cnc=False):
 
             # Use the mask to mark the fill (0) and cloudy (2) pixels
             stackMA[order] = numpy.ma.masked_where(bmask, raster)
+
+            # Copy Masked values in order to stack total observation
+            copy_mask[copy_mask <= 4] = 1
+            copy_mask[copy_mask >= 5] = 0
+
+            stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask
 
             # Find all no data in destination STACK image
             stack_raster_where_nodata = numpy.where(
@@ -553,11 +562,22 @@ def blend(activity, build_cnc=False):
 
         cnc_path = str(count_cloud_file_path)
 
+        total_observation_file = build_cube_path(datacube, 'TotalOb', period, tile_id)
+        total_observation_profile = profile.copy()
+        total_observation_profile.pop('nodata', None)
+        total_observation_profile['dtype'] = 'uint8'
+
+        with rasterio.open(str(total_observation_file), 'w', **total_observation_profile) as dst_cnc:
+            dst_cnc.write_band(1, stack_total_observation)
+            dst_cnc.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+            dst_cnc.update_tags(ns='rio_overview', resampling='nearest')
+
         with rasterio.open(cnc_path, 'r+', **profile) as dst_cnc:
             dst_cnc.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
             dst_cnc.update_tags(ns='rio_overview', resampling='nearest')
 
         activity['cloud_count_file'] = str(count_cloud_data_set.path)
+        activity['total_observation'] = str(total_observation_file)
 
     cube_function = DataCubeFragments(datacube).composite_function
 

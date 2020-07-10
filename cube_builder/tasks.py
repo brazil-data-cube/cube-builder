@@ -253,11 +253,16 @@ def publish(blends):
     merges = dict()
     blend_files = dict()
 
+    composite_function = DataCubeFragments(cube.id).composite_function
+
     for blend_result in blends:
         blend_files[blend_result['band']] = blend_result['blends']
 
         if blend_result.get('cloud_count_file'):
             blend_files['cnc'] = dict(MED=blend_result['cloud_count_file'], STK=blend_result['cloud_count_file'])
+
+        if blend_result.get('total_observation'):
+            blend_files['TotalOb'] = {composite_function: blend_result['total_observation']}
 
         for merge_date, definition in blend_result['scenes'].items():
             merges.setdefault(merge_date, dict(dataset=definition['dataset'],
