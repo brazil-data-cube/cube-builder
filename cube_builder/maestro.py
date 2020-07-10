@@ -282,8 +282,6 @@ class Maestro:
         tiles = list(set(tiles))
         tiles_infos = {}
 
-        datacube = "_".join(collection.id.split('_')[:-1])
-
         with db.session.begin_nested():
             for tile in tiles:
                 # verify tile exists
@@ -294,9 +292,7 @@ class Maestro:
                 tiles_infos[tile] = tile_info[0]
 
                 self.create_tile(self.warped_datacube.id, tile, collection.grs_schema_id)
-
-                for function in ['STK', 'MED']:
-                    self.create_tile('{}_{}'.format(datacube, function), tile, collection.grs_schema_id)
+                self.create_tile(self.datacube.id, tile, collection.grs_schema_id)
 
         db.session.commit()
 
@@ -424,6 +420,10 @@ class Maestro:
                     period_start_end = '{}_{}'.format(start_date, end_date)
 
                     for band in bands:
+                        # Skip trigger/search for Vegetation Index
+                        if band.common_name.lower() in ('ndvi', 'evi',):
+                            continue
+
                         collections = assets_by_period[band.common_name]
 
                         for collection, merges in collections.items():

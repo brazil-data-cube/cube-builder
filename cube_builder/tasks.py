@@ -12,7 +12,6 @@
 import logging
 import traceback
 from copy import deepcopy
-from pathlib import Path
 
 # 3rdparty
 from bdc_db.models import AssetMV, Collection, db
@@ -21,9 +20,8 @@ from sqlalchemy_utils import refresh_materialized_view
 
 # Cube Builder
 from .celery import celery_app
-from .config import Config
 from .models import Activity
-from .utils import blend as blend_processing
+from .utils import blend as blend_processing, generate_evi_ndvi, DataCubeFragments, build_cube_path
 from .utils import compute_data_set_stats, get_or_create_model
 from .utils import merge as merge_processing
 from .utils import publish_datacube, publish_merge
@@ -45,7 +43,6 @@ def create_execution(activity: dict) -> Activity:
     """
     where = dict(
         band=activity.get('band'),
-        collection_id=activity.get('collection_id'),
         period=activity.get('period'),
         date=activity.get('date'),
         tile_id=activity.get('tile_id')
@@ -85,14 +82,8 @@ def warp_merge(activity, force=False):
     tile_id = activity['tile_id']
     data_set = activity['args'].get('dataset')
 
-    merge_name = '{}_{}_{}_{}'.format(record.warped_collection_id, tile_id, merge_date, record.band)
-
-    merge_file_path = (Path(Config.DATA_DIR) / 'Repository/Warped') / '{}/{}/{}/{}.tif'.format(
-        record.warped_collection_id,
-        tile_id,
-        merge_date.replace(data_set, ''),
-        merge_name
-    )
+    merge_file_path = build_cube_path(record.warped_collection_id, record.band,
+                                      merge_date.replace(data_set, ''), tile_id)
 
     # Reuse merges already done. Rebuild only with flag ``--force``
     if not force and merge_file_path.exists() and merge_file_path.is_file():
@@ -100,7 +91,7 @@ def warp_merge(activity, force=False):
 
         if activity['band'] == 'quality':
             # When file exists, compute the file statistics
-            efficacy, cloudratio = compute_data_set_stats(merge_file_path)
+            efficacy, cloudratio = compute_data_set_stats(str(merge_file_path))
 
         activity['args']['file'] = str(merge_file_path)
         activity['args']['efficacy'] = efficacy
@@ -117,7 +108,7 @@ def warp_merge(activity, force=False):
             args = deepcopy(activity.get('args'))
             _ = args.pop('period', None)
 
-            res = merge_processing(merge_file_path, **args)
+            res = merge_processing(str(merge_file_path), **args)
 
             merge_args = activity['args']
             merge_args.update(res)
@@ -195,14 +186,17 @@ def prepare_blend(merges):
 
         activities[_merge['band']] = activity
 
-    # TODO: Generate Vegetation Index
-
     logging.warning('Scheduling blend....')
 
     blends = []
 
     # Prepare list of activities to dispatch
     activity_list = list(activities.values())
+
+    # For IDENTITY data cube trigger, just publish
+    if DataCubeFragments(activity_list[0]['datacube']).composite_function == 'IDENTITY':
+        task = publish.s(activities)
+        return task.apply_async()
 
     # We must keep track of last activity to run
     # Since the Count No Cloud (CNC) must only be execute by single process. It is important
@@ -259,11 +253,16 @@ def publish(blends):
     merges = dict()
     blend_files = dict()
 
+    composite_function = DataCubeFragments(cube.id).composite_function
+
     for blend_result in blends:
         blend_files[blend_result['band']] = blend_result['blends']
 
         if blend_result.get('cloud_count_file'):
             blend_files['cnc'] = dict(MED=blend_result['cloud_count_file'], STK=blend_result['cloud_count_file'])
+
+        if blend_result.get('total_observation'):
+            blend_files['TotalOb'] = {composite_function: blend_result['total_observation']}
 
         for merge_date, definition in blend_result['scenes'].items():
             merges.setdefault(merge_date, dict(dataset=definition['dataset'],
