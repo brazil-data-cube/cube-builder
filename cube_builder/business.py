@@ -119,9 +119,8 @@ class CubeBusiness:
         """Create a data cube definition.
 
         Note:
-            If you provide a data cube with composite function like MED, STK, it does not create
-            cube metadata for IDENTITY. You must pass the composite function in order
-            to create a IDENTITY data cube.
+            If you provide a data cube with composite function like MED, STK, it creates
+            the cube metadata IDENTITY and the given function name.
 
         Returns:
              Tuple with serialized cube and HTTP Status code, respectively.
