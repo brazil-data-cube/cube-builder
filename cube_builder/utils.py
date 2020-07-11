@@ -162,7 +162,7 @@ def get_cube_id(datacube: str, func=None):
     return '{}_{}'.format(cube, func)
 
 
-def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
+def merge(merge_file: str, assets: List[dict], **kwargs):
     """Apply datacube merge scenes.
 
     TODO: Describe how it works.
@@ -170,22 +170,30 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
     Args:
         warped_datacube - Warped data cube name
         tile_id - Tile Id of merge
-        assets - List of collections assets during period
-        cols - Number of cols for Raster
-        rows - Number of rows for Raster
+        assets - List of collections assets during periods
         period - Data cube merge period.
         **kwargs - Extra properties
     """
     nodata = kwargs.get('nodata', -9999)
     xmin = kwargs.get('xmin')
     ymax = kwargs.get('ymax')
+    dist_x = kwargs.get('dist_x')
+    dist_y = kwargs.get('dist_y')
     dataset = kwargs.get('dataset')
     band = assets[0]['band']
     resx, resy = kwargs.get('resx'), kwargs.get('resy')
 
+    num_pixel_x = round(dist_x / resx)
+    num_pixel_y = round(dist_y / resy)
+    new_res_x = dist_x / num_pixel_x
+    new_res_y = dist_y / num_pixel_y
+
+    cols = num_pixel_x
+    rows = num_pixel_y
+
     srs = kwargs['srs']
 
-    transform = Affine(resx, 0, xmin, 0, -resy, ymax)
+    transform = Affine(new_res_x, 0, xmin, 0, -new_res_y, ymax)
 
     is_sentinel_landsat_quality_fmask = ('LC8SR' in dataset or 'S2_MSI' in dataset) and band == 'quality'
     source_nodata = 0
