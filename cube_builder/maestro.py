@@ -148,6 +148,8 @@ def decode_periods(temporal_schema, start_date, end_date, time_step):
         if len(requested_periods) == 0 and count > 0:
             requested_periods[basedate].append(requested_period)
     else:
+        start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')
+        end_date = datetime.datetime.strptime(end_date, '%Y-%m-%d')
         yeari = start_date.year
         yearf = end_date.year
         monthi = start_date.month
@@ -316,7 +318,7 @@ class Maestro:
 
         cube_end_date = dend.strftime('%Y-%m-%d')
 
-        periodlist = decode_periods(temporal_schema, cube_start_date, cube_end_date, int(temporal_step))
+        periodlist = decode_periods(temporal_schema, cube_start_date, cube_end_date, int(temporal_step or 1))
 
         where = [Tile.grs_schema_id == self.datacube.grs_schema_id]
 
@@ -410,6 +412,14 @@ class Maestro:
                     end = self.mosaics[tileid]['periods'][period]['end']
 
                     assets_by_period = self.search_images(bbox, start, end, tileid)
+
+                    if self.datacube.composite_function_schema_id == 'IDENTITY':
+                        stats_bands = ('TotalOb',)
+                        # Mount list of True/False values
+                        is_any_empty = list(map(lambda k: k not in stats_bands and len(assets_by_period[k]) == 0, assets_by_period.keys()))
+                        # When no asset found in this period, skip it.
+                        if any(is_any_empty):
+                            continue
 
                     merges_tasks = []
 
