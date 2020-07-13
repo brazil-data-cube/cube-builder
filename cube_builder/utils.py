@@ -11,8 +11,8 @@
 # Python Native
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
-from shutil import copy as copy_file
 from typing import List, Tuple
 
 # 3rdparty
@@ -26,6 +26,10 @@ from rasterio.warp import Resampling, reproject
 
 # BDC Scripts
 from .config import Config
+
+
+# Constant to define required bands to generate both NDVI and EVI
+VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 
 
 def get_rasterio_config() -> dict:
@@ -433,17 +437,10 @@ def blend(activity, build_cnc=False):
 
     absolute_prefix_path = Path(Config.DATA_DIR) / 'Repository/Mosaic'
 
-    # MEDIAN will be generated in local disk
-    median_cube = get_cube_id(datacube, 'MED')
-    medianfile = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(median_cube, tile_id, period, output_name)
-
     stack_datacube = get_cube_id(datacube, 'STK')
     output_name = output_name.replace(datacube, stack_datacube)
 
-    stack_file = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(stack_datacube, tile_id, period, output_name)
-
-    medianfile.parent.mkdir(parents=True, exist_ok=True)
-    stack_file.parent.mkdir(parents=True, exist_ok=True)
+    cube_file = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(stack_datacube, tile_id, period, output_name)
 
     median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
 
@@ -580,25 +577,25 @@ def blend(activity, build_cnc=False):
         activity['total_observation'] = str(total_observation_file)
 
     cube_function = DataCubeFragments(datacube).composite_function
+    # Create directory
+    cube_file.parent.mkdir(parents=True, exist_ok=True)
 
     if cube_function == 'MED':
         # Close and upload the MEDIAN dataset
-        cube_file = str(medianfile)
-        with rasterio.open(str(medianfile), 'w', **profile) as ds_median:
+        with rasterio.open(str(cube_file), 'w', **profile) as ds_median:
             ds_median.nodata = nodata
             ds_median.write_band(1, median_raster)
             ds_median.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
             ds_median.update_tags(ns='rio_overview', resampling='nearest')
     else:
-        cube_file = str(stack_file)
-        with rasterio.open(str(stack_file), 'w', **profile) as stack_dataset:
+        with rasterio.open(str(cube_file), 'w', **profile) as stack_dataset:
             stack_dataset.nodata = nodata
             stack_dataset.write_band(1, stack_raster)
             stack_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
             stack_dataset.update_tags(ns='rio_overview', resampling='nearest')
 
     activity['blends'] = {
-        cube_function: cube_file
+        cube_function: str(cube_file)
     }
 
     activity['efficacy'] = efficacy
@@ -640,16 +637,17 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
 
         quick_look_file = generate_quick_look(quick_look_file, ql_files)
 
-        # Generate VI
-        evi_path = build_cube_path(cube.id, 'evi', period, tile_id)
-        ndvi_path = build_cube_path(cube.id, 'ndvi', period, tile_id)
+        if VEGETATION_INDEX_BANDS <= set(scenes.keys()):
+            # Generate VI
+            evi_path = build_cube_path(cube.id, 'evi', period, tile_id)
+            ndvi_path = build_cube_path(cube.id, 'ndvi', period, tile_id)
 
-        generate_evi_ndvi(scenes['red'][composite_function],
-                          scenes['nir'][composite_function],
-                          scenes['blue'][composite_function],
-                          str(evi_path), str(ndvi_path))
-        scenes['evi'] = {composite_function: str(evi_path)}
-        scenes['ndvi'] = {composite_function: str(ndvi_path)}
+            generate_evi_ndvi(scenes['red'][composite_function],
+                              scenes['nir'][composite_function],
+                              scenes['blue'][composite_function],
+                              str(evi_path), str(ndvi_path))
+            scenes['evi'] = {composite_function: str(evi_path)}
+            scenes['ndvi'] = {composite_function: str(ndvi_path)}
 
         Asset.query().filter(Asset.collection_item_id == item_id).delete()
 
@@ -730,15 +728,16 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
     CollectionItem.query().filter(CollectionItem.id == item_id).delete()
 
     # Generate VI
-    evi_path = build_cube_path(datacube.id, 'evi', date, tile_id)
-    ndvi_path = build_cube_path(datacube.id, 'ndvi', date, tile_id)
+    if VEGETATION_INDEX_BANDS <= set(scenes.keys()):
+        evi_path = build_cube_path(datacube.id, 'evi', date, tile_id)
+        ndvi_path = build_cube_path(datacube.id, 'ndvi', date, tile_id)
 
-    generate_evi_ndvi(scenes['ARDfiles']['red'],
-                      scenes['ARDfiles']['nir'],
-                      scenes['ARDfiles']['blue'],
-                      str(evi_path), str(ndvi_path))
-    scenes['ARDfiles']['evi'] = str(evi_path)
-    scenes['ARDfiles']['ndvi'] = str(ndvi_path)
+        generate_evi_ndvi(scenes['ARDfiles']['red'],
+                          scenes['ARDfiles']['nir'],
+                          scenes['ARDfiles']['blue'],
+                          str(evi_path), str(ndvi_path))
+        scenes['ARDfiles']['evi'] = str(evi_path)
+        scenes['ARDfiles']['ndvi'] = str(ndvi_path)
 
     with db.session.begin_nested():
         CollectionItem(
