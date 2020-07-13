@@ -50,6 +50,7 @@ class DataCubeProcessParser(Schema):
     end_date = fields.Date()
     bands = fields.List(fields.String, required=False)
     force = fields.Boolean(required=False, default=False)
+    with_rgb = fields.Boolean(required=False, default=False)
 
 
 class PeriodParser(Schema):

@@ -611,7 +611,22 @@ def blend(activity, build_clear_observation=False):
     return activity
 
 
-def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio):
+def generate_rgb(rgb_file: Path, qlfiles: List[str]):
+    # TODO: Save RGB definition on Database
+    with rasterio.open(str(qlfiles[0])) as dataset:
+        profile = dataset.profile
+
+    profile['count'] = 3
+    with rasterio.open(str(rgb_file), 'w', **profile) as dataset:
+        for band_index in range(len(qlfiles)):
+            with rasterio.open(str(qlfiles[band_index])) as band_dataset:
+                data = band_dataset.read(1)
+                dataset.write(data, band_index + 1)
+
+    logging.info(f'Done RGB {str(rgb_file)}')
+
+
+def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
 
@@ -643,6 +658,10 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
             ql_files.append(scenes[band][composite_function])
 
         quick_look_file = generate_quick_look(quick_look_file, ql_files)
+
+        if kwargs.get('with_rgb'):
+            rgb_file = build_cube_path(cube.id, 'RGB', period, tile_id)
+            generate_rgb(rgb_file, ql_files)
 
         if VEGETATION_INDEX_BANDS <= set(scenes.keys()):
             # Generate VI

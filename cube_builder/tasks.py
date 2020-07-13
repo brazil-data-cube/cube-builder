@@ -138,7 +138,7 @@ def warp_merge(activity, force=False):
 
 
 @celery_app.task()
-def prepare_blend(merges):
+def prepare_blend(merges, **kwargs):
     """Receive merges by period and prepare task blend.
 
     This task aims to prepare celery task definition for blend.
@@ -216,7 +216,7 @@ def prepare_blend(merges):
     # Trigger last blend to execute Clear Observation
     blends.append(blend.s(last_activity, build_clear_observation=True))
 
-    task = chain(group(blends), publish.s())
+    task = chain(group(blends), publish.s(**kwargs))
     task.apply_async()
 
 
@@ -238,7 +238,7 @@ def blend(activity, build_clear_observation=False):
 
 
 @celery_app.task()
-def publish(blends):
+def publish(blends, **kwargs):
     """Execute publish task and catalog datacube result.
 
     Args:
@@ -279,7 +279,7 @@ def publish(blends):
         cloudratio = blends[0]['cloudratio']
 
         # Generate quick looks for cube scenes
-        publish_datacube(cube, quick_look_bands, cube.id, tile_id, period, blend_files, cloudratio)
+        publish_datacube(cube, quick_look_bands, cube.id, tile_id, period, blend_files, cloudratio, **kwargs)
 
     # Generate quick looks of irregular cube
     wcube = Collection.query().filter(Collection.id == warped_datacube).first()
