@@ -441,6 +441,9 @@ def blend(activity, build_cnc=False):
     output_name = output_name.replace(datacube, stack_datacube)
 
     cube_file = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(stack_datacube, tile_id, period, output_name)
+    
+    # Create directory
+    cube_file.parent.mkdir(parents=True, exist_ok=True)
 
     median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
 
@@ -577,8 +580,6 @@ def blend(activity, build_cnc=False):
         activity['total_observation'] = str(total_observation_file)
 
     cube_function = DataCubeFragments(datacube).composite_function
-    # Create directory
-    cube_file.parent.mkdir(parents=True, exist_ok=True)
 
     if cube_function == 'MED':
         # Close and upload the MEDIAN dataset
