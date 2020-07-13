@@ -20,6 +20,7 @@ from sqlalchemy_utils import refresh_materialized_view
 
 # Cube Builder
 from .celery import celery_app
+from .constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME
 from .models import Activity
 from .utils import blend as blend_processing, generate_evi_ndvi, DataCubeFragments, build_cube_path
 from .utils import compute_data_set_stats, get_or_create_model
@@ -203,7 +204,7 @@ def prepare_blend(merges):
     blends = []
 
     # We must keep track of last activity to run
-    # Since the Count No Cloud (CNC) must only be execute by single process. It is important
+    # Since the Clear Observation must only be execute by single process. It is important
     # to avoid concurrent processes to write same data set in disk
     last_activity = activity_list[-1]
 
@@ -212,15 +213,15 @@ def prepare_blend(merges):
         # TODO: Persist
         blends.append(blend.s(activity))
 
-    # Trigger last blend to execute CNC
-    blends.append(blend.s(last_activity, build_cnc=True))
+    # Trigger last blend to execute Clear Observation
+    blends.append(blend.s(last_activity, build_clear_observation=True))
 
     task = chain(group(blends), publish.s())
     task.apply_async()
 
 
 @celery_app.task()
-def blend(activity, build_cnc=False):
+def blend(activity, build_clear_observation=False):
     """Execute datacube blend task.
 
     TODO: Describe how it works.
@@ -233,7 +234,7 @@ def blend(activity, build_cnc=False):
     """
     logging.warning('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
 
-    return blend_processing(activity, build_cnc)
+    return blend_processing(activity, build_clear_observation)
 
 
 @celery_app.task()
@@ -263,10 +264,10 @@ def publish(blends):
             blend_files[blend_result['band']] = blend_result['blends']
 
         if blend_result.get('cloud_count_file'):
-            blend_files['cnc'] = dict(MED=blend_result['cloud_count_file'], STK=blend_result['cloud_count_file'])
+            blend_files[CLEAR_OBSERVATION_NAME] = dict(MED=blend_result['cloud_count_file'], STK=blend_result['cloud_count_file'])
 
         if blend_result.get('total_observation'):
-            blend_files['TotalOb'] = {composite_function: blend_result['total_observation']}
+            blend_files[TOTAL_OBSERVATION_NAME] = {composite_function: blend_result['total_observation']}
 
         for merge_date, definition in blend_result['scenes'].items():
             merges.setdefault(merge_date, dict(dataset=definition['dataset'],

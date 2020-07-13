@@ -18,16 +18,52 @@ from rasterio.warp import transform
 from sqlalchemy import func
 from werkzeug.exceptions import BadRequest, Conflict, NotFound
 
+from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
+                        TOTAL_OBSERVATION_NAME, TOTAL_OBSERVATION_ATTRIBUTES)
 from .forms import (CollectionForm, GrsSchemaForm, RasterSchemaForm,
                     TemporalSchemaForm)
 from .image import validate_merges
 from .maestro import Maestro, decode_periods
 from .models import Activity
-from .utils import get_cube_id, get_cube_parts, get_or_create_model
+from .utils import get_cube_parts, get_or_create_model
 
 
 class CubeBusiness:
     """Define Cube Builder interface for data cube creation."""
+
+    @classmethod
+    def get_or_create_band(cls, cube, name, common_name, min, max,
+                           fill, data_type, res_x, res_y, scale, description=None) -> Band:
+        """Get or try to create a data cube band on database.
+
+        Notes:
+            When band not found, it adds a new Band object to the SQLAlchemy db.session.
+            You may need to commit the session after execution.
+
+        Returns:
+            A SQLAlchemy band object.
+        """
+        where = dict(
+            collection_id=cube,
+            name=name
+        )
+
+        defaults = dict(
+            min=min,
+            max=max,
+            fill=fill,
+            data_type=data_type,
+            description=description,
+            scale=scale,
+            common_name=common_name,
+            resolution_x=res_x,
+            resolution_y=res_y,
+            resolution_unit='m'
+        )
+
+        band, _ = get_or_create_model(Band, defaults=defaults, **where)
+
+        return band
 
     @classmethod
     def _create_cube_definition(cls, cube_id: str, params: dict) -> dict:
@@ -76,20 +112,18 @@ class CubeBusiness:
 
             bands = []
 
-            if 'TotalOb' not in params['bands']:
-                params['bands'].append('TotalOb')
-
             for band in params['bands']:
                 band = band.strip()
 
-                if band == 'cnc' and cube.composite_function_schema_id == 'IDENTITY':
+                if cube.composite_function_schema_id == 'IDENTITY' or \
+                        band.lower() in (CLEAR_OBSERVATION_NAME.lower(), TOTAL_OBSERVATION_NAME.lower()):
                     continue
 
-                is_not_cloud = band != 'quality' and band != 'cnc'
+                is_not_cloud = band != 'quality'
 
                 if is_not_cloud:
                     data_type = 'int16'
-                elif band == 'TotalOb':
+                elif band in (CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME,):
                     data_type = 'Uint8'
                 else:
                     data_type = 'Uint16'
@@ -98,9 +132,9 @@ class CubeBusiness:
                     name=band,
                     collection_id=cube.id,
                     min=0,
-                    max=10000 if is_not_cloud and band != 'TotalOb' else 255,
-                    fill=-9999 if is_not_cloud and band != 'TotalOb' else 0,
-                    scale=0.0001 if is_not_cloud and band != 'TotalOb' else 1,
+                    max=10000 if is_not_cloud else 4,
+                    fill=-9999 if is_not_cloud else 255,
+                    scale=0.0001 if is_not_cloud else 1,
                     data_type=data_type,
                     common_name=band,
                     resolution_x=params['resolution'],
@@ -111,6 +145,13 @@ class CubeBusiness:
                 )
                 band_model.save(commit=False)
                 bands.append(band_model)
+
+        # Create default Cube Bands
+        if function != 'IDENTITY':
+            _ = cls.get_or_create_band(cube_id, **CLEAR_OBSERVATION_ATTRIBUTES,
+                                       res_x=params['resolution'], res_y=params['resolution'])
+            _ = cls.get_or_create_band(cube_id, **TOTAL_OBSERVATION_ATTRIBUTES,
+                                       res_x=params['resolution'], res_y=params['resolution'])
 
         return CollectionForm().dump(cube)
 
