@@ -206,13 +206,23 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, bands, **kw
     nodata = kwargs.get('nodata', -9999)
     xmin = kwargs.get('xmin')
     ymax = kwargs.get('ymax')
+    dist_x = kwargs.get('dist_x')
+    dist_y = kwargs.get('dist_y')
     dataset = kwargs.get('dataset')
     band = assets[0]['band']
     resx, resy = kwargs.get('resx'), kwargs.get('resy')
 
+    num_pixel_x = round(dist_x / resx)
+    num_pixel_y = round(dist_y / resy)
+    new_res_x = dist_x / num_pixel_x
+    new_res_y = dist_y / num_pixel_y
+
+    cols = num_pixel_x
+    rows = num_pixel_y
+
     srs = kwargs['srs']
 
-    transform = Affine(resx, 0, xmin, 0, -resy, ymax)
+    transform = Affine(new_res_x, 0, xmin, 0, -new_res_y, ymax)
 
     is_sentinel_landsat_quality_fmask = ('LC8SR' in dataset or 'S2_MSI' in dataset) and band == 'quality'
     source_nodata = 0
