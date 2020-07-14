@@ -662,20 +662,14 @@ def blend(activity, build_clear_observation=False):
         total_observation_profile.pop('nodata', None)
         total_observation_profile['dtype'] = 'uint8'
 
-        with rasterio.open(str(total_observation_file), 'w', **total_observation_profile) as dataset:
-            dataset.write_band(1, stack_total_observation)
-            dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-            dataset.update_tags(ns='rio_overview', resampling='nearest')
+        save_as_cog(str(total_observation_file), stack_total_observation, **total_observation_profile)
 
         provenance_file = build_cube_path(datacube, PROVENANCE_NAME, period, tile_id)
         provenance_profile = profile.copy()
         provenance_profile.pop('nodata', -1)
         provenance_profile['dtype'] = PROVENANCE_ATTRIBUTES['data_type']
 
-        with rasterio.open(str(provenance_file), 'w', **provenance_profile) as dataset:
-            dataset.write_band(1, provenance_array)
-            dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-            dataset.update_tags(ns='rio_overview', resampling='nearest')
+        save_as_cog(str(provenance_file), provenance_array, **provenance_profile)
 
         with rasterio.open(str(clear_ob_file_path), 'r+', **clear_ob_profile) as dataset:
             dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
