@@ -19,6 +19,7 @@ from sqlalchemy import func
 from werkzeug.exceptions import BadRequest, Conflict, NotFound
 
 from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
+                        PROVENANCE_NAME, PROVENANCE_ATTRIBUTES,
                         TOTAL_OBSERVATION_NAME, TOTAL_OBSERVATION_ATTRIBUTES)
 from .forms import (CollectionForm, GrsSchemaForm, RasterSchemaForm,
                     TemporalSchemaForm)
@@ -112,21 +113,21 @@ class CubeBusiness:
 
             bands = []
 
+            default_bands = (CLEAR_OBSERVATION_NAME.lower(), TOTAL_OBSERVATION_NAME.lower(), PROVENANCE_NAME.lower())
+
             for band in params['bands']:
                 band = band.strip()
 
                 if cube.composite_function_schema_id == 'IDENTITY' or \
-                        band.lower() in (CLEAR_OBSERVATION_NAME.lower(), TOTAL_OBSERVATION_NAME.lower()):
+                        band.lower() in default_bands:
                     continue
 
                 is_not_cloud = band != 'quality'
 
                 if is_not_cloud:
                     data_type = 'int16'
-                elif band in (CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME,):
-                    data_type = 'Uint8'
                 else:
-                    data_type = 'Uint16'
+                    data_type = 'Uint8'
 
                 band_model = Band(
                     name=band,
@@ -151,6 +152,8 @@ class CubeBusiness:
             _ = cls.get_or_create_band(cube_id, **CLEAR_OBSERVATION_ATTRIBUTES,
                                        res_x=params['resolution'], res_y=params['resolution'])
             _ = cls.get_or_create_band(cube_id, **TOTAL_OBSERVATION_ATTRIBUTES,
+                                       res_x=params['resolution'], res_y=params['resolution'])
+            _ = cls.get_or_create_band(cube_id, **PROVENANCE_ATTRIBUTES,
                                        res_x=params['resolution'], res_y=params['resolution'])
 
         return CollectionForm().dump(cube)

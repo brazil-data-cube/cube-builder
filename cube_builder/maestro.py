@@ -400,6 +400,8 @@ class Maestro:
         with timing('Time total to dispatch'):
             bands = self.datacube_bands
 
+            band_str_list = [band.common_name for band in bands]
+
             warped_datacube = self.warped_datacube.id
 
             for tileid in self.mosaics:
@@ -453,7 +455,8 @@ class Maestro:
                                     srs=tile.Tile.grs_schema.crs,
                                     tile_id=tileid,
                                     assets=assets,
-                                    nodata=band.fill
+                                    nodata=band.fill,
+                                    bands=band_str_list,
                                 )
 
                                 activity = get_or_create_activity(
@@ -531,8 +534,6 @@ class Maestro:
 
                             scene = dict(**collection_bands[band.common_name])
                             scene['sceneid'] = identifier
-                            scene['tile'] = tile_id
-                            scene['date'] = date
                             scene['band'] = band.common_name
 
                             link = link.replace('cdsr.dpi.inpe.br/api/download/TIFF', 'www.dpi.inpe.br/catalog/tmp')
