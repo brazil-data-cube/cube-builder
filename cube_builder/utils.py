@@ -29,6 +29,8 @@ from .config import Config
 
 
 # Constant to define required bands to generate both NDVI and EVI
+from .constants import CLEAR_OBSERVATION_ATTRIBUTES
+
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 
 
@@ -366,14 +368,18 @@ def compute_data_set_stats(file_path: str) -> Tuple[float, float]:
     return efficacy, cloud_ratio
 
 
-def blend(activity, build_cnc=False):
+def blend(activity, build_clear_observation=False):
     """Apply blend and generate raster from activity.
 
     Currently, it generates STACK and MEDIAN
 
+    Notes:
+        When build_clear_observation is set, make sure to do not execute in parallel processing
+        since it is not `thread-safe`.
+
     Args:
         activity - Prepared blend activity metadata
-        build_cnc - Flag to dispatch generation of Count No Cloud (CNC) band. This process is not ``thread-safe``.
+        build_clear_observation - Flag to dispatch generation of Clear Observation band. It is not ``thread-safe``.
     """
     # Assume that it contains a band and quality band
     numscenes = len(activity['scenes'])
@@ -453,14 +459,19 @@ def blend(activity, build_cnc=False):
     # Create directory
     cube_file.parent.mkdir(parents=True, exist_ok=True)
 
+    # Create directory
+    cube_file.parent.mkdir(parents=True, exist_ok=True)
+
     median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
 
-    if build_cnc:
-        logging.warning('Creating and computing Count No Cloud (CNC) file...')
-        count_cloud_file_path = absolute_prefix_path / '{}/{}/{}/{}_cnc.tif'.format(datacube, tile_id, period,
-                                                                                    file_name)
+    if build_clear_observation:
+        logging.warning('Creating and computing Clear Observation (ClearOb) file...')
+        clear_ob_file_path = absolute_prefix_path / '{}/{}/{}/{}_ClearOb.tif'.format(datacube, tile_id, period,
+                                                                                     file_name)
 
-        count_cloud_data_set = SmartDataSet(count_cloud_file_path, 'w', **profile)
+        clear_ob_profile = profile.copy()
+        clear_ob_profile['dtype'] = CLEAR_OBSERVATION_ATTRIBUTES['data_type']
+        clear_ob_data_set = SmartDataSet(clear_ob_file_path, 'w', **clear_ob_profile)
 
     for _, window in tilelist:
         # Build the stack to store all images as a masked array. At this stage the array will contain the masked data
@@ -542,10 +553,10 @@ def blend(activity, build_cnc=False):
 
         median_raster[window.row_off: row_offset, window.col_off: col_offset] = median.astype(profile['dtype'])
 
-        if build_cnc:
+        if build_clear_observation:
             count_raster = numpy.ma.count(stackMA, axis=0)
 
-            count_cloud_data_set.dataset.write(count_raster.astype(profile['dtype']), window=window, indexes=1)
+            clear_ob_data_set.dataset.write(count_raster.astype(clear_ob_profile['dtype']), window=window, indexes=1)
 
     # Close all input dataset
     for order in range(numscenes):
@@ -562,29 +573,27 @@ def blend(activity, build_cnc=False):
     })
 
     # Since count no cloud operator is specific for a band, we must ensure to manipulate data set only
-    # for band 'cnc' to avoid concurrent processes write same data set in disk.
+    # for band clear observation to avoid concurrent processes write same data set in disk.
     # TODO: Review how to design it to avoid these IF's statement, since we must stack data set and mask dummy values
-    if build_cnc:
-        count_cloud_data_set.close()
-        logging.warning('Count No Cloud (CNC) file generated successfully.')
-
-        cnc_path = str(count_cloud_file_path)
+    if build_clear_observation:
+        clear_ob_data_set.close()
+        logging.warning('Clear Observation (ClearOb) file generated successfully.')
 
         total_observation_file = build_cube_path(datacube, 'TotalOb', period, tile_id)
         total_observation_profile = profile.copy()
         total_observation_profile.pop('nodata', None)
         total_observation_profile['dtype'] = 'uint8'
 
-        with rasterio.open(str(total_observation_file), 'w', **total_observation_profile) as dst_cnc:
-            dst_cnc.write_band(1, stack_total_observation)
-            dst_cnc.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-            dst_cnc.update_tags(ns='rio_overview', resampling='nearest')
+        with rasterio.open(str(total_observation_file), 'w', **total_observation_profile) as dataset:
+            dataset.write_band(1, stack_total_observation)
+            dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+            dataset.update_tags(ns='rio_overview', resampling='nearest')
 
-        with rasterio.open(cnc_path, 'r+', **profile) as dst_cnc:
-            dst_cnc.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-            dst_cnc.update_tags(ns='rio_overview', resampling='nearest')
+        with rasterio.open(str(clear_ob_file_path), 'r+', **clear_ob_profile) as dataset:
+            dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+            dataset.update_tags(ns='rio_overview', resampling='nearest')
 
-        activity['cloud_count_file'] = str(count_cloud_data_set.path)
+        activity['clear_observation_file'] = str(clear_ob_data_set.path)
         activity['total_observation'] = str(total_observation_file)
 
     cube_function = DataCubeFragments(datacube).composite_function
@@ -613,7 +622,22 @@ def blend(activity, build_cnc=False):
     return activity
 
 
-def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio):
+def generate_rgb(rgb_file: Path, qlfiles: List[str]):
+    # TODO: Save RGB definition on Database
+    with rasterio.open(str(qlfiles[0])) as dataset:
+        profile = dataset.profile
+
+    profile['count'] = 3
+    with rasterio.open(str(rgb_file), 'w', **profile) as dataset:
+        for band_index in range(len(qlfiles)):
+            with rasterio.open(str(qlfiles[band_index])) as band_dataset:
+                data = band_dataset.read(1)
+                dataset.write(data, band_index + 1)
+
+    logging.info(f'Done RGB {str(rgb_file)}')
+
+
+def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
 
@@ -645,6 +669,10 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio)
             ql_files.append(scenes[band][composite_function])
 
         quick_look_file = generate_quick_look(quick_look_file, ql_files)
+
+        if kwargs.get('with_rgb'):
+            rgb_file = build_cube_path(cube.id, 'RGB', period, tile_id)
+            generate_rgb(rgb_file, ql_files)
 
         if VEGETATION_INDEX_BANDS <= set(scenes.keys()):
             # Generate VI

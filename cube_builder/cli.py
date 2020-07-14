@@ -102,8 +102,10 @@ def worker(ctx: click.Context):
 @click.option('--end', type=click.STRING, required=True, help='End date')
 @click.option('--bands', type=click.STRING, help='Comma delimited bands to generate')
 @click.option('--force', '-f', is_flag=True, help='Build data cube without cache')
+@click.option('--with-rgb', is_flag=True, help='Generate a file with RGB bands, based in quick look.')
 @with_appcontext
-def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None, force=False):
+def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None,
+          force=False, with_rgb=False):
     """Build data cube through command line.
 
     Args:
@@ -124,7 +126,8 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
         start_date=start,
         end_date=end,
         tiles=tiles.split(','),
-        force=force
+        force=force,
+        with_rgb=with_rgb
     )
 
     if bands:

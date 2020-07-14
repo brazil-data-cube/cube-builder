@@ -196,12 +196,13 @@ class Maestro:
             end_date=end_date
         )
 
-        bands = properties.get('bands')
+        bands = properties.pop('bands', None)
 
         if bands:
             self.params['bands'] = bands
 
         force = properties.get('force', False)
+        self.properties = properties
         self.params['force'] = force
 
     def get_stac(self, collection: str) -> STAC:
@@ -470,7 +471,7 @@ class Maestro:
                                 merges_tasks.append(task)
 
                     if len(merges_tasks) > 0:
-                        task = chain(group(merges_tasks), prepare_blend.s())
+                        task = chain(group(merges_tasks), prepare_blend.s(**self.properties))
                         blends.append(task)
 
                 if len(blends) > 0:
