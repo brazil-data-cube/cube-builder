@@ -20,9 +20,9 @@ from sqlalchemy_utils import refresh_materialized_view
 
 # Cube Builder
 from .celery import celery_app
-from .constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME
+from .constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME
 from .models import Activity
-from .utils import blend as blend_processing, generate_evi_ndvi, DataCubeFragments, build_cube_path
+from .utils import DataCubeFragments, blend as blend_processing, build_cube_path
 from .utils import compute_data_set_stats, get_or_create_model
 from .utils import merge as merge_processing
 from .utils import publish_datacube, publish_merge
@@ -107,7 +107,10 @@ def warp_merge(activity, force=False):
 
         try:
             args = deepcopy(activity.get('args'))
-            _ = args.pop('period', None)
+            args.pop('period', None)
+            args['tile_id'] = tile_id
+            args['date'] = record.date.strftime('%Y-%m-%d')
+            args['cube'] = record.warped_collection_id
 
             res = merge_processing(str(merge_file_path), **args)
 
@@ -145,8 +148,6 @@ def prepare_blend(merges, **kwargs):
     A blend requires both data set quality band and others bands. In this way, we must group
     these values by temporal resolution and then schedule blend tasks.
     """
-    from .business import CubeBusiness
-
     activities = dict()
 
     # Prepare map of efficacy/cloud_ratio based in quality merge result
@@ -263,11 +264,14 @@ def publish(blends, **kwargs):
         if composite_function != 'IDENTITY':
             blend_files[blend_result['band']] = blend_result['blends']
 
-        if blend_result.get('cloud_count_file'):
-            blend_files[CLEAR_OBSERVATION_NAME] = dict(MED=blend_result['cloud_count_file'], STK=blend_result['cloud_count_file'])
+        if blend_result.get('clear_observation_file'):
+            blend_files[CLEAR_OBSERVATION_NAME] = {composite_function: blend_result['clear_observation_file']}
 
         if blend_result.get('total_observation'):
             blend_files[TOTAL_OBSERVATION_NAME] = {composite_function: blend_result['total_observation']}
+
+        if blend_result.get('provenance'):
+            blend_files[PROVENANCE_NAME] = {composite_function: blend_result['provenance']}
 
         for merge_date, definition in blend_result['scenes'].items():
             merges.setdefault(merge_date, dict(dataset=definition['dataset'],

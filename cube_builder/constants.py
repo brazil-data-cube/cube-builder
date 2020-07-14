@@ -34,3 +34,16 @@ TOTAL_OBSERVATION_ATTRIBUTES = dict(
     scale=1,
     common_name=TOTAL_OBSERVATION_NAME,
 )
+
+PROVENANCE_NAME = 'Provenance'
+
+PROVENANCE_ATTRIBUTES = dict(
+    name=PROVENANCE_NAME,
+    description='Provenance value Day of Year',
+    data_type='int16',
+    min=1,
+    max=366,
+    fill=-1,
+    scale=1,
+    common_name=PROVENANCE_NAME,
+)

@@ -29,7 +29,8 @@ from .config import Config
 
 
 # Constant to define required bands to generate both NDVI and EVI
-from .constants import CLEAR_OBSERVATION_ATTRIBUTES
+from .constants import CLEAR_OBSERVATION_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, \
+    PROVENANCE_ATTRIBUTES
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 
@@ -168,19 +169,39 @@ def get_cube_id(datacube: str, func=None):
     return '{}_{}'.format(cube, func)
 
 
-def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
+def save_as_cog(destination: str, raster, mode='w', **profile):
+    """Save the raster file as Cloud Optimized GeoTIFF.
+
+    See Also:
+        Cloud Optimized GeoTiff https://gdal.org/drivers/raster/cog.html
+
+    Args:
+        destination: Path to store the data set.
+        raster: Numpy raster values to persist in disk
+        mode: Default rasterio mode. Default is 'w' but you also can set 'r+'.
+        **profile: Rasterio profile values to add in dataset.
+    """
+    with rasterio.open(str(destination), mode, **profile) as dataset:
+        if profile.get('nodata'):
+            dataset.nodata = profile['nodata']
+
+        dataset.write_band(1, raster)
+        dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+        dataset.update_tags(ns='rio_overview', resampling='nearest')
+
+
+def merge(merge_file: str, assets: List[dict], cols: int, rows: int, bands, **kwargs):
     """Apply datacube merge scenes.
 
     TODO: Describe how it works.
 
     Args:
-        warped_datacube - Warped data cube name
-        tile_id - Tile Id of merge
-        assets - List of collections assets during period
-        cols - Number of cols for Raster
-        rows - Number of rows for Raster
-        period - Data cube merge period.
-        **kwargs - Extra properties
+        merge_file: Path to store data cube merge
+        assets: List of collections assets during period
+        cols: Number of cols for Raster
+        rows: Number of rows for Raster
+        bands: List of bands from current merge date.
+        **kwargs: Extra properties
     """
     nodata = kwargs.get('nodata', -9999)
     xmin = kwargs.get('xmin')
@@ -199,19 +220,18 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
     if band == 'quality':
         resampling = Resampling.nearest
 
-        fill_nodata = nodata = 0
+        nodata = 0
 
         # TODO: Remove it when a custom mask feature is done
         # Identifies when the collection is Sentinel or Landsat
         # In this way, we must keep in mind that fmask 4.2 uses 0 as valid value and 255 for nodata. So, we need
         # to track the dummy data in re-project step in order to prevent store "nodata" as "valid" data (0).
         if is_sentinel_landsat_quality_fmask:
-            fill_nodata = 255  # Uses 255 based in Fmask 4.2
             nodata = 255  # temporally set nodata to 255 in order to reproject without losing valid 0 values
-            source_nodata = fill_nodata
+            source_nodata = nodata
 
         raster = numpy.zeros((rows, cols,), dtype=numpy.uint16)
-        raster_merge = numpy.full((rows, cols,), dtype=numpy.uint16, fill_value=fill_nodata)
+        raster_merge = numpy.full((rows, cols,), dtype=numpy.uint16, fill_value=source_nodata)
         raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint16)
     else:
         resampling = Resampling.bilinear
@@ -223,8 +243,8 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
     with rasterio.Env(CPL_CURL_VERBOSE=False, **get_rasterio_config()):
         for asset in assets:
             with rasterio.open(asset['link']) as src:
-                kwargs = src.meta.copy()
-                kwargs.update({
+                meta = src.meta.copy()
+                meta.update({
                     'crs': srs,
                     'transform': transform,
                     'width': cols,
@@ -247,7 +267,7 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
                 })
 
                 with MemoryFile() as mem_file:
-                    with mem_file.open(**kwargs) as dst:
+                    with mem_file.open(**meta) as dst:
                         reproject(
                             source=rasterio.band(src, 1),
                             destination=raster,
@@ -279,7 +299,7 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
     cloudratio = 100
     if band == 'quality':
         raster_merge, efficacy, cloudratio = getMask(raster_merge, dataset)
-        template.update({'dtype': 'uint16'})
+        template.update({'dtype': 'uint8'})
         nodata = 255
 
     template['nodata'] = nodata
@@ -293,11 +313,13 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
         "interleave": "pixel",
     })
 
-    with rasterio.open(str(merge_file), 'w', **template) as merge_dataset:
-        merge_dataset.nodata = nodata
-        merge_dataset.write_band(1, raster_merge)
-        merge_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-        merge_dataset.update_tags(ns='rio_overview', resampling='nearest')
+    # Persist on file as Cloud Optimized GeoTIFF
+    save_as_cog(str(merge_file), raster_merge, **template)
+
+    # Extra processing for quality
+    if band == 'quality':
+        post_processing_quality(merge_file, raster_merge, bands, kwargs['cube'],
+                                kwargs['date'], kwargs['tile_id'], nodata)
 
     return dict(
         file=str(merge_file),
@@ -307,6 +329,60 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, **kwargs):
         resolution=resx,
         nodata=nodata
     )
+
+
+def post_processing_quality(quality_file: str, raster_merge, bands: List[str], cube: str, date: str, tile_id, nodata):
+    """Stack the merge bands in order to apply a filter on the quality band.
+
+    We have faced some issues regarding `nodata` value in spectral bands, which was resulting
+    in wrong provenance date on STACK data cubes, since the Fmask tells the pixel is valid (0) but a nodata
+    value is found in other bands.
+    To avoid that, we read all the others bands, seeking for `nodata` value. When found, we set this to
+    nodata in Fmask output::
+
+        Quality             Nir                   Quality
+
+        0 0 2 4      702 876  7000 9000      =>    0 0 2 4
+        0 0 0 0      687 987  1022 1029      =>    0 0 0 0
+        0 2 2 4    -9999 7100 7322 9564      =>  255 2 2 4
+
+    Args:
+         quality_file: Path to the merge fmask.
+         raster_merge: Entire raster merge loaded to be customized and it will stored.
+         bands: All the bands from the merge date.
+         cube: IDENTITY data cube name
+         date: Merge date
+         tile_id: Brazil data cube tile identifier
+         nodata: No data value used in the fmask.
+    """
+    # Get quality profile and chunks
+    with rasterio.open(str(quality_file)) as merge_dataset:
+        blocks = list(merge_dataset.block_windows())
+        profile = merge_dataset.profile
+
+    bands_without_quality = [b for b in bands if b != 'quality']
+
+    for _, block in blocks:
+        nodata_positions = []
+
+        row_offset = block.row_off + block.height
+        col_offset = block.col_off + block.width
+
+        for band in bands_without_quality:
+            band_file = build_cube_path(get_cube_id(cube), band, date, tile_id)
+
+            with rasterio.open(str(band_file)) as ds:
+                raster = ds.read(1, window=block)
+
+            nodata_found = numpy.where(raster == -9999)
+            raster_nodata_pos = numpy.ravel_multi_index(nodata_found, raster.shape)
+            nodata_positions = numpy.union1d(nodata_positions, raster_nodata_pos)
+
+        if len(nodata_positions):
+            raster_merge[block.row_off: row_offset, block.col_off: col_offset][
+                numpy.unravel_index(nodata_positions.astype(numpy.int64), raster.shape)] = nodata
+
+    save_as_cog(str(quality_file), raster_merge, **profile)
 
 
 class SmartDataSet:
@@ -455,12 +531,14 @@ def blend(activity, build_clear_observation=False):
 
     if build_clear_observation:
         logging.warning('Creating and computing Clear Observation (ClearOb) file...')
-        clear_ob_file_path = absolute_prefix_path / '{}/{}/{}/{}_ClearOb.tif'.format(datacube, tile_id, period,
-                                                                                     file_name)
+        clear_ob_file_path = absolute_prefix_path / '{}/{}/{}/{}_{}.tif'.format(datacube, tile_id, period,
+                                                                                file_name, CLEAR_OBSERVATION_NAME)
 
         clear_ob_profile = profile.copy()
         clear_ob_profile['dtype'] = CLEAR_OBSERVATION_ATTRIBUTES['data_type']
         clear_ob_data_set = SmartDataSet(clear_ob_file_path, 'w', **clear_ob_profile)
+
+    provenance_array = numpy.full((height, width), dtype=numpy.int16, fill_value=-1)
 
     for _, window in tilelist:
         # Build the stack to store all images as a masked array. At this stage the array will contain the masked data
@@ -500,6 +578,11 @@ def blend(activity, build_clear_observation=False):
 
             stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask
 
+            # Get current observation file name
+            file_name = Path(bandlist[order].name).stem
+            file_date = file_name.split('_')[3]
+            day_of_year = datetime.strptime(file_date, '%Y-%m-%d').timetuple().tm_yday
+
             # Find all no data in destination STACK image
             stack_raster_where_nodata = numpy.where(
                 stack_raster[window.row_off: row_offset, window.col_off: col_offset] == nodata
@@ -523,6 +606,8 @@ def blend(activity, build_clear_observation=False):
                 stack_raster[window.row_off: row_offset, window.col_off: col_offset][where_intersec] = raster[
                     where_intersec]
 
+                provenance_array[window.row_off: row_offset, window.col_off: col_offset][where_intersec] = day_of_year
+
             # Identify what is needed to stack, based in Array 2d bool
             todomask = notdonemask * numpy.invert(bmask)
 
@@ -532,6 +617,10 @@ def blend(activity, build_clear_observation=False):
             # Override the STACK Raster with valid data.
             stack_raster[window.row_off: row_offset, window.col_off: col_offset][clear_not_done_pixels] = raster[
                 clear_not_done_pixels]
+
+            # Mark day of year to the valid pixels
+            provenance_array[window.row_off: row_offset, window.col_off: col_offset][
+                clear_not_done_pixels] = day_of_year
 
             # Update what was done.
             notdonemask = notdonemask * bmask
@@ -568,7 +657,7 @@ def blend(activity, build_clear_observation=False):
         clear_ob_data_set.close()
         logging.warning('Clear Observation (ClearOb) file generated successfully.')
 
-        total_observation_file = build_cube_path(datacube, 'TotalOb', period, tile_id)
+        total_observation_file = build_cube_path(datacube, TOTAL_OBSERVATION_NAME, period, tile_id)
         total_observation_profile = profile.copy()
         total_observation_profile.pop('nodata', None)
         total_observation_profile['dtype'] = 'uint8'
@@ -578,12 +667,23 @@ def blend(activity, build_clear_observation=False):
             dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
             dataset.update_tags(ns='rio_overview', resampling='nearest')
 
+        provenance_file = build_cube_path(datacube, PROVENANCE_NAME, period, tile_id)
+        provenance_profile = profile.copy()
+        provenance_profile.pop('nodata', -1)
+        provenance_profile['dtype'] = PROVENANCE_ATTRIBUTES['data_type']
+
+        with rasterio.open(str(provenance_file), 'w', **provenance_profile) as dataset:
+            dataset.write_band(1, provenance_array)
+            dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
+            dataset.update_tags(ns='rio_overview', resampling='nearest')
+
         with rasterio.open(str(clear_ob_file_path), 'r+', **clear_ob_profile) as dataset:
             dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
             dataset.update_tags(ns='rio_overview', resampling='nearest')
 
         activity['clear_observation_file'] = str(clear_ob_data_set.path)
         activity['total_observation'] = str(total_observation_file)
+        activity['provenance'] = str(total_observation_file)
 
     cube_function = DataCubeFragments(datacube).composite_function
 
@@ -892,7 +992,7 @@ def getMask(raster, dataset):
 
     efficacy, cloudratio = _qa_statistics(rastercm)
 
-    return rastercm.astype(numpy.uint16), efficacy, cloudratio
+    return rastercm.astype(numpy.uint8), efficacy, cloudratio
 
 
 def _qa_statistics(raster) -> Tuple[float, float]:
