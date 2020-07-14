@@ -144,6 +144,8 @@ def prepare_blend(merges):
     A blend requires both data set quality band and others bands. In this way, we must group
     these values by temporal resolution and then schedule blend tasks.
     """
+    from .business import CubeBusiness
+
     activities = dict()
 
     # Prepare map of efficacy/cloud_ratio based in quality merge result
@@ -186,17 +188,19 @@ def prepare_blend(merges):
 
         activities[_merge['band']] = activity
 
-    logging.warning('Scheduling blend....')
-
-    blends = []
-
     # Prepare list of activities to dispatch
     activity_list = list(activities.values())
 
+    datacube = activity_list[0]['datacube']
+
     # For IDENTITY data cube trigger, just publish
-    if DataCubeFragments(activity_list[0]['datacube']).composite_function == 'IDENTITY':
-        task = publish.s(activities)
+    if DataCubeFragments(datacube).composite_function == 'IDENTITY':
+        task = publish.s(list(activities.values()))
         return task.apply_async()
+
+    logging.warning('Scheduling blend....')
+
+    blends = []
 
     # We must keep track of last activity to run
     # Since the Count No Cloud (CNC) must only be execute by single process. It is important
@@ -239,13 +243,12 @@ def publish(blends):
     Args:
         activity - Datacube Activity Model
     """
-    logging.warning('Executing publish')
+    period = blends[0]['period']
+    logging.info(f'Executing publish {period}')
 
     cube = Collection.query().filter(Collection.id == blends[0]['datacube']).first()
     warped_datacube = blends[0]['warped_datacube']
     tile_id = blends[0]['tile_id']
-    period = blends[0]['period']
-    cloudratio = blends[0]['cloudratio']
 
     # Retrieve which bands to generate quick look
     quick_look_bands = cube.bands_quicklook.split(',')
@@ -256,7 +259,8 @@ def publish(blends):
     composite_function = DataCubeFragments(cube.id).composite_function
 
     for blend_result in blends:
-        blend_files[blend_result['band']] = blend_result['blends']
+        if composite_function != 'IDENTITY':
+            blend_files[blend_result['band']] = blend_result['blends']
 
         if blend_result.get('cloud_count_file'):
             blend_files['cnc'] = dict(MED=blend_result['cloud_count_file'], STK=blend_result['cloud_count_file'])
@@ -270,8 +274,11 @@ def publish(blends):
                                                ARDfiles=dict()))
             merges[merge_date]['ARDfiles'].update(definition['ARDfiles'])
 
-    # Generate quick looks for cube scenes
-    publish_datacube(cube, quick_look_bands, cube.id, tile_id, period, blend_files, cloudratio)
+    if composite_function != 'IDENTITY':
+        cloudratio = blends[0]['cloudratio']
+
+        # Generate quick looks for cube scenes
+        publish_datacube(cube, quick_look_bands, cube.id, tile_id, period, blend_files, cloudratio)
 
     # Generate quick looks of irregular cube
     wcube = Collection.query().filter(Collection.id == warped_datacube).first()
