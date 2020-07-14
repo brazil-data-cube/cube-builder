@@ -323,15 +323,17 @@ class Maestro:
         if self.params.get('tiles'):
             where.append(Tile.id.in_(self.params['tiles']))
 
-        self.tiles = Tile.query().filter(*where).all()
+        self.tiles = db.session.query(Tile,
+            (func.ST_XMin(Tile.geom)).label('min_x'),
+            (func.ST_YMax(Tile.geom)).label('max_y'),
+            (func.ST_XMax(Tile.geom) - func.ST_XMin(Tile.geom)).label('dist_x'),
+            (func.ST_YMax(Tile.geom) - func.ST_YMin(Tile.geom)).label('dist_y')).filter(*where).all()
 
         self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
 
-        number_cols = int(self.datacube.raster_size_schemas.raster_size_x)
-        number_rows = int(self.datacube.raster_size_schemas.raster_size_y)
-
         for tile in self.tiles:
-            self.mosaics[tile.id] = dict(
+            tile_id = tile.Tile.id
+            self.mosaics[tile_id] = dict(
                 periods=dict()
             )
 
@@ -345,12 +347,12 @@ class Maestro:
                     if dend is not None and enddate > dend.strftime('%Y-%m-%d'):
                         continue
 
-                    self.mosaics[tile.id]['periods'][periodkey] = {}
-                    self.mosaics[tile.id]['periods'][periodkey]['start'] = startdate
-                    self.mosaics[tile.id]['periods'][periodkey]['end'] = enddate
-                    self.mosaics[tile.id]['periods'][periodkey]['cols'] = number_cols
-                    self.mosaics[tile.id]['periods'][periodkey]['rows'] = number_rows
-                    self.mosaics[tile.id]['periods'][periodkey]['dirname'] = '{}/{}/{}-{}/'.format(self.datacube.id, tile.id, startdate, enddate)
+                    self.mosaics[tile_id]['periods'][periodkey] = {}
+                    self.mosaics[tile_id]['periods'][periodkey]['start'] = startdate
+                    self.mosaics[tile_id]['periods'][periodkey]['end'] = enddate
+                    self.mosaics[tile_id]['periods'][periodkey]['dist_x'] = tile.dist_x
+                    self.mosaics[tile_id]['periods'][periodkey]['dist_y'] = tile.dist_y
+                    self.mosaics[tile_id]['periods'][periodkey]['dirname'] = '{}/{}/{}-{}/'.format(self.datacube.id, tile_id, startdate, enddate)
 
     @property
     def warped_datacube(self) -> Collection:
@@ -402,7 +404,7 @@ class Maestro:
 
                 bbox = self.get_bbox(tileid)
 
-                tile = next(filter(lambda t: t.id == tileid, self.tiles))
+                tile = next(filter(lambda t: t.Tile.id == tileid, self.tiles))
 
                 # For each blend
                 for period in self.mosaics[tileid]['periods']:
@@ -413,8 +415,8 @@ class Maestro:
 
                     merges_tasks = []
 
-                    cols = self.mosaics[tileid]['periods'][period]['cols']
-                    rows = self.mosaics[tileid]['periods'][period]['rows']
+                    dist_x = self.mosaics[tileid]['periods'][period]['dist_x']
+                    dist_y = self.mosaics[tileid]['periods'][period]['dist_y']
                     start_date = self.mosaics[tileid]['periods'][period]['start']
                     end_date = self.mosaics[tileid]['periods'][period]['end']
                     period_start_end = '{}_{}'.format(start_date, end_date)
@@ -435,9 +437,9 @@ class Maestro:
                                     ymax=tile.max_y,
                                     resx=band.resolution_x,
                                     resy=band.resolution_y,
-                                    cols=cols,
-                                    rows=rows,
-                                    srs=tile.grs_schema.crs,
+                                    dist_x=dist_x,
+                                    dist_y=dist_y,
+                                    srs=tile.Tile.grs_schema.crs,
                                     tile_id=tileid,
                                     assets=assets,
                                     nodata=band.fill
