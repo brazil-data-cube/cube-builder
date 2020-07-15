@@ -9,7 +9,7 @@
 """Define the Brazil Data Cube Builder constants."""
 
 
-CLEAR_OBSERVATION_NAME = 'ClearOb'
+CLEAR_OBSERVATION_NAME = 'CLEAROB'
 
 CLEAR_OBSERVATION_ATTRIBUTES = dict(
     name=CLEAR_OBSERVATION_NAME,
@@ -19,10 +19,10 @@ CLEAR_OBSERVATION_ATTRIBUTES = dict(
     max=255,
     fill=0,
     scale=1,
-    common_name=CLEAR_OBSERVATION_NAME,
+    common_name='ClearOb',
 )
 
-TOTAL_OBSERVATION_NAME = 'TotalOb'
+TOTAL_OBSERVATION_NAME = 'TOTALOB'
 
 TOTAL_OBSERVATION_ATTRIBUTES = dict(
     name=TOTAL_OBSERVATION_NAME,
@@ -32,10 +32,10 @@ TOTAL_OBSERVATION_ATTRIBUTES = dict(
     max=255,
     fill=0,
     scale=1,
-    common_name=TOTAL_OBSERVATION_NAME,
+    common_name='TotalOb',
 )
 
-PROVENANCE_NAME = 'Provenance'
+PROVENANCE_NAME = 'PROVENANCE'
 
 PROVENANCE_ATTRIBUTES = dict(
     name=PROVENANCE_NAME,
@@ -45,5 +45,5 @@ PROVENANCE_ATTRIBUTES = dict(
     max=366,
     fill=-1,
     scale=1,
-    common_name=PROVENANCE_NAME,
+    common_name='Provenance',
 )

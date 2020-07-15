@@ -23,6 +23,7 @@ from stac import STAC
 
 # Cube Builder
 from .config import Config
+from .constants import TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME
 from .forms import BandForm
 from .utils import get_cube_id, get_or_create_activity
 
@@ -371,7 +372,7 @@ class Maestro:
     def datacube_bands(self) -> List[Band]:
         """Retrieve data cube bands based int user input."""
         if self.params.get('bands'):
-            return list(filter(lambda band: band.common_name in self.params['bands'], self.bands))
+            return list(filter(lambda band: band.name in self.params['bands'], self.bands))
         return self.bands
 
     @staticmethod
@@ -400,7 +401,12 @@ class Maestro:
         with timing('Time total to dispatch'):
             bands = self.datacube_bands
 
-            band_str_list = [band.common_name for band in bands]
+            band_str_list = [band.name for band in bands]
+
+            band_map = {b.common_name: b.name for b in bands}
+
+            if not band_map.get('quality'):
+                raise RuntimeError('Quality band is required')
 
             warped_datacube = self.warped_datacube.id
 
@@ -419,7 +425,7 @@ class Maestro:
                     assets_by_period = self.search_images(bbox, start, end, tileid)
 
                     if self.datacube.composite_function_schema_id == 'IDENTITY':
-                        stats_bands = ('TotalOb',)
+                        stats_bands = (TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME,)
                         # Mount list of True/False values
                         is_any_empty = list(map(lambda k: k not in stats_bands and len(assets_by_period[k]) == 0, assets_by_period.keys()))
                         # When no asset found in this period, skip it.
@@ -439,7 +445,7 @@ class Maestro:
                         if band.common_name.lower() in ('ndvi', 'evi',):
                             continue
 
-                        collections = assets_by_period[band.common_name]
+                        collections = assets_by_period[band.name]
 
                         for collection, merges in collections.items():
                             for merge_date, assets in merges.items():
@@ -464,17 +470,17 @@ class Maestro:
                                     warped=warped_datacube,
                                     activity_type='MERGE',
                                     scene_type='WARPED',
-                                    band=band.common_name,
+                                    band=band.name,
                                     period=period_start_end,
                                     activity_date=merge_date,
                                     **properties
                                 )
 
-                                task = warp_merge.s(activity, self.params['force'])
+                                task = warp_merge.s(activity, band_map, self.params['force'])
                                 merges_tasks.append(task)
 
                     if len(merges_tasks) > 0:
-                        task = chain(group(merges_tasks), prepare_blend.s(**self.properties))
+                        task = chain(group(merges_tasks), prepare_blend.s(band_map, **self.properties))
                         blends.append(task)
 
                 if len(blends) > 0:
@@ -499,10 +505,10 @@ class Maestro:
         # Retrieve band definition in dict format.
         # TODO: Should we use from STAC?
         band_data = band_serializer.dump(bands, many=True)
-        collection_bands = {band_dump['common_name']: band_dump for band_dump in band_data}
+        collection_bands = {band_dump['name']: band_dump for band_dump in band_data}
 
         for band in bands:
-            scenes[band.common_name] = dict()
+            scenes[band.name] = dict()
 
         for dataset in self.params['collections']:
             stac = self.get_stac(dataset)
@@ -525,16 +531,17 @@ class Maestro:
                         identifier = feature['id']
 
                         for band in bands:
+                            # TODO: Change when STAC supports name as dict key instead common name
                             if band.common_name not in feature['assets']:
                                 continue
 
-                            scenes[band.common_name].setdefault(dataset, dict())
+                            scenes[band.name].setdefault(dataset, dict())
 
                             link = feature['assets'][band.common_name]['href']
 
-                            scene = dict(**collection_bands[band.common_name])
+                            scene = dict(**collection_bands[band.name])
                             scene['sceneid'] = identifier
-                            scene['band'] = band.common_name
+                            scene['band'] = band.name
 
                             link = link.replace('cdsr.dpi.inpe.br/api/download/TIFF', 'www.dpi.inpe.br/catalog/tmp')
 
@@ -546,7 +553,7 @@ class Maestro:
                             if dataset == 'MOD13Q1' and band.common_name == 'quality':
                                 scene['link'] = scene['link'].replace('quality', 'reliability')
 
-                            scenes[band.common_name][dataset].setdefault(date, [])
-                            scenes[band.common_name][dataset][date].append(scene)
+                            scenes[band.name][dataset].setdefault(date, [])
+                            scenes[band.name][dataset][date].append(scene)
 
         return scenes

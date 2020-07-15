@@ -133,9 +133,6 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
     if bands:
         data['bands'] = bands.split(',')
 
-        if 'quality' not in data['bands']:
-            raise RuntimeError('Quality band is required')
-
     parser = DataCubeProcessParser()
     parsed_data = parser.load(data)
 

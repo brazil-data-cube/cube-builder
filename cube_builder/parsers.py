@@ -8,8 +8,9 @@
 
 """Define Cube Builder parsers."""
 
-from marshmallow import Schema, fields
-from marshmallow.validate import OneOf, Regexp
+from marshmallow import Schema, fields, pre_load
+from marshmallow.validate import OneOf, Regexp, ValidationError
+from rasterio.dtypes import dtype_ranges
 
 
 class DataCubeBandParser(Schema):
@@ -24,6 +25,13 @@ class DataCubeBandParser(Schema):
 
 
 INVALID_CUBE_NAME = 'Invalid data cube name. Expected only letters and numbers.'
+SUPPORTED_DATA_TYPES = list(dtype_ranges.keys())
+
+
+class BandDefinition(Schema):
+    name = fields.String(required=True, allow_none=False)
+    common_name = fields.String(required=True, allow_none=False)
+    data_type = fields.String(required=True, allow_none=False, validate=OneOf(SUPPORTED_DATA_TYPES))
 
 
 class DataCubeParser(Schema):
@@ -35,9 +43,37 @@ class DataCubeParser(Schema):
     temporal_schema = fields.String(required=True, allow_none=False)
     bands_quicklook = fields.List(fields.String, required=True, allow_none=False)
     composite_function = fields.String(required=True, allow_none=False, validate=OneOf(['MED', 'STK', 'IDENTITY']))
-    bands = fields.List(fields.String, required=True, allow_none=False)
+    bands = fields.Nested(BandDefinition, required=True, allow_none=False, many=True)
+    quality_band = fields.String(required=True, allow_none=False)
+    indexes = fields.Nested(BandDefinition, many=True)
     description = fields.String(required=True, allow_none=False)
     license = fields.String(required=False, allow_none=True)
+
+    @pre_load
+    def validate_indexes(self, data, **kwargs):
+        """Ensure that both indexes and quality band is present in attribute 'bands'.
+
+        Seeks for quality_band in attribute 'bands' and set as `common_name`.
+
+        Raises:
+            ValidationError when a band inside indexes or quality_band is duplicated with attribute bands.
+        """
+        indexes = data['indexes']
+
+        band_names = [b['name'] for b in data['bands']]
+
+        for band_index in indexes:
+            if band_index['name'] in band_names:
+                raise ValidationError(f'Duplicated band name in indices {band_index["name"]}')
+
+        if 'quality_band' in data:
+            if data['quality_band'] not in band_names:
+                raise ValidationError(f'Quality band "{data["quality_band"]}" not found in key "bands"')
+
+            band = next(filter(lambda band: band['name'] == data['quality_band'], data['bands']))
+            band['common_name'] = 'quality'
+
+        return data
 
 
 class DataCubeProcessParser(Schema):

@@ -190,7 +190,7 @@ def save_as_cog(destination: str, raster, mode='w', **profile):
         dataset.update_tags(ns='rio_overview', resampling='nearest')
 
 
-def merge(merge_file: str, assets: List[dict], cols: int, rows: int, bands, **kwargs):
+def merge(merge_file: str, assets: List[dict], band_map, **kwargs):
     """Apply datacube merge scenes.
 
     TODO: Describe how it works.
@@ -198,8 +198,6 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, bands, **kw
     Args:
         merge_file: Path to store data cube merge
         assets: List of collections assets during period
-        cols: Number of cols for Raster
-        rows: Number of rows for Raster
         bands: List of bands from current merge date.
         **kwargs: Extra properties
     """
@@ -224,10 +222,10 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, bands, **kw
 
     transform = Affine(new_res_x, 0, xmin, 0, -new_res_y, ymax)
 
-    is_sentinel_landsat_quality_fmask = ('LC8SR' in dataset or 'S2_MSI' in dataset) and band == 'quality'
+    is_sentinel_landsat_quality_fmask = ('LC8SR' in dataset or 'S2_MSI' in dataset) and band == band_map['quality']
     source_nodata = 0
 
-    if band == 'quality':
+    if band == band_map['quality']:
         resampling = Resampling.nearest
 
         nodata = 0
@@ -264,12 +262,12 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, bands, **kw
                 if src.profile['nodata'] is not None:
                     source_nodata = src.profile['nodata']
                 elif 'LC8SR' in dataset:
-                    if band != 'quality':
+                    if band != band_map['quality']:
                         # Temporary workaround for landsat
                         # Sometimes, the laSRC does not generate the data set properly and
                         # the data maybe UInt16 instead Int16
                         source_nodata = nodata if src.profile['dtype'] == 'int16' else 0
-                elif 'CBERS' in dataset and band != 'quality':
+                elif 'CBERS' in dataset and band != band_map['quality']:
                     source_nodata = nodata
 
                 kwargs.update({
@@ -300,14 +298,14 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, bands, **kw
                             template = dst.profile
                             # Ensure type is >= int16
 
-                            if band != 'quality':
+                            if band != band_map['quality']:
                                 template['dtype'] = 'int16'
                                 template['nodata'] = nodata
 
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
     cloudratio = 100
-    if band == 'quality':
+    if band == band_map['quality']:
         raster_merge, efficacy, cloudratio = getMask(raster_merge, dataset)
         template.update({'dtype': 'uint8'})
         nodata = 255
@@ -327,9 +325,9 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, bands, **kw
     save_as_cog(str(merge_file), raster_merge, **template)
 
     # Extra processing for quality
-    if band == 'quality':
-        post_processing_quality(merge_file, raster_merge, bands, kwargs['cube'],
-                                kwargs['date'], kwargs['tile_id'], nodata)
+    if band == band_map['quality']:
+        post_processing_quality(merge_file, raster_merge, list(band_map.values()), kwargs['cube'],
+                                kwargs['date'], kwargs['tile_id'], band_map['quality'], nodata)
 
     return dict(
         file=str(merge_file),
@@ -341,7 +339,8 @@ def merge(merge_file: str, assets: List[dict], cols: int, rows: int, bands, **kw
     )
 
 
-def post_processing_quality(quality_file: str, raster_merge, bands: List[str], cube: str, date: str, tile_id, nodata):
+def post_processing_quality(quality_file: str, raster_merge, bands: List[str], cube: str,
+                            date: str, tile_id, quality_band: str, nodata):
     """Stack the merge bands in order to apply a filter on the quality band.
 
     We have faced some issues regarding `nodata` value in spectral bands, which was resulting
@@ -352,8 +351,8 @@ def post_processing_quality(quality_file: str, raster_merge, bands: List[str], c
 
         Quality             Nir                   Quality
 
-        0 0 2 4      702 876  7000 9000      =>    0 0 2 4
-        0 0 0 0      687 987  1022 1029      =>    0 0 0 0
+        0 0 2 4      702  876 7000 9000      =>    0 0 2 4
+        0 0 0 0      687  987 1022 1029      =>    0 0 0 0
         0 2 2 4    -9999 7100 7322 9564      =>  255 2 2 4
 
     Args:
@@ -370,7 +369,7 @@ def post_processing_quality(quality_file: str, raster_merge, bands: List[str], c
         blocks = list(merge_dataset.block_windows())
         profile = merge_dataset.profile
 
-    bands_without_quality = [b for b in bands if b != 'quality']
+    bands_without_quality = [b for b in bands if b != quality_band]
 
     for _, block in blocks:
         nodata_positions = []
@@ -446,7 +445,7 @@ def compute_data_set_stats(file_path: str) -> Tuple[float, float]:
     return efficacy, cloud_ratio
 
 
-def blend(activity, build_clear_observation=False):
+def blend(activity, band_map, build_clear_observation=False):
     """Apply blend and generate raster from activity.
 
     Currently, it generates STACK and MEDIAN
@@ -456,8 +455,9 @@ def blend(activity, build_clear_observation=False):
         since it is not `thread-safe`.
 
     Args:
-        activity - Prepared blend activity metadata
-        build_clear_observation - Flag to dispatch generation of Clear Observation band. It is not ``thread-safe``.
+        activity: Prepared blend activity metadata
+        band_map: Map of data cube bands (common_name : name)
+        build_clear_observation: Flag to dispatch generation of Clear Observation band. It is not ``thread-safe``.
     """
     # Assume that it contains a band and quality band
     numscenes = len(activity['scenes'])
@@ -498,7 +498,7 @@ def blend(activity, build_clear_observation=False):
         efficacy = m[0]
         scene = activity['scenes'][key]
 
-        filename = scene['ARDfiles']['quality']
+        filename = scene['ARDfiles'][band_map['quality']]
 
         try:
             masklist.append(rasterio.open(filename))
@@ -586,7 +586,7 @@ def blend(activity, build_clear_observation=False):
             copy_mask[copy_mask <= 4] = 1
             copy_mask[copy_mask >= 5] = 0
 
-            stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask
+            stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask.astype(numpy.uint8)
 
             # Get current observation file name
             file_name = Path(bandlist[order].name).stem
@@ -687,7 +687,7 @@ def blend(activity, build_clear_observation=False):
 
         activity['clear_observation_file'] = str(clear_ob_data_set.path)
         activity['total_observation'] = str(total_observation_file)
-        activity['provenance'] = str(total_observation_file)
+        activity['provenance'] = str(provenance_file)
 
     cube_function = DataCubeFragments(datacube).composite_function
 
@@ -730,7 +730,31 @@ def generate_rgb(rgb_file: Path, qlfiles: List[str]):
     logging.info(f'Done RGB {str(rgb_file)}')
 
 
-def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio, **kwargs):
+def has_vegetation_index_support(scene_bands: List[str], band_map: dict):
+    """Check if can generate NDVI and EVI bands.
+
+    This method tries to check if the cube execution has all required bands
+    to generate both Normalized Difference Vegetation Index (NDVI) and
+    Enhanced Vegetation Index (EVI).
+
+    Args:
+        scene_bands: Data cube bands names generated in current execution
+        band_map: All data cube bands, mapped by `band_common_name`: `band_name`.
+    """
+    common_name_bands = set()
+
+    for common_name, name in band_map.items():
+        if name in scene_bands:
+            common_name_bands.add(common_name)
+
+    ndvi_in_band_map = 'ndvi' in band_map or 'NDVI' in band_map
+    evi_in_band_map = 'evi' in band_map or 'EVI' in band_map
+
+    return (ndvi_in_band_map and evi_in_band_map) \
+        and VEGETATION_INDEX_BANDS <= set(common_name_bands)
+
+
+def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio, band_map, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
 
@@ -767,17 +791,19 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio,
             rgb_file = build_cube_path(cube.id, 'RGB', period, tile_id)
             generate_rgb(rgb_file, ql_files)
 
-        if VEGETATION_INDEX_BANDS <= set(scenes.keys()):
+        if has_vegetation_index_support(scenes.keys(), band_map):
             # Generate VI
-            evi_path = build_cube_path(cube.id, 'evi', period, tile_id)
-            ndvi_path = build_cube_path(cube.id, 'ndvi', period, tile_id)
+            evi_name = band_map.get('evi', 'EVI')
+            evi_path = build_cube_path(cube.id, evi_name, period, tile_id)
+            ndvi_name = band_map.get('ndvi', 'NDVI')
+            ndvi_path = build_cube_path(cube.id, ndvi_name, period, tile_id)
 
-            generate_evi_ndvi(scenes['red'][composite_function],
-                              scenes['nir'][composite_function],
-                              scenes['blue'][composite_function],
+            generate_evi_ndvi(scenes[band_map['red']][composite_function],
+                              scenes[band_map['nir']][composite_function],
+                              scenes[band_map['blue']][composite_function],
                               str(evi_path), str(ndvi_path))
-            scenes['evi'] = {composite_function: str(evi_path)}
-            scenes['ndvi'] = {composite_function: str(ndvi_path)}
+            scenes[evi_name] = {composite_function: str(evi_path)}
+            scenes[ndvi_name] = {composite_function: str(ndvi_path)}
 
         Asset.query().filter(Asset.collection_item_id == item_id).delete()
 
@@ -799,7 +825,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio,
             ).save(commit=False)
 
             for band in scenes:
-                band_model = list(filter(lambda b: b.common_name == band, cube_bands))
+                band_model = list(filter(lambda b: b.name == band, cube_bands))
 
                 # Band does not exists on model
                 if not band_model:
@@ -829,7 +855,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio,
     return quick_look_file
 
 
-def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
+def publish_merge(bands, datacube, tile_id, period, date, scenes, band_map):
     """Generate quicklook and catalog warped datacube on database.
 
     TODO: Review it with publish_datacube
@@ -858,16 +884,18 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
     CollectionItem.query().filter(CollectionItem.id == item_id).delete()
 
     # Generate VI
-    if VEGETATION_INDEX_BANDS <= set(scenes.keys()):
-        evi_path = build_cube_path(datacube.id, 'evi', date, tile_id)
-        ndvi_path = build_cube_path(datacube.id, 'ndvi', date, tile_id)
+    if has_vegetation_index_support(scenes['ARDfiles'].keys(), band_map):
+        evi_name = band_map.get('evi', 'EVI')
+        evi_path = build_cube_path(datacube.id, evi_name, date, tile_id)
+        ndvi_name = band_map.get('ndvi', 'NDVI')
+        ndvi_path = build_cube_path(datacube.id, ndvi_name, date, tile_id)
 
-        generate_evi_ndvi(scenes['ARDfiles']['red'],
-                          scenes['ARDfiles']['nir'],
-                          scenes['ARDfiles']['blue'],
+        generate_evi_ndvi(scenes['ARDfiles'][band_map['red']],
+                          scenes['ARDfiles'][band_map['nir']],
+                          scenes['ARDfiles'][band_map['blue']],
                           str(evi_path), str(ndvi_path))
-        scenes['ARDfiles']['evi'] = str(evi_path)
-        scenes['ARDfiles']['ndvi'] = str(ndvi_path)
+        scenes['ARDfiles'][evi_name] = str(evi_path)
+        scenes['ARDfiles'][ndvi_name] = str(ndvi_path)
 
     with db.session.begin_nested():
         CollectionItem(
@@ -885,7 +913,7 @@ def publish_merge(bands, datacube, dataset, tile_id, period, date, scenes):
         ).save(commit=False)
 
         for band in scenes['ARDfiles']:
-            band_model = list(filter(lambda b: b.common_name == band, cube_bands))
+            band_model = list(filter(lambda b: b.name == band, cube_bands))
 
             # Band does not exists on model
             if not band_model:

@@ -58,7 +58,7 @@ def create_execution(activity: dict) -> Activity:
 
 
 @celery_app.task()
-def warp_merge(activity, force=False):
+def warp_merge(activity, band_map, force=False):
     """Execute datacube merge task.
 
     This task consists in the following steps:
@@ -90,7 +90,7 @@ def warp_merge(activity, force=False):
     if not force and merge_file_path.exists() and merge_file_path.is_file():
         efficacy = cloudratio = 0
 
-        if activity['band'] == 'quality':
+        if activity['band'] == band_map['quality']:
             # When file exists, compute the file statistics
             efficacy, cloudratio = compute_data_set_stats(str(merge_file_path))
 
@@ -112,7 +112,7 @@ def warp_merge(activity, force=False):
             args['date'] = record.date.strftime('%Y-%m-%d')
             args['cube'] = record.warped_collection_id
 
-            res = merge_processing(str(merge_file_path), **args)
+            res = merge_processing(str(merge_file_path), band_map=band_map, **args)
 
             merge_args = activity['args']
             merge_args.update(res)
@@ -141,7 +141,7 @@ def warp_merge(activity, force=False):
 
 
 @celery_app.task()
-def prepare_blend(merges, **kwargs):
+def prepare_blend(merges, band_map: dict, **kwargs):
     """Receive merges by period and prepare task blend.
 
     This task aims to prepare celery task definition for blend.
@@ -152,7 +152,7 @@ def prepare_blend(merges, **kwargs):
 
     # Prepare map of efficacy/cloud_ratio based in quality merge result
     quality_date_stats = {
-        m['date']: (m['args']['efficacy'], m['args']['cloudratio']) for m in merges if m['band'] == 'quality'
+        m['date']: (m['args']['efficacy'], m['args']['cloudratio']) for m in merges if m['band'] == band_map['quality']
     }
 
     def _is_not_stk(_merge):
@@ -160,7 +160,7 @@ def prepare_blend(merges, **kwargs):
 
         This function is a utility to dispatch the cloud mask generation only for STK data cubes.
         """
-        return _merge['band'] == 'quality' and not _merge['collection_id'].endswith('STK')
+        return _merge['band'] == band_map['quality'] and not _merge['collection_id'].endswith('STK')
 
     for _merge in merges:
         # Skip quality generation for MEDIAN, AVG
@@ -184,7 +184,7 @@ def prepare_blend(merges, **kwargs):
         activity['scenes'][_merge['args']['date']]['cloudratio'] = cloudratio
 
         activity['scenes'][_merge['args']['date']]['ARDfiles'] = {
-            "quality": _merge['args']['file'].replace(_merge['band'], 'quality'),
+            band_map['quality']: _merge['args']['file'],
             _merge['band']: _merge['args']['file']
         }
 
@@ -212,17 +212,17 @@ def prepare_blend(merges, **kwargs):
     # Trigger all except the last
     for activity in activity_list[:-1]:
         # TODO: Persist
-        blends.append(blend.s(activity))
+        blends.append(blend.s(activity, band_map))
 
     # Trigger last blend to execute Clear Observation
-    blends.append(blend.s(last_activity, build_clear_observation=True))
+    blends.append(blend.s(last_activity, band_map, build_clear_observation=True))
 
-    task = chain(group(blends), publish.s(**kwargs))
+    task = chain(group(blends), publish.s(band_map, **kwargs))
     task.apply_async()
 
 
 @celery_app.task()
-def blend(activity, build_clear_observation=False):
+def blend(activity, band_map, build_clear_observation=False):
     """Execute datacube blend task.
 
     TODO: Describe how it works.
@@ -235,11 +235,11 @@ def blend(activity, build_clear_observation=False):
     """
     logging.warning('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
 
-    return blend_processing(activity, build_clear_observation)
+    return blend_processing(activity, band_map, build_clear_observation)
 
 
 @celery_app.task()
-def publish(blends, **kwargs):
+def publish(blends, band_map, **kwargs):
     """Execute publish task and catalog datacube result.
 
     Args:
@@ -283,7 +283,7 @@ def publish(blends, **kwargs):
         cloudratio = blends[0]['cloudratio']
 
         # Generate quick looks for cube scenes
-        publish_datacube(cube, quick_look_bands, cube.id, tile_id, period, blend_files, cloudratio, **kwargs)
+        publish_datacube(cube, quick_look_bands, cube.id, tile_id, period, blend_files, cloudratio, band_map, **kwargs)
 
     # Generate quick looks of irregular cube
     wcube = Collection.query().filter(Collection.id == warped_datacube).first()
@@ -291,7 +291,7 @@ def publish(blends, **kwargs):
     for merge_date, definition in merges.items():
         date = merge_date.replace(definition['dataset'], '')
 
-        publish_merge(quick_look_bands, wcube, definition['dataset'], tile_id, period, date, definition)
+        publish_merge(quick_look_bands, wcube, tile_id, period, date, definition, band_map)
 
     try:
         refresh_materialized_view(db.session, AssetMV.__table__)

@@ -116,28 +116,27 @@ class CubeBusiness:
             default_bands = (CLEAR_OBSERVATION_NAME.lower(), TOTAL_OBSERVATION_NAME.lower(), PROVENANCE_NAME.lower())
 
             for band in params['bands']:
-                band = band.strip()
+                name = band['name'].strip()
 
-                if cube.composite_function_schema_id == 'IDENTITY' or \
-                        band.lower() in default_bands:
+                if name in default_bands:
                     continue
 
-                is_not_cloud = band != 'quality'
+                is_not_cloud = params['quality_band'] != band['name']
 
-                if is_not_cloud:
-                    data_type = 'int16'
+                if band['name'] == params['quality_band']:
+                    data_type = 'uint8'
                 else:
-                    data_type = 'Uint8'
+                    data_type = band['data_type']
 
                 band_model = Band(
-                    name=band,
+                    name=name,
                     collection_id=cube.id,
                     min=0,
                     max=10000 if is_not_cloud else 4,
                     fill=-9999 if is_not_cloud else 255,
                     scale=0.0001 if is_not_cloud else 1,
                     data_type=data_type,
-                    common_name=band,
+                    common_name=band['common_name'],
                     resolution_x=params['resolution'],
                     resolution_y=params['resolution'],
                     resolution_unit='m',
@@ -174,6 +173,8 @@ class CubeBusiness:
             int(params['resolution'])
         )
 
+        params['bands'].extend(params['indexes'])
+
         with db.session.begin_nested():
             # Create data cube IDENTITY
             cube = cls._create_cube_definition(cube_name, params)
@@ -190,8 +191,8 @@ class CubeBusiness:
                 cube_name_composite = f'{cube_name}_{temporal_str}_{params["composite_function"]}'
 
                 # Create data cube with temporal composition
-                cube = cls._create_cube_definition(cube_name_composite, params)
-                cube_serialized.append(cube)
+                cube_composite = cls._create_cube_definition(cube_name_composite, params)
+                cube_serialized.append(cube_composite)
 
         db.session.commit()
 
