@@ -324,11 +324,6 @@ def merge(merge_file: str, assets: List[dict], band_map, **kwargs):
     # Persist on file as Cloud Optimized GeoTIFF
     save_as_cog(str(merge_file), raster_merge, **template)
 
-    # Extra processing for quality
-    if band == band_map['quality']:
-        post_processing_quality(merge_file, raster_merge, list(band_map.values()), kwargs['cube'],
-                                kwargs['date'], kwargs['tile_id'], band_map['quality'], nodata)
-
     return dict(
         file=str(merge_file),
         efficacy=efficacy,
@@ -339,8 +334,8 @@ def merge(merge_file: str, assets: List[dict], band_map, **kwargs):
     )
 
 
-def post_processing_quality(quality_file: str, raster_merge, bands: List[str], cube: str,
-                            date: str, tile_id, quality_band: str, nodata):
+def post_processing_quality(quality_file: str, bands: List[str], cube: str,
+                            date: str, tile_id, quality_band: str):
     """Stack the merge bands in order to apply a filter on the quality band.
 
     We have faced some issues regarding `nodata` value in spectral bands, which was resulting
@@ -357,19 +352,20 @@ def post_processing_quality(quality_file: str, raster_merge, bands: List[str], c
 
     Args:
          quality_file: Path to the merge fmask.
-         raster_merge: Entire raster merge loaded to be customized and it will stored.
          bands: All the bands from the merge date.
          cube: IDENTITY data cube name
          date: Merge date
          tile_id: Brazil data cube tile identifier
-         nodata: No data value used in the fmask.
+         quality_band: Quality band name
     """
     # Get quality profile and chunks
     with rasterio.open(str(quality_file)) as merge_dataset:
         blocks = list(merge_dataset.block_windows())
         profile = merge_dataset.profile
+        nodata = profile.get('nodata', 255)
+        raster_merge = merge_dataset.read(1)
 
-    bands_without_quality = [b for b in bands if b != quality_band]
+    bands_without_quality = [b for b in bands if b != quality_band and b.lower() not in ('ndvi', 'evi', )]
 
     for _, block in blocks:
         nodata_positions = []
