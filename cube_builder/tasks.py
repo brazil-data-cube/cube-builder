@@ -232,10 +232,10 @@ def prepare_blend(merges, band_map: dict, **kwargs):
 def blend(activity, band_map, build_clear_observation=False):
     """Execute datacube blend task.
 
-    TODO: Describe how it works.
-
     Args:
-        activity - Datacube Activity Model
+        activity - Datacube Activity Model.
+        band_map - Band mapping with common_name and band original name.
+        build_clear_observation - Generate band "Clear Observation".
 
     Returns:
         Validated activity
