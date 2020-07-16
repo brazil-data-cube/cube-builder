@@ -154,8 +154,10 @@ class CubeBusiness:
                                        res_x=params['resolution'], res_y=params['resolution'])
             _ = cls.get_or_create_band(cube_id, **TOTAL_OBSERVATION_ATTRIBUTES,
                                        res_x=params['resolution'], res_y=params['resolution'])
-            _ = cls.get_or_create_band(cube_id, **PROVENANCE_ATTRIBUTES,
-                                       res_x=params['resolution'], res_y=params['resolution'])
+
+            if function == 'STK':
+                _ = cls.get_or_create_band(cube_id, **PROVENANCE_ATTRIBUTES,
+                                           res_x=params['resolution'], res_y=params['resolution'])
 
         return CollectionForm().dump(cube)
 
