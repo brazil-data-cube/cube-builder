@@ -14,7 +14,9 @@ from typing import Tuple
 from bdc_db.models import (Band, Collection, GrsSchema, RasterSizeSchema,
                            TemporalCompositionSchema, Tile)
 from bdc_db.models.base_sql import BaseModel, db
+from geoalchemy2.shape import from_shape
 from rasterio.warp import transform
+from shapely.geometry import Polygon
 from sqlalchemy import func
 from werkzeug.exceptions import BadRequest, Conflict, NotFound
 
@@ -349,29 +351,31 @@ class CubeBusiness:
     @classmethod
     def create_grs_schema(cls, name, description, projection, meridian, degreesx, degreesy, bbox):
         """Create a Brazil Data Cube Grid Schema."""
+
         bbox = bbox.split(',')
-        bbox_obj = dict(
-            w=float(bbox[0]),
-            n=float(bbox[1]),
-            e=float(bbox[2]),
-            s=float(bbox[3])
-        )
-        tilesrsp4 = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"
+        bbox_obj = {
+            "w": float(bbox[0]),
+            "n": float(bbox[1]),
+            "e": float(bbox[2]),
+            "s": float(bbox[3])
+        }
+        tile_srs_p4 = "+proj=longlat +ellps=GRS80 +datum=GRS80 +no_defs"
         if projection == 'aea':
-            tilesrsp4 = "+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0={} +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs".format(
+            tile_srs_p4 = "+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0={} +x_0=0 +y_0=0 +ellps=GRS80 +datum=GRS80 +units=m +no_defs".format(
                 meridian)
         elif projection == 'sinu':
-            tilesrsp4 = "+proj=sinu +lon_0={0} +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs".format(0.)
+            tile_srs_p4 = "+proj=sinu +lon_0={} +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs".format(
+                meridian)
 
         # Number of tiles and base tile
-        numtilesx = int(360. / degreesx)
-        numtilesy = int(180. / degreesy)
-        hBase = numtilesx / 2
-        vBase = numtilesy / 2
+        num_tiles_x = int(360. / degreesx)
+        num_tiles_y = int(180. / degreesy)
+        h_base = num_tiles_x / 2
+        v_base = num_tiles_y / 2
 
         # Tile size in meters (dx,dy) at center of system (argsmeridian,0.)
-        src_crs = '+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs'
-        dst_crs = tilesrsp4
+        src_crs = '+proj=longlat +ellps=GRS80 +datum=GRS80 +no_defs'
+        dst_crs = tile_srs_p4
         xs = [(meridian - degreesx / 2), (meridian + degreesx / 2), meridian, meridian, 0.]
         ys = [0., 0., -degreesy / 2, degreesy / 2, 0.]
         out = transform(src_crs, dst_crs, xs, ys, zs=None)
@@ -382,12 +386,12 @@ class CubeBusiness:
         dx = x2 - x1
         dy = y2 - y1
 
-        # Coordinates of WRS center (0.,0.) - top left coordinate of (hBase,vBase)
-        xCenter = out[0][4]
-        yCenter = out[1][4]
+        # Coordinates of WRS center (0.,0.) - top left coordinate of (h_base,v_base)
+        x_center = out[0][4]
+        y_center = out[1][4]
         # Border coordinates of WRS grid
-        xMin = xCenter - dx * hBase
-        yMax = yCenter + dy * vBase
+        x_min = x_center - dx * h_base
+        y_max = y_center + dy * v_base
 
         # Upper Left is (xl,yu) Bottom Right is (xr,yb)
         xs = [bbox_obj['w'], bbox_obj['e'], meridian, meridian]
@@ -397,70 +401,78 @@ class CubeBusiness:
         xr = out[0][1]
         yu = out[1][2]
         yb = out[1][3]
-        hMin = int((xl - xMin) / dx)
-        hMax = int((xr - xMin) / dx)
-        vMin = int((yMax - yu) / dy)
-        vMax = int((yMax - yb) / dy)
+        h_min = int((xl - x_min) / dx)
+        h_max = int((xr - x_min) / dx)
+        v_min = int((y_max - yu) / dy)
+        v_max = int((y_max - yb) / dy)
 
         # Insert grid
-        model = GrsSchema.query().filter(
+        grs = GrsSchema.query().filter(
             GrsSchema.id == name
         ).first()
-
-        if not model:
-            model = GrsSchema(
+        if not grs:
+            grs = GrsSchema(
                 id=name,
                 description=description,
-                crs=tilesrsp4
-            )
-            model.save()
+                crs=tile_srs_p4
+            ).save()
 
         tiles = []
-        dst_crs = '+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs'
-        src_crs = tilesrsp4
-        for ix in range(hMin, hMax + 1):
-            x1 = xMin + ix * dx
+        dst_crs = '+proj=longlat +ellps=GRS80 +datum=GRS80 +no_defs'
+        src_crs = tile_srs_p4
+        for ix in range(h_min, h_max + 1):
+            x1 = x_min + ix * dx
             x2 = x1 + dx
-            for iy in range(vMin, vMax + 1):
-                y1 = yMax - iy * dy
+            for iy in range(v_min, v_max + 1):
+                y1 = y_max - iy * dy
                 y2 = y1 - dy
                 # Evaluate the bounding box of tile in longlat
                 xs = [x1, x2, x2, x1]
                 ys = [y1, y1, y2, y2]
                 out = transform(src_crs, dst_crs, xs, ys, zs=None)
-                UL_lon = out[0][0]
-                UL_lat = out[1][0]
-                UR_lon = out[0][1]
-                UR_lat = out[1][1]
-                LR_lon = out[0][2]
-                LR_lat = out[1][2]
-                LL_lon = out[0][3]
-                LL_lat = out[1][3]
+                ul_lon = out[0][0]
+                ul_lat = out[1][0]
+                ur_lon = out[0][1]
+                ur_lat = out[1][1]
+                lr_lon = out[0][2]
+                lr_lat = out[1][2]
+                ll_lon = out[0][3]
+                ll_lat = out[1][3]
 
-                wkt_wgs84 = 'POLYGON(({} {},{} {},{} {},{} {},{} {}))'.format(
-                    UL_lon, UL_lat,
-                    UR_lon, UR_lat,
-                    LR_lon, LR_lat,
-                    LL_lon, LL_lat,
-                    UL_lon, UL_lat)
+                poly_wgs84 = from_shape(
+                    Polygon(
+                        [
+                            (ul_lon, ul_lat),
+                            (ur_lon, ur_lat),
+                            (lr_lon, lr_lat),
+                            (ll_lon, ll_lat),
+                            (ul_lon, ul_lat)
+                        ]
+                    ),
+                    srid=4674
+                )
 
-                wkt = 'POLYGON(({} {},{} {},{} {},{} {},{} {}))'.format(
-                    x1, y2,
-                    x2, y2,
-                    x2, y1,
-                    x1, y1,
-                    x1, y2)
+                poly_aea = from_shape(
+                    Polygon(
+                        [
+                            (x1, y2),
+                            (x2, y2),
+                            (x2, y1),
+                            (x1, y1),
+                            (x1, y2)
+                        ]
+                    ),
+                    srid=0
+                )
 
                 # Insert tile
                 tiles.append(Tile(
                     id='{0:03d}{1:03d}'.format(ix, iy),
                     grs_schema_id=name,
-                    geom_wgs84='SRID=4326;{}'.format(wkt_wgs84),
-                    geom='SRID=0;{}'.format(wkt),
-                    min_x=x1,
-                    max_y=y1
+                    geom_wgs84=poly_wgs84,
+                    geom=poly_aea
                 ))
 
         BaseModel.save_all(tiles)
 
-        return GrsSchemaForm().dump(model), 201
+        return GrsSchemaForm().dump(grs), 201

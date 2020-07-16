@@ -31,7 +31,7 @@ A Data Cube must have an associated grid. The example showed below will create a
             "name": "BRAZIL",
             "description": "albers equal area - 250k by tiles Brazil",
             "projection": "aea",
-            "meridian": -46,
+            "meridian": -54,
             "degreesx": 1.5,
             "degreesy": 1,
             "bbox": "-73.9872354804,5.24448639569,-34.7299934555,-33.7683777809"
@@ -45,7 +45,7 @@ The response will have status code ``201`` and the body:
 
     {
         "description": "albers equal area - 250k by tiles Brazil",
-        "crs": "+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-46 +x_0=0 +y_0=0 +ellps=WGS84 +datum=WGS84 +units=m +no_defs",
+        "crs": "+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-54 +x_0=0 +y_0=0 +ellps=GRS80 +datum=GRS80 +units=m +no_defs",
         "id": "BRAZIL"
     }
 
