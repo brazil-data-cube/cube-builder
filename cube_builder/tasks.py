@@ -186,12 +186,12 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         activity['nodata'] = _merge['args'].get('nodata')
 
         # Map efficacy/cloud ratio to the respective merge date before pass to blend
-        efficacy, cloudratio, _ = quality_date_stats[_merge['date']]
+        efficacy, cloudratio, quality_file = quality_date_stats[_merge['date']]
         activity['scenes'][_merge['args']['date']]['efficacy'] = efficacy
         activity['scenes'][_merge['args']['date']]['cloudratio'] = cloudratio
 
         activity['scenes'][_merge['args']['date']]['ARDfiles'] = {
-            band_map['quality']: _merge['args']['file'],
+            band_map['quality']: quality_file,
             _merge['band']: _merge['args']['file']
         }
 

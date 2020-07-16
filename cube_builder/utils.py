@@ -609,8 +609,7 @@ def blend(activity, band_map, build_clear_observation=False):
 
             if len(intersect_ravel):
                 where_intersec = numpy.unravel_index(intersect_ravel, raster.shape)
-                stack_raster[window.row_off: row_offset, window.col_off: col_offset][where_intersec] = raster[
-                    where_intersec]
+                stack_raster[window.row_off: row_offset, window.col_off: col_offset][where_intersec] = raster[where_intersec]
 
                 provenance_array[window.row_off: row_offset, window.col_off: col_offset][where_intersec] = day_of_year
 
