@@ -22,7 +22,7 @@ from sqlalchemy_utils import refresh_materialized_view
 from .celery import celery_app
 from .constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME
 from .models import Activity
-from .utils import DataCubeFragments, blend as blend_processing, build_cube_path
+from .utils import DataCubeFragments, blend as blend_processing, build_cube_path, post_processing_quality
 from .utils import compute_data_set_stats, get_or_create_model
 from .utils import merge as merge_processing
 from .utils import publish_datacube, publish_merge
@@ -152,8 +152,15 @@ def prepare_blend(merges, band_map: dict, **kwargs):
 
     # Prepare map of efficacy/cloud_ratio based in quality merge result
     quality_date_stats = {
-        m['date']: (m['args']['efficacy'], m['args']['cloudratio']) for m in merges if m['band'] == band_map['quality']
+        m['date']: (m['args']['efficacy'], m['args']['cloudratio'], m['args']['file']) for m in merges if m['band'] == band_map['quality']
     }
+
+    for period, stats in quality_date_stats.items():
+        _, _, quality_file = stats
+
+        logging.info(f'Applying post-processing in {str(quality_file)}')
+        post_processing_quality(quality_file, list(band_map.values()), merges[0]['warped_collection_id'],
+                                period, merges[0]['tile_id'], band_map['quality'])
 
     def _is_not_stk(_merge):
         """Control flag to generate cloud mask.
@@ -179,7 +186,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         activity['nodata'] = _merge['args'].get('nodata')
 
         # Map efficacy/cloud ratio to the respective merge date before pass to blend
-        efficacy, cloudratio = quality_date_stats[_merge['date']]
+        efficacy, cloudratio, _ = quality_date_stats[_merge['date']]
         activity['scenes'][_merge['args']['date']]['efficacy'] = efficacy
         activity['scenes'][_merge['args']['date']]['cloudratio'] = cloudratio
 
