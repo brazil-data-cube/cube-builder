@@ -471,16 +471,16 @@ def blend(activity, band_map, build_clear_observation=False):
         Landsat-8_30_16D_STK
         Quality        Nir                     Provenance (Day of Year)
 
-        0 0 2 4       854 756 -9999 -9999      15 15 10 10
-        0 1 1 1       945 400   411   422      15 15 15 15
-        0 0 0 0       869 975   788   799      15 15 15 15
+        0 0 2 4       854 756 7000 9000      15 15 10 10
+        0 1 1 1       945 400  411  422      15 15 15 15
+        0 0 0 0       869 975  788  799      15 15 15 15
 
         Landsat-8_30_16D_MED
         Nir
 
-        778  816 7000 9000
-        816  422  402  422
-        1055 975  788  799
+        778  816 -9999 -9999
+        816  422   402   422
+        1055 975   788   799
 
     Notes:
         When build_clear_observation is set, make sure to do not execute in parallel processing
