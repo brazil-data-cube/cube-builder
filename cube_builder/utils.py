@@ -1108,18 +1108,16 @@ def generate_evi_ndvi(red_band_path: str, nir_band_path: str, blue_bland_path: s
             raster_ndvi = (10000. * ((nir_ma - red_ma) / (nir_ma + red_ma))).astype(numpy.int16)
             raster_ndvi[raster_ndvi == numpy.ma.masked] = profile['nodata']
 
-            with rasterio.open(ndvi_name_path, 'w', **profile) as ds_ndvi:  # type of raster byte
-                ds_ndvi.write(raster_ndvi, 1)
+            save_as_cog(ndvi_name_path, raster_ndvi, **profile)
 
-                with rasterio.open(blue_bland_path) as ds_blue:
-                    blue = ds_blue.read(1)
-                    blue_ma = numpy.ma.array(blue, mask=blue == profile['nodata'], fill_value=-9999)
-                    # Calculate EVI
-                    raster_evi = (10000. * 2.5 * (nir_ma - red_ma) / (nir_ma + 6. * red_ma - 7.5 * blue_ma + 10000.)).astype(numpy.int16)
-                    raster_evi[raster_evi == numpy.ma.masked] = profile['nodata']
+            with rasterio.open(blue_bland_path) as ds_blue:
+                blue = ds_blue.read(1)
+                blue_ma = numpy.ma.array(blue, mask=blue == profile['nodata'], fill_value=-9999)
+                # Calculate EVI
+                raster_evi = (10000. * 2.5 * (nir_ma - red_ma) / (nir_ma + 6. * red_ma - 7.5 * blue_ma + 10000.)).astype(numpy.int16)
+                raster_evi[raster_evi == numpy.ma.masked] = profile['nodata']
 
-                    with rasterio.open(evi_name_path, 'w', **profile) as ds_evi:  # type of raster byte
-                        ds_evi.write(raster_evi, 1)
+                save_as_cog(evi_name_path, raster_evi, **profile)
 
 
 def build_cube_path(datacube: str, band: str, period: str, tile_id: str) -> Path:
