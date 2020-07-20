@@ -402,7 +402,9 @@ class Maestro:
         with timing('Time total to dispatch'):
             bands = self.datacube_bands
 
-            band_str_list = [band.name for band in bands]
+            band_str_list = [band.name for band in bands if band.name not in [TOTAL_OBSERVATION_NAME,
+                                                                              CLEAR_OBSERVATION_NAME,
+                                                                              PROVENANCE_NAME]]
 
             band_map = {b.common_name: b.name for b in bands}
 
