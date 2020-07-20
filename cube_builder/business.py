@@ -363,7 +363,7 @@ class CubeBusiness:
         }
         tile_srs_p4 = "+proj=longlat +ellps=GRS80 +datum=GRS80 +no_defs"
         if projection == 'aea':
-            tile_srs_p4 = "+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0={} +x_0=0 +y_0=0 +ellps=GRS80 +datum=GRS80 +units=m +no_defs".format(
+            tile_srs_p4 = "+proj=aea +lat_1=-1 +lat_2=-29 +lat_0=0 +lon_0={} +x_0=0 +y_0=0 +ellps=GRS80 +datum=GRS80 +units=m +no_defs".format(
                 meridian)
         elif projection == 'sinu':
             tile_srs_p4 = "+proj=sinu +lon_0={} +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs".format(
@@ -477,4 +477,7 @@ class CubeBusiness:
 
         BaseModel.save_all(tiles)
 
-        return GrsSchemaForm().dump(grs), 201
+        data = GrsSchemaForm().dump(grs)
+        data['tiles'] = [t.id for t in tiles]
+
+        return data, 201

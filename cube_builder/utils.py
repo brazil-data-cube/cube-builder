@@ -1051,7 +1051,7 @@ def getMask(raster, dataset):
         # 3 		Cloudy 			Target not visible, covered with cloud
         lut = numpy.array([255, 0, 0, 2, 4], dtype=numpy.uint8)
         rastercm = numpy.take(lut, raster+1).astype(numpy.uint8)
-    elif dataset == 'CBERS4_AWFI_L4_SR' or dataset == 'CBERS4_MUX_L4_SR':
+    elif 'CBERS4' in dataset:
         # Key Summary        QA Description
         #   0 Fill/No Data - Not Processed
         # 127 Good Data    - Use with confidence

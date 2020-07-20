@@ -376,13 +376,14 @@ class Maestro:
         return self.bands
 
     @staticmethod
-    def get_bbox(tile_id: str) -> str:
+    def get_bbox(tile_id: str, grs_schema_id: str) -> str:
         """Retrieve the bounding box representation as string."""
         bbox_result = db.session.query(
             Tile.id,
             func.ST_AsText(func.ST_BoundingDiagonal(func.ST_Force2D(Tile.geom_wgs84)))
         ).filter(
-            Tile.id == tile_id
+            Tile.id == tile_id,
+            Tile.grs_schema_id == grs_schema_id
         ).first()
 
         bbox = bbox_result[1][bbox_result[1].find('(') + 1:bbox_result[0].find(')')]
@@ -413,7 +414,7 @@ class Maestro:
             for tileid in self.mosaics:
                 blends = []
 
-                bbox = self.get_bbox(tileid)
+                bbox = self.get_bbox(tileid, self.datacube.grs_schema_id)
 
                 tile = next(filter(lambda t: t.Tile.id == tileid, self.tiles))
 
