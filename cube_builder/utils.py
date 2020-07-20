@@ -1095,29 +1095,37 @@ def generate_evi_ndvi(red_band_path: str, nir_band_path: str, blue_bland_path: s
         evi_name_path: Path to save EVI file
         ndvi_name_path: Path to save NDVI file
     """
-    with rasterio.open(nir_band_path) as ds_nir:
-        nir = ds_nir.read(1)
+    with rasterio.open(nir_band_path) as ds_nir, rasterio.open(red_band_path) as ds_red,\
+            rasterio.open(blue_bland_path) as ds_blue:
         profile = ds_nir.profile
-        nir_ma = numpy.ma.array(nir, mask=nir == profile['nodata'], fill_value=-9999)
+        nodata = int(profile['nodata'])
+        blocks = ds_nir.block_windows()
+        data_type = profile['dtype']
 
-        with rasterio.open(red_band_path) as ds_red:
-            red = ds_red.read(1)
-            red_ma = numpy.ma.array(red, mask=red == profile['nodata'], fill_value=-9999)
+        raster_ndvi = numpy.full((profile['height'], profile['width']), dtype=data_type, fill_value=nodata)
+        raster_evi = numpy.full((profile['height'], profile['width']), dtype=data_type, fill_value=nodata)
 
-            # Calculate NDVI
-            raster_ndvi = (10000. * ((nir_ma - red_ma) / (nir_ma + red_ma))).astype(numpy.int16)
-            raster_ndvi[raster_ndvi == numpy.ma.masked] = profile['nodata']
+        for _, block in blocks:
+            row_offset = block.row_off + block.height
+            col_offset = block.col_off + block.width
 
-            save_as_cog(ndvi_name_path, raster_ndvi, **profile)
+            red = ds_red.read(1, masked=True, window=block)
+            nir = ds_nir.read(1, masked=True, window=block)
 
-            with rasterio.open(blue_bland_path) as ds_blue:
-                blue = ds_blue.read(1)
-                blue_ma = numpy.ma.array(blue, mask=blue == profile['nodata'], fill_value=-9999)
-                # Calculate EVI
-                raster_evi = (10000. * 2.5 * (nir_ma - red_ma) / (nir_ma + 6. * red_ma - 7.5 * blue_ma + 10000.)).astype(numpy.int16)
-                raster_evi[raster_evi == numpy.ma.masked] = profile['nodata']
+            ndvi_block = (10000. * ((nir - red) / (nir + red))).astype(numpy.int16)
+            ndvi_block[ndvi_block == numpy.ma.masked] = nodata
 
-                save_as_cog(evi_name_path, raster_evi, **profile)
+            raster_ndvi[block.row_off: row_offset, block.col_off: col_offset] = ndvi_block
+
+            blue = ds_blue.read(1, masked=True, window=block)
+
+            evi_block = (10000. * 2.5 * (nir - red) / (nir + 6. * red - 7.5 * blue + 10000.)).astype(numpy.int16)
+            evi_block[evi_block == numpy.ma.masked] = nodata
+
+            raster_evi[block.row_off: row_offset, block.col_off: col_offset] = evi_block
+
+        save_as_cog(ndvi_name_path, raster_ndvi, **profile)
+        save_as_cog(evi_name_path, raster_evi, **profile)
 
 
 def build_cube_path(datacube: str, band: str, period: str, tile_id: str) -> Path:
