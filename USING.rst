@@ -45,7 +45,7 @@ The response will have status code ``201`` and the body:
 
     {
         "description": "albers equal area - 250k by tiles Brazil",
-        "crs": "+proj=aea +lat_1=10 +lat_2=-40 +lat_0=0 +lon_0=-54 +x_0=0 +y_0=0 +ellps=GRS80 +datum=GRS80 +units=m +no_defs",
+        "crs": "+proj=aea +lat_1=-1 +lat_2=-29 +lat_0=0 +lon_0=-54 +x_0=0 +y_0=0 +ellps=GRS80 +datum=GRS80 +units=m +no_defs",
         "id": "BRAZIL"
     }
 
