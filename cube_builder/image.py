@@ -91,11 +91,36 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
             output[row.date]['collections'].add(row.data_set)
 
             output[row.date]['errors'].extend(errors)
+            # output[row.date]['bands'][row.band].append(row.link)
 
-            output[row.date]['bands'].setdefault(row.band, list())
-            output[row.date]['bands'][row.band].append(row.link)
+            output[row.date]['bands'].setdefault(row.band, dict(merge=row.file, scenes=set()))
 
-        for element in output.values():
-            element['collections'] = list(element['collections'])
+            output[row.date]['bands'][row.band]['scenes'].add(row.link)
+
+        # for element in output.values():
+        #     element['collections'] = list(element['collections'])
 
         return output
+
+
+# for item, errors in futures:
+#      if item is None:
+#          continue
+#
+#      activity = item['activity']
+#      merge_date = activity['date']
+#      band = item['activity']['band']
+#
+#      output.setdefault(merge_date, dict())
+#      output[merge_date].setdefault('collections', activity['datasets'])
+#      output[merge_date].setdefault('errors', list())
+#      output[merge_date].setdefault('bands', dict())
+#
+#      output[merge_date]['errors'].extend(errors)
+#
+#      merge_file = 's3://{}/{}'.format(activity['bucket_name'], activity['ARDfile']) if activity.get('ARDfile') else None
+#
+#      output[merge_date]['bands'].setdefault(band, dict(merge=merge_file, scenes=set()))
+#
+#      for link in activity['links']:
+#          output[merge_date]['bands'][band]['scenes'].add(link)

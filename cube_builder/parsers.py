@@ -105,7 +105,15 @@ class CubeStatusParser(Schema):
 
 
 class ListMergeParser(Schema):
-    datacube = fields.String(required=True, allow_none=False)
-    tile = fields.String(required=True, allow_none=False)
-    start_date = fields.String(required=True, allow_none=False)
-    last_date = fields.String(required=True, allow_none=False)
+    data_cube = fields.String(required=True, allow_none=False)
+    tile_id = fields.String(required=True, allow_none=False)
+    start = fields.String(required=True, allow_none=False)
+    end = fields.String(required=True, allow_none=False)
+
+
+class ListCubeItemParser(Schema):
+    bbox = fields.List(fields.String(), required=False, allow_none=False)
+    tiles = fields.String(required=False, allow_none=False)
+    start = fields.String(required=False, allow_none=False)
+    end = fields.String(required=False, allow_none=False)
+    page = fields.Integer(required=True, default=1, allow_none=False)

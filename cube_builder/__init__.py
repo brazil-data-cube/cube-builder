@@ -8,6 +8,8 @@
 
 """Python Module for Cube Builder."""
 
+from json import JSONEncoder
+
 from bdc_db.ext import BDCDatabase
 from flask import Flask
 from werkzeug.exceptions import HTTPException, InternalServerError
@@ -37,8 +39,16 @@ def setup_app(app: Flask):
         response.headers.add('Access-Control-Allow-Origin', '*')
         response.headers.add('Access-Control-Allow-Methods', '*')
         response.headers.add('Access-Control-Allow-Headers',
-                             'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Api-Key')
+                             'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-api-key')
         return response
+
+    class ImprovedJSONEncoder(JSONEncoder):
+        def default(self, o):
+            if isinstance(o, set):
+                return list(o)
+            return super(ImprovedJSONEncoder, self).default(o)
+
+    app.json_encoder = ImprovedJSONEncoder
 
     setup_error_handlers(app)
 

@@ -9,12 +9,13 @@
 """Define Cube Builder Task Activity to track celery execution."""
 
 from datetime import datetime
-from typing import List, Union
+from typing import Union
 
 # 3rdparty
 from sqlalchemy import Column, Date, String, ARRAY, Integer, JSON, Text
 from sqlalchemy.engine.result import ResultProxy
 from bdc_db.models.base_sql import BaseModel, db
+from bdc_db.models import Collection
 
 
 class Activity(BaseModel):
@@ -38,20 +39,26 @@ class Activity(BaseModel):
     traceback = Column(Text(), nullable=True)
 
     @classmethod
-    def list_merge_files(cls, collection: str, tile: str,
+    def list_merge_files(cls, collection: Collection, tile: str,
                          start_date: Union[str, datetime],
                          end_date: Union[str, datetime]) -> ResultProxy:
         """List all merge files used in data cube generation."""
+        collection_expression = 'collection_id'
+
+        if collection.composite_function_schema_id == 'IDENTITY':
+            collection_expression = 'warped_collection_id'
+
         sql = """
-        SELECT id, tile_id, band, date::VARCHAR as date, collection_id, args->'dataset'::VARCHAR AS data_set, (elem->>'link')::VARCHAR as link, status, traceback::TEXT
+        SELECT id, tile_id, band, date::VARCHAR as date, collection_id, args->'dataset'::VARCHAR AS data_set, (elem->>'link')::VARCHAR as link, status, traceback::TEXT, args->'file' AS file
           FROM cube_builder.activities
          CROSS JOIN json_array_elements(args->'assets') elem
-         WHERE collection_id = '{}'
+         WHERE {} = '{}'
            AND tile_id = '{}'
            AND date BETWEEN '{}'::DATE AND '{}'::DATE
          ORDER BY id
         """.format(
-            collection,
+            collection_expression,
+            collection.id,
             tile,
             start_date,
             end_date

@@ -14,7 +14,8 @@ from flask import current_app, request, jsonify
 # Cube Builder
 from .business import CubeBusiness
 from .forms import GrsSchemaForm, RasterSchemaForm, TemporalSchemaForm
-from .parsers import DataCubeParser, DataCubeProcessParser, PeriodParser, CubeStatusParser, ListMergeParser
+from .parsers import DataCubeParser, DataCubeProcessParser, PeriodParser, CubeStatusParser, ListMergeParser, \
+    ListCubeItemParser
 
 from .version import __version__
 
@@ -239,3 +240,19 @@ def get_cube_meta(cube_id: str):
     message = CubeBusiness.get_cube_meta(cube_id)
 
     return jsonify(message)
+
+
+@current_app.route('/cubes/<cube_id>/items', methods=['GET'])
+def list_cube_items(cube_id):
+    args = request.args.to_dict()
+
+    form = ListCubeItemParser()
+
+    errors = form.validate(args)
+
+    if errors:
+        return jsonify(errors), 400
+
+    message = CubeBusiness.list_cube_items(cube_id, **args)
+
+    return jsonify(message), 200

@@ -18,14 +18,14 @@ from bdc_db.models.base_sql import BaseModel, db
 from geoalchemy2.shape import from_shape
 from rasterio.warp import transform
 from shapely.geometry import Polygon
-from sqlalchemy import func, JSON
+from sqlalchemy import func, JSON, String
 from werkzeug.exceptions import BadRequest, Conflict, NotFound
 
 from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
                         PROVENANCE_NAME, PROVENANCE_ATTRIBUTES,
                         TOTAL_OBSERVATION_NAME, TOTAL_OBSERVATION_ATTRIBUTES)
 from .forms import (CollectionForm, GrsSchemaForm, RasterSchemaForm,
-                    TemporalSchemaForm, CompositeFunctionForm)
+                    TemporalSchemaForm, CompositeFunctionForm, BandForm, CollectionItemForm)
 from .image import validate_merges
 from .maestro import Maestro, decode_periods
 from .models import Activity
@@ -224,26 +224,26 @@ class CubeBusiness:
         return dict(ok=True)
 
     @classmethod
-    def check_for_invalid_merges(cls, datacube: str, tile: str, start_date: str, last_date: str) -> dict:
+    def check_for_invalid_merges(cls, data_cube: str, tile_id: str, start: str, end: str) -> Tuple[dict, int]:
         """List merge files used in data cube and check for invalid scenes.
 
         Args:
-            datacube: Data cube name
-            tile: Brazil Data Cube Tile identifier
-            start_date: Activity start date (period)
-            last_date: Activity End (period)
+            data_cube: Data cube name
+            tile_id: Brazil Data Cube Tile identifier
+            start: Activity start date (period)
+            end: Activity End (period)
 
         Returns:
             List of Images used in period
         """
-        cube = Collection.query().filter(Collection.id == datacube).first()
+        cube = Collection.query().filter(Collection.id == data_cube).first()
 
         if cube is None or not cube.is_cube:
-            raise NotFound('Cube {} not found'.format(datacube))
+            raise NotFound('Cube {} not found'.format(data_cube))
 
         # TODO validate schema to avoid start/end too abroad
 
-        res = Activity.list_merge_files(datacube, tile, start_date, last_date)
+        res = Activity.list_merge_files(cube, tile_id, start, end)
 
         result = validate_merges(res)
 
@@ -508,12 +508,47 @@ class CubeBusiness:
 
     @classmethod
     def get_cube(cls, datacube: str) -> dict:
-        return CollectionForm().dump(cls.get_cube_or_404(datacube))
+        cube = cls.get_cube_or_404(datacube)
+
+        temporal = db.session.query(
+            func.min(CollectionItem.composite_start).cast(String),
+            func.max(CollectionItem.composite_end).cast(String)
+        ).filter(CollectionItem.collection_id == cube.id).first()
+
+        temporal_composition = dict(
+            schema=cube.temporal_composition_schema.temporal_schema,
+            unit=cube.temporal_composition_schema.temporal_composite_unit,
+            step=cube.temporal_composition_schema.temporal_composite_t
+        )
+
+        bands = Band.query().filter(Band.collection_id == cube.id).all()
+
+        if temporal is None:
+            temporal = []
+
+        dump_collection = CollectionForm().dump(cube)
+
+        dump_collection['temporal'] = temporal
+        dump_collection['bands'] = BandForm().dump(bands, many=True)
+        dump_collection['temporal_composition'] = temporal_composition
+
+        return dump_collection
 
     @classmethod
-    def list_cubes(cls) -> Tuple[dict]:
+    def list_cubes(cls) -> List[dict]:
         cubes = Collection.query().filter(Collection.is_cube.is_(True)).all()
-        return CollectionForm().dump(cubes, many=True)
+
+        serializer = CollectionForm()
+
+        output = []
+
+        for cube in cubes:
+            cube_dict = serializer.dump(cube)
+            cube_dict['status'] = 'pending'
+
+            output.append(cube_dict)
+
+        return output
 
     @classmethod
     def list_tiles_cube(cls, datacube: str) -> List[dict]:
@@ -589,4 +624,57 @@ class CubeBusiness:
             url_stac='',
             collections=merge_activity.args['dataset'],
             satellite='',
+        )
+
+    @classmethod
+    def list_cube_items(cls, data_cube: str, bbox: str = None, start: str = None,
+                        end: str = None, tiles: str = None, page: int = 1, per_page: int = 10):
+        cube = CubeBusiness.get_cube_or_404(data_cube)
+
+        where = [
+            CollectionItem.collection_id == data_cube,
+            Tile.grs_schema_id == cube.grs_schema_id,
+            Tile.id == CollectionItem.tile_id
+        ]
+
+        if start:
+            where.append(CollectionItem.composite_start >= start)
+
+        if end:
+            where.append(CollectionItem.composite_end <= end)
+
+        if tiles:
+            tiles = tiles.split(',') if isinstance(tiles, str) else tiles
+            where.append(
+                Tile.id.in_(tiles)
+            )
+
+        if bbox:
+            xmin, ymin, xmax, ymax = [float(coord) for coord in bbox.split(',')]
+            where.append(
+                func.ST_Intersects(
+                    func.ST_SetSRID(Tile.geom_wgs84, 4326), func.ST_MakeEnvelope(xmin, ymin, xmax, ymax, 4326)
+                )
+            )
+
+        paginator = db.session.query(CollectionItem).filter(
+            *where
+        ).order_by(CollectionItem.item_date.desc()).paginate(int(page), int(per_page), error_out=False)
+
+        result = []
+
+        serializer = CollectionItemForm()
+
+        for item in paginator.items:
+            obj = serializer.dump(item)
+            obj['quicklook'] = item.quicklook
+
+            result.append(obj)
+
+        return dict(
+            items=result,
+            page=page,
+            per_page=page,
+            total_items=paginator.total,
+            total_pages=paginator.pages
         )
