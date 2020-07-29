@@ -10,9 +10,37 @@
 
 from bdc_db.ext import BDCDatabase
 from flask import Flask
-from flask_cors import CORS
+from werkzeug.exceptions import HTTPException, InternalServerError
 
 from . import celery, config
+
+
+def setup_error_handlers(app: Flask):
+    """Configure Cube Builder Error Handlers on Flask Application."""
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        """Handle exceptions."""
+        if isinstance(e, HTTPException):
+            return {'code': e.code, 'description': e.description}, e.code
+
+        app.logger.exception(e)
+
+        return {'code': InternalServerError.code,
+                'description': InternalServerError.description}, InternalServerError.code
+
+
+def setup_app(app: Flask):
+    """Configure internal middleware for Flask app."""
+    @app.after_request
+    def after_request(response):
+        """Enable CORS."""
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Methods', '*')
+        response.headers.add('Access-Control-Allow-Headers',
+                             'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Api-Key')
+        return response
+
+    setup_error_handlers(app)
 
 
 def create_app(config_name=None):
@@ -35,10 +63,8 @@ def create_app(config_name=None):
         celery_app = celery.create_celery_app(app)
         celery.celery_app = celery_app
 
-        # Setup blueprint
-        from .blueprint import bp
-        app.register_blueprint(bp)
+        from . import controller
 
-        CORS(app)
+        setup_app(app)
 
     return app

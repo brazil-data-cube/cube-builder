@@ -9,7 +9,7 @@
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
 from bdc_db.models import (Band, Collection, GrsSchema, RasterSizeSchema,
-                           TemporalCompositionSchema, db)
+                           TemporalCompositionSchema, db, CompositeFunctionSchema)
 from marshmallow.fields import Float, Integer, Method, String
 from marshmallow_sqlalchemy.schema import ModelSchema
 
@@ -105,4 +105,10 @@ class GrsSchemaForm(ModelSchema):
         """Internal meta information of form interface."""
 
         model = GrsSchema
+        sqla_session = db.session
+
+
+class CompositeFunctionForm(ModelSchema):
+    class Meta:
+        model = CompositeFunctionSchema
         sqla_session = db.session

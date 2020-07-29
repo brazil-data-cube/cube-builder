@@ -25,7 +25,7 @@ A Data Cube must have an associated grid. The example showed below will create a
 .. code-block:: shell
 
     curl --location \
-         --request POST '127.0.0.1:5000/api/cubes/create-grs-schema' \
+         --request POST '127.0.0.1:5000/cubes/create-grs-schema' \
          --header 'Content-Type: application/json' \
          --data-raw '{
             "name": "BRAZIL",
@@ -74,7 +74,7 @@ Resolution 10 meters (Sentinel 2)
 .. code-block:: shell
 
     curl --location \
-         --request POST 'http://127.0.0.1:5000/api/cubes/create-raster-schema' \
+         --request POST 'http://127.0.0.1:5000/cubes/create-raster-schema' \
          --header 'Content-Type: application/json' \
          --data-raw '{
             "grs_schema": "BRAZIL",
@@ -104,7 +104,7 @@ Resolution 30 meters (Landsat-8)
 .. code-block:: shell
 
     curl --location \
-         --request POST 'http://127.0.0.1:5000/api/cubes/create-raster-schema' \
+         --request POST 'http://127.0.0.1:5000/cubes/create-raster-schema' \
          --header 'Content-Type: application/json' \
          --data-raw '{
             "grs_schema": "BRAZIL",
@@ -134,7 +134,7 @@ Resolution 64 meters (CBERS4)
 .. code-block:: shell
 
     curl --location \
-         --request POST 'http://127.0.0.1:5000/api/cubes/create-raster-schema' \
+         --request POST 'http://127.0.0.1:5000/create-raster-size' \
          --header 'Content-Type: application/json' \
          --data-raw '{
             "grs_schema": "BRAZIL",
@@ -180,7 +180,7 @@ Use the following command to create a temporal composition schema ``Monthly``:
 
 .. code-block:: shell
 
-    curl --location --request POST '127.0.0.1:5000/api/cubes/create-temporal-schema' \
+    curl --location --request POST '127.0.0.1:5000/create-temporal-composition' \
          --header 'Content-Type: application/json' \
         --data-raw '{
             "temporal_composite_unit": "month",
@@ -210,7 +210,7 @@ Use the following command to create a temporal composition schema ``A16day``:
 
 .. code-block:: shell
 
-    curl --location --request POST '127.0.0.1:5000/api/cubes/create-temporal-schema' \
+    curl --location --request POST '127.0.0.1:5000/create-temporal-composition' \
          --header 'Content-Type: application/json' \
         --data-raw '{
             "temporal_composite_unit": "day",
@@ -245,7 +245,7 @@ In order to create data cube Landsat-8, use the following command to create data
 
 .. code-block:: shell
 
-    curl --location --request POST '127.0.0.1:5000/api/cubes/create' \
+    curl --location --request POST '127.0.0.1:5000/create' \
          --header 'Content-Type: application/json' \
          --data-raw '{
              "datacube": "LC8_30_1M",
@@ -272,7 +272,7 @@ Trigger data cube generation with following command:
 
     # Using curl (Make sure to execute cube-builder run)
     curl --location \
-         --request POST '127.0.0.1:5000/api/cubes/process' \
+         --request POST '127.0.0.1:5000/start' \
          --header 'Content-Type: application/json' \
          --data-raw '{
             "datacube": "LC8_30_1M_MED",
@@ -347,7 +347,7 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
 .. code-block:: shell
 
     # Using curl (Make sure to execute cube-builder run)
-    curl --location --request POST '127.0.0.1:5000/api/cubes/create' \
+    curl --location --request POST '127.0.0.1:5000/create' \
             --header 'Content-Type: application/json' \
             --data-raw '{
                 "datacube": "C4_64_1M",

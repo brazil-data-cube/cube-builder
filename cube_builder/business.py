@@ -8,27 +8,28 @@
 
 """Define Cube Builder business interface."""
 
-from typing import Tuple
+from datetime import datetime
+from typing import List, Tuple
 
 # 3rdparty
-from bdc_db.models import (Band, Collection, GrsSchema, RasterSizeSchema,
-                           TemporalCompositionSchema, Tile)
+from bdc_db.models import (Band, Collection, CollectionItem, CompositeFunctionSchema, GrsSchema,
+                           RasterSizeSchema, TemporalCompositionSchema, Tile)
 from bdc_db.models.base_sql import BaseModel, db
 from geoalchemy2.shape import from_shape
 from rasterio.warp import transform
 from shapely.geometry import Polygon
-from sqlalchemy import func
+from sqlalchemy import func, JSON
 from werkzeug.exceptions import BadRequest, Conflict, NotFound
 
 from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
                         PROVENANCE_NAME, PROVENANCE_ATTRIBUTES,
                         TOTAL_OBSERVATION_NAME, TOTAL_OBSERVATION_ATTRIBUTES)
 from .forms import (CollectionForm, GrsSchemaForm, RasterSchemaForm,
-                    TemporalSchemaForm)
+                    TemporalSchemaForm, CompositeFunctionForm)
 from .image import validate_merges
 from .maestro import Maestro, decode_periods
 from .models import Activity
-from .utils import get_cube_parts, get_or_create_model
+from .utils import get_cube_parts, get_or_create_model, get_cube_id
 
 
 class CubeBusiness:
@@ -282,21 +283,21 @@ class CubeBusiness:
         raise Conflict('Schema "{}" already exists.'.format(object_id))
 
     @classmethod
-    def generate_periods(cls, schema, step, start_date=None, last_date=None, **kwargs):
+    def generate_periods(cls, schema, step, start=None, end=None, **kwargs) -> List[str]:
         """Generate data cube periods using temporal composition schema.
 
         Args:
             schema: Temporal Schema (M, A)
             step: Temporal Step
-            start_date: Start date offset. Default is '2016-01-01'.
-            last_date: End data offset. Default is '2019-12-31'
+            start: Start date offset. Default is '2016-01-01'.
+            end: End data offset. Default is '2019-12-31'
             **kwargs: Optional parameters
 
         Returns:
             List of periods between start/last date
         """
-        start_date = start_date or '2016-01-01'
-        last_date = last_date or '2019-12-31'
+        start_date = start or '2016-01-01'
+        last_date = end or '2019-12-31'
 
         total_periods = decode_periods(schema, start_date, last_date, int(step))
 
@@ -481,3 +482,111 @@ class CubeBusiness:
         data['tiles'] = [t.id for t in tiles]
 
         return data, 201
+
+    @classmethod
+    def list_raster_size(cls):
+        results = RasterSizeSchema.query().all()
+
+        return RasterSchemaForm().dump(results, many=True)
+
+    @classmethod
+    def get_cube_status(cls, datacube: str) -> Tuple[dict, int]:
+        _ = cls.get_cube(datacube)
+        # TODO: Retrieve cube status based in Activity. We must check if the activity table is storing start/end dates
+        return dict(
+            finished=True,
+            start_date=str(datetime.utcnow()),
+            last_date=str(datetime.utcnow()),
+            done=0,
+            duration='',
+            collection_item=1
+        ), 200
+
+    @classmethod
+    def get_cube_or_404(cls, datacube: str) -> Collection:
+        return Collection.query().filter(Collection.is_cube.is_(True), Collection.id == datacube).first_or_404()
+
+    @classmethod
+    def get_cube(cls, datacube: str) -> dict:
+        return CollectionForm().dump(cls.get_cube_or_404(datacube))
+
+    @classmethod
+    def list_cubes(cls) -> Tuple[dict]:
+        cubes = Collection.query().filter(Collection.is_cube.is_(True)).all()
+        return CollectionForm().dump(cubes, many=True)
+
+    @classmethod
+    def list_tiles_cube(cls, datacube: str) -> List[dict]:
+        cube = cls.get_cube_or_404(datacube)
+
+        features = db.session.query(
+            func.ST_AsGeoJSON(func.ST_SetSRID(Tile.geom_wgs84, 4326), 6, 3).cast(JSON)
+        ).distinct(Tile.id).filter(
+            CollectionItem.tile_id == Tile.id,
+            CollectionItem.collection_id == cube.id,
+            Tile.grs_schema_id == cube.grs_schema_id
+        ).all()
+
+        return [feature[0] for feature in features]
+
+    @classmethod
+    def get_grs_schema(cls, grs_id: str) -> dict:
+        grs = GrsSchema.query().get_or_404(grs_id)
+
+        return GrsSchemaForm().dump(grs)
+
+    @classmethod
+    def list_grs_schemas(cls) -> dict:
+        grs_list = GrsSchema.query().all()
+
+        return GrsSchemaForm().dump(grs_list, many=True)
+
+    @classmethod
+    def list_temporal_composition(cls) -> List[dict]:
+        temporal_compositions = TemporalCompositionSchema.query().all()
+
+        return TemporalSchemaForm().dump(temporal_compositions, many=True)
+
+    @classmethod
+    def list_composite_functions(cls) -> List[dict]:
+        compositions = CompositeFunctionSchema.query().all()
+
+        return CompositeFunctionForm().dump(compositions, many=True)
+
+    @classmethod
+    def list_cube_items_tiles(cls, cube: str) -> List[str]:
+        """Retrieve the tiles from collection items built."""
+        tiles = db.session.query(CollectionItem.tile_id)\
+            .filter(CollectionItem.collection_id == cube)\
+            .group_by(CollectionItem.tile_id)\
+            .all()
+
+        return [t.tile_id for t in tiles]
+
+    @classmethod
+    def get_cube_meta(cls, cube_name: str) -> dict:
+        """Retrieve the data cube metadata used to build a data cube items.
+
+        The metadata includes:
+        - STAC provider url
+        - Collection used to generate.
+
+        Note:
+            When there is no data cube item generated yet, raises BadRequest.
+        """
+        cube = CubeBusiness.get_cube_or_404(cube_name)
+
+        identity_cube = get_cube_id(cube.id)
+
+        merge_activity: Activity = Activity.query()\
+            .filter(Activity.activity_type == 'MERGE', Activity.warped_collection_id == identity_cube)\
+            .first()
+
+        if merge_activity is None:
+            raise BadRequest('There is no data cube activity')
+
+        return dict(
+            url_stac='',
+            collections=merge_activity.args['dataset'],
+            satellite='',
+        )

@@ -94,5 +94,18 @@ class PeriodParser(Schema):
 
     schema = fields.String(required=True, allow_none=False)
     step = fields.Integer(required=True)
-    start_date = fields.String(required=False)
-    last_date = fields.String(required=False)
+    start = fields.String(required=False)
+    end = fields.String(required=False)
+
+
+class CubeStatusParser(Schema):
+    """Parser for access data cube status resource."""
+
+    datacube = fields.String(required=True, allow_none=False)
+
+
+class ListMergeParser(Schema):
+    datacube = fields.String(required=True, allow_none=False)
+    tile = fields.String(required=True, allow_none=False)
+    start_date = fields.String(required=True, allow_none=False)
+    last_date = fields.String(required=True, allow_none=False)
