@@ -17,6 +17,8 @@ from sqlalchemy.engine.result import ResultProxy
 from bdc_db.models.base_sql import BaseModel, db
 from bdc_db.models import Collection
 
+from cube_builder.utils import get_cube_id
+
 
 class Activity(BaseModel):
     """Define a SQLAlchemy model to track celery execution."""
@@ -42,11 +44,18 @@ class Activity(BaseModel):
     def list_merge_files(cls, collection: Collection, tile: str,
                          start_date: Union[str, datetime],
                          end_date: Union[str, datetime]) -> ResultProxy:
-        """List all merge files used in data cube generation."""
-        collection_expression = 'collection_id'
+        """List all merge files used in data cube generation.
 
-        if collection.composite_function_schema_id == 'IDENTITY':
-            collection_expression = 'warped_collection_id'
+        Notes:
+            In order to seek all images used, we seek for the collection IDENTITY.
+
+        TODO: Convert this function to SQLAlchemy expression instead raw SQL.
+
+        Returns:
+            Retrieves a ResultProxy with merges found.
+        """
+        collection_expression = 'warped_collection_id'
+        collection_id = get_cube_id(collection.id)
 
         sql = """
         SELECT id, tile_id, band, date::VARCHAR as date, collection_id, args->'dataset'::VARCHAR AS data_set, (elem->>'link')::VARCHAR as link, status, traceback::TEXT, args->'file' AS file
@@ -58,7 +67,7 @@ class Activity(BaseModel):
          ORDER BY id
         """.format(
             collection_expression,
-            collection.id,
+            collection_id,
             tile,
             start_date,
             end_date

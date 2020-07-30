@@ -628,7 +628,7 @@ class CubeBusiness:
             raise BadRequest('There is no data cube activity')
 
         return dict(
-            url_stac='',
+            url_stac=merge_activity.args.get('url_stac'),
             collections=merge_activity.args['dataset'],
             satellite='',
         )
