@@ -22,7 +22,7 @@ from sqlalchemy_utils import refresh_materialized_view
 from .celery import celery_app
 from .constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME
 from .models import Activity
-from .utils import DataCubeFragments, blend as blend_processing, build_cube_path, post_processing_quality
+from .utils import DataCubeFragments, blend as blend_processing, build_cube_path, post_processing_quality, get_cube_id
 from .utils import compute_data_set_stats, get_or_create_model
 from .utils import merge as merge_processing
 from .utils import publish_datacube, publish_merge
@@ -169,6 +169,8 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         """
         return _merge['band'] == band_map['quality'] and not _merge['collection_id'].endswith('STK')
 
+    composite_functions = kwargs.get('composite_functions', [])
+
     for _merge in merges:
         # Skip quality generation for MEDIAN, AVG
         if _merge['band'] in activities and _merge['args']['date'] in activities[_merge['band']]['scenes'] or \
@@ -184,6 +186,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         activity['period'] = _merge['period']
         activity['tile_id'] = _merge['tile_id']
         activity['nodata'] = _merge['args'].get('nodata')
+        activity['composite_functions'] = composite_functions
 
         # Map efficacy/cloud ratio to the respective merge date before pass to blend
         efficacy, cloudratio, quality_file = quality_date_stats[_merge['date']]
@@ -272,10 +275,10 @@ def publish(blends, band_map, **kwargs):
             blend_files[blend_result['band']] = blend_result['blends']
 
         if blend_result.get('clear_observation_file'):
-            blend_files[CLEAR_OBSERVATION_NAME] = {composite_function: blend_result['clear_observation_file']}
+            blend_files[CLEAR_OBSERVATION_NAME] = blend_result['clear_observation_file']
 
         if blend_result.get('total_observation'):
-            blend_files[TOTAL_OBSERVATION_NAME] = {composite_function: blend_result['total_observation']}
+            blend_files[TOTAL_OBSERVATION_NAME] = blend_result['total_observation']
 
         if blend_result.get('provenance'):
             blend_files[PROVENANCE_NAME] = {composite_function: blend_result['provenance']}

@@ -9,7 +9,7 @@
 """Define Cube Builder parsers."""
 
 from marshmallow import Schema, fields, pre_load
-from marshmallow.validate import OneOf, Regexp, ValidationError
+from marshmallow.validate import OneOf, Regexp, ValidationError, ContainsOnly
 from rasterio.dtypes import dtype_ranges
 
 
@@ -42,7 +42,8 @@ class DataCubeParser(Schema):
     resolution = fields.Integer(required=True, allow_none=False)
     temporal_schema = fields.String(required=True, allow_none=False)
     bands_quicklook = fields.List(fields.String, required=True, allow_none=False)
-    composite_function = fields.String(required=True, allow_none=False, validate=OneOf(['MED', 'STK', 'IDENTITY']))
+    composite_function = fields.List(fields.String(), required=True,
+                                     allow_none=False, validate=ContainsOnly(['MED', 'STK', 'IDENTITY']))
     bands = fields.Nested(BandDefinition, required=True, allow_none=False, many=True)
     quality_band = fields.String(required=True, allow_none=False)
     indexes = fields.Nested(BandDefinition, many=True)
@@ -87,6 +88,16 @@ class DataCubeProcessParser(Schema):
     bands = fields.List(fields.String, required=False)
     force = fields.Boolean(required=False, default=False)
     with_rgb = fields.Boolean(required=False, default=False)
+    url_stac = fields.String(required=False, allow_none=False)
+    composite_functions = fields.List(fields.String(), required=False, allow_none=False)
+
+    @pre_load
+    def pre_load_data(self, data: dict, **kwargs):
+        # When 'collections' is only a string, transforms into list one-element
+        if data.get('collections') and isinstance(data['collections'], str):
+            data['collections'] = [data['collections']]
+
+        return data
 
 
 class PeriodParser(Schema):

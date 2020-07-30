@@ -11,9 +11,10 @@
 # Python Native
 import logging
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 # 3rdparty
 import numpy
@@ -26,6 +27,7 @@ from rasterio.warp import Resampling, reproject
 
 # BDC Scripts
 from .config import Config
+from .operations import factory
 
 
 # Constant to define required bands to generate both NDVI and EVI
@@ -395,6 +397,7 @@ class SmartDataSet:
 
     This class is class helper to avoid memory leak of opened data set in memory.
     """
+    dataset = Union[rasterio.io.DatasetReader, rasterio.io.DatasetWriter]
 
     def __init__(self, file_path: str, mode='r', **properties):
         """Initialize SmartDataSet definition and open rasterio data set."""
@@ -412,6 +415,10 @@ class SmartDataSet:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Close data set on exit with clause."""
         self.close()
+
+    @property
+    def profile(self):
+        return self.dataset.profile
 
     def close(self):
         """Close rasterio data set."""
@@ -576,7 +583,23 @@ def blend(activity, band_map, build_clear_observation=False):
     # Create directory
     cube_file.parent.mkdir(parents=True, exist_ok=True)
 
-    median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
+    cube_function = DataCubeFragments(datacube).composite_function
+
+    functions = set(activity.get('composite_functions', []))
+
+    if cube_function != 'STK':
+        functions.add(cube_function)
+
+    operations = []
+
+    for composite_function in functions:
+        operation_klass = factory.get_operation(composite_function)
+
+        data_cube_with_function = get_cube_id(datacube, operation_klass.composite_function)
+        destination_path = build_cube_path(data_cube_with_function, band, period, tile_id)
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+
+        operations.append(operation_klass(data_cube_with_function, destination_path, shape=(height, width), profile=profile, nodata=nodata,))
 
     if build_clear_observation:
         logging.warning('Creating and computing Clear Observation (ClearOb) file...')
@@ -674,11 +697,9 @@ def blend(activity, band_map, build_clear_observation=False):
             # Update what was done.
             notdonemask = notdonemask * bmask
 
-        median = numpy.ma.median(stackMA, axis=0).data
-
-        median[notdonemask.astype(numpy.bool_)] = nodata
-
-        median_raster[window.row_off: row_offset, window.col_off: col_offset] = median.astype(profile['dtype'])
+        # Apply composite function filter on Stack valid raster
+        for operation in operations:
+            operation(stackMA, window=window, nodata=nodata, notdonemask=notdonemask)
 
         if build_clear_observation:
             count_raster = numpy.ma.count(stackMA, axis=0)
@@ -717,24 +738,11 @@ def blend(activity, band_map, build_clear_observation=False):
             dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
             dataset.update_tags(ns='rio_overview', resampling='nearest')
 
-        activity['clear_observation_file'] = str(clear_ob_data_set.path)
-        activity['total_observation'] = str(total_observation_file)
+        activity['clear_observation_file'] = {cube_function: str(clear_ob_data_set.path)}
+        activity['total_observation'] = {cube_function: str(total_observation_file)}
 
-    cube_function = DataCubeFragments(datacube).composite_function
-
-    if cube_function == 'MED':
-        # Close and upload the MEDIAN dataset
-        with rasterio.open(str(cube_file), 'w', **profile) as ds_median:
-            ds_median.nodata = nodata
-            ds_median.write_band(1, median_raster)
-            ds_median.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-            ds_median.update_tags(ns='rio_overview', resampling='nearest')
-    else:
-        with rasterio.open(str(cube_file), 'w', **profile) as stack_dataset:
-            stack_dataset.nodata = nodata
-            stack_dataset.write_band(1, stack_raster)
-            stack_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-            stack_dataset.update_tags(ns='rio_overview', resampling='nearest')
+    if cube_function == 'STK':
+        save_as_cog(str(cube_file), stack_raster, 'w', **profile)
 
         if build_clear_observation:
             provenance_file = build_cube_path(datacube, PROVENANCE_NAME, period, tile_id)
@@ -749,10 +757,33 @@ def blend(activity, band_map, build_clear_observation=False):
         cube_function: str(cube_file)
     }
 
+    for operation in operations:
+        operation.persist()
+
+        if build_clear_observation:
+            total_observation_fn = str(total_observation_file).replace(datacube, operation.datacube)
+            copy_file(str(total_observation_file), total_observation_fn)
+            clear_observation_fn = str(clear_ob_file_path).replace(datacube, operation.datacube)
+            copy_file(str(clear_ob_file_path), clear_observation_fn)
+            activity['total_observation'][operation.composite_function] = total_observation_fn
+            activity['clear_observation_file'][operation.composite_function] = clear_observation_fn
+
+        activity['blends'][operation.composite_function] = str(operation.file_path)
+
     activity['efficacy'] = efficacy
     activity['cloudratio'] = cloudcover
 
     return activity
+
+
+def copy_file(source: Union[str, Path], destination: Union[str, Path]):
+    """Copy file to destination directory.
+
+    Notes:
+        It does not raise error for Same file
+    """
+    if str(source) != str(destination):
+        shutil.copy(str(source), str(destination))
 
 
 def generate_rgb(rgb_file: Path, qlfiles: List[str]):
@@ -802,7 +833,10 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio,
 
     cube_parts = get_cube_parts(cube.id)
 
-    for composite_function in [cube_parts.composite_function]:
+    composite_functions = kwargs.get('composite_functions', [])
+    composite_functions.extend([cube_parts.composite_function])
+
+    for composite_function in set(composite_functions):
         item_datacube = '{}_{}'.format("_".join(cube.id.split('_')[:-1]), composite_function)
 
         item_id = '{}_{}_{}'.format(item_datacube, tile_id, period)
@@ -869,7 +903,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio,
 
                 # Band does not exists on model
                 if not band_model:
-                    logging.warning('Band {} of {} does not exist on database. Skipping'.format(band, cube.id))
+                    logging.warning('Band {} of {} does not exist on database. Skipping'.format(band, item_datacube))
                     continue
 
                 asset_relative_path = scenes[band][composite_function].replace(Config.DATA_DIR, '')

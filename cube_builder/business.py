@@ -186,18 +186,19 @@ class CubeBusiness:
 
             cube_serialized = [cube]
 
-            if params['composite_function'] != 'IDENTITY':
-                temporal_schema = TemporalCompositionSchema.query() \
-                    .filter(TemporalCompositionSchema.id == params['temporal_schema']) \
-                    .first_or_404()
+            for composite_function in params['composite_function']:
+                if composite_function != 'IDENTITY':
+                    temporal_schema = TemporalCompositionSchema.query() \
+                        .filter(TemporalCompositionSchema.id == params['temporal_schema']) \
+                        .first_or_404()
 
-                temporal_str = f'{temporal_schema.temporal_composite_t}{temporal_schema.temporal_composite_unit[0].upper()}'
+                    temporal_str = f'{temporal_schema.temporal_composite_t}{temporal_schema.temporal_composite_unit[0].upper()}'
 
-                cube_name_composite = f'{cube_name}_{temporal_str}_{params["composite_function"]}'
+                    cube_name_composite = f'{cube_name}_{temporal_str}_{composite_function}'
 
-                # Create data cube with temporal composition
-                cube_composite = cls._create_cube_definition(cube_name_composite, params)
-                cube_serialized.append(cube_composite)
+                    # Create data cube with temporal composition
+                    cube_composite = cls._create_cube_definition(cube_name_composite, params)
+                    cube_serialized.append(cube_composite)
 
         db.session.commit()
 
@@ -335,7 +336,7 @@ class CubeBusiness:
         ).first()
 
         if raster_schema is None:
-            model = RasterSizeSchema(
+            raster_schema = RasterSizeSchema(
                 id=raster_schema_id,
                 raster_size_x=raster_size_x,
                 raster_size_y=raster_size_y,
@@ -345,11 +346,9 @@ class CubeBusiness:
                 chunk_size_t=1
             )
 
-            model.save()
+            raster_schema.save()
 
-            return RasterSchemaForm().dump(model), 201
-
-        raise Conflict('RasterSchema "{}" already exists.'.format(raster_schema_id))
+        return RasterSchemaForm().dump(raster_schema), 201
 
     @classmethod
     def create_grs_schema(cls, name, description, projection, meridian, degreesx, degreesy, bbox):
@@ -568,7 +567,15 @@ class CubeBusiness:
     def get_grs_schema(cls, grs_id: str) -> dict:
         grs = GrsSchema.query().get_or_404(grs_id)
 
-        return GrsSchemaForm().dump(grs)
+        tiles = db.session.query(
+            Tile.id,
+            func.ST_AsGeoJSON(func.ST_SetSRID(Tile.geom_wgs84, 4326), 6, 3).cast(JSON).label('geom_wgs84')
+        ).filter(Tile.grs_schema_id == grs_id).all()
+
+        dump_grs = GrsSchemaForm().dump(grs)
+        dump_grs['tiles'] = [dict(id=t.id, geom_wgs84=t.geom_wgs84) for t in tiles]
+
+        return dump_grs
 
     @classmethod
     def list_grs_schemas(cls) -> dict:

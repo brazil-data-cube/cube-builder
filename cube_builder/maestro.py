@@ -187,7 +187,8 @@ class Maestro:
     mosaics = dict()
     cached_stacs = dict()
 
-    def __init__(self, datacube: str, collections: List[str], tiles: List[str], start_date: str, end_date: str, **properties):
+    def __init__(self, datacube: str, collections: List[str], tiles: List[str], start_date: str, end_date: str,
+                 **properties):
         """Build Maestro interface."""
         self.params = dict(
             datacube=datacube,
@@ -206,8 +207,11 @@ class Maestro:
         self.properties = properties
         self.params['force'] = force
 
-    def get_stac(self, collection: str) -> STAC:
+    def get_stac(self, collection: str, external_stac=None) -> STAC:
         """Retrieve STAC client which provides the given collection.
+
+        Notes:
+            When `external_stac` is set, this method does not search in default STAC.
 
         By default, it searches for given collection on Brazil Data Cube STAC.
         When collection not found, search on INPE STAC.
@@ -218,6 +222,10 @@ class Maestro:
         Returns:
             STAC client
         """
+        # Use given url stac for custom providers.
+        if external_stac is not None:
+            return self._stac(collection, self.properties.get('url_stac'))
+
         try:
             return self._stac(collection, Config.STAC_URL)
         except RuntimeError:
@@ -303,6 +311,22 @@ class Maestro:
     def orchestrate(self):
         """Orchestrate datacube defintion and prepare temporal resolutions."""
         self.datacube = Collection.query().filter(Collection.id == self.params['datacube']).one()
+
+        # Check cube functions
+        if self.datacube.composite_function_schema_id != 'IDENTITY' and self.properties.get('composite_functions'):
+            for fn in self.properties['composite_functions']:
+                if fn == 'IDENTITY':
+                    continue
+
+                if fn == self.datacube.composite_function_schema_id:
+                    self.properties['composite_functions'].remove(fn)
+                    continue
+
+                cube_name = get_cube_id(self.params['datacube'], fn)
+                cube = Collection.query().filter(Collection.id == cube_name).first()
+
+                if cube is None:
+                    raise RuntimeError(f'The function "{fn}" were given, but there is no "{cube_name}" in database. Make sure to create before dispatch.')
 
         temporal_schema = self.datacube.temporal_composition_schema.temporal_schema
         temporal_step = self.datacube.temporal_composition_schema.temporal_composite_t
@@ -467,6 +491,8 @@ class Maestro:
                                     nodata=band.fill,
                                     bands=band_str_list,
                                 )
+                                # Store external parameters in activity
+                                properties.update(self.properties)
 
                                 activity = get_or_create_activity(
                                     cube=self.datacube.id,
@@ -514,7 +540,7 @@ class Maestro:
             scenes[band.name] = dict()
 
         for dataset in self.params['collections']:
-            stac = self.get_stac(dataset)
+            stac = self.get_stac(dataset, external_stac=self.properties.get('url_stac'))
 
             token = ''
 

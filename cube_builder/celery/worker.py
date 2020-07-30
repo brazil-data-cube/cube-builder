@@ -23,7 +23,10 @@ celery = create_celery_app(app)
 def load_models(*args, **kwargs):
     """Load celery models when worker is ready."""
     from celery.backends.database import SessionManager
+    from ..operations import factory
 
     session = SessionManager()
     engine = session.get_engine(celery.backend.url)
     session.prepare_models(engine)
+
+    factory.initialize()
