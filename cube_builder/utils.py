@@ -573,18 +573,10 @@ def blend(activity, band_map, build_clear_observation=False):
     datacube = activity.get('datacube')
     period = activity.get('period')
     tile_id = activity.get('tile_id')
-    file_name = '{}_{}_{}'.format(datacube, tile_id, period)
-    output_name = '{}_{}'.format(file_name, band)
-
-    absolute_prefix_path = Path(Config.DATA_DIR) / 'Repository/Mosaic'
-
-    cube_file = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(datacube, tile_id, period, output_name)
-
-    # Create directory
-    cube_file.parent.mkdir(parents=True, exist_ok=True)
 
     cube_function = DataCubeFragments(datacube).composite_function
 
+    # Set of given composite functions to generate
     functions = set(activity.get('composite_functions', []))
 
     if cube_function != 'STK':
@@ -599,7 +591,18 @@ def blend(activity, band_map, build_clear_observation=False):
         destination_path = build_cube_path(data_cube_with_function, band, period, tile_id)
         destination_path.parent.mkdir(parents=True, exist_ok=True)
 
-        operations.append(operation_klass(data_cube_with_function, destination_path, shape=(height, width), profile=profile, nodata=nodata,))
+        operations.append(operation_klass(data_cube_with_function, destination_path,
+                                          shape=(height, width), profile=profile, nodata=nodata,))
+
+    file_name = '{}_{}_{}'.format(datacube, tile_id, period)
+    output_name = '{}_{}'.format(file_name, band)
+
+    absolute_prefix_path = Path(Config.DATA_DIR) / 'Repository/Mosaic'
+
+    cube_file = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(datacube, tile_id, period, output_name)
+
+    # Create directory
+    cube_file.parent.mkdir(parents=True, exist_ok=True)
 
     if build_clear_observation:
         logging.warning('Creating and computing Clear Observation (ClearOb) file...')

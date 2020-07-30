@@ -11,6 +11,7 @@
 # Python
 import datetime
 from contextlib import contextmanager
+from copy import deepcopy
 from time import time
 from typing import List
 
@@ -314,7 +315,15 @@ class Maestro:
 
         # Check cube functions
         if self.datacube.composite_function_schema_id != 'IDENTITY' and self.properties.get('composite_functions'):
-            for fn in self.properties['composite_functions']:
+            if 'STK' in self.properties['composite_functions']:
+                self.params['datacube'] = get_cube_id(self.params['datacube'], 'STK')
+                self.properties['composite_functions'].append(self.datacube.composite_function_schema_id)
+                self.datacube = Collection.query().filter(Collection.id == self.params['datacube']).one()
+                self.properties['composite_functions'].remove('STK')
+
+            copy_functions = deepcopy(self.properties['composite_functions'])
+
+            for fn in copy_functions:
                 if fn == 'IDENTITY':
                     continue
 
