@@ -86,6 +86,8 @@ def warp_merge(activity, band_map, force=False):
     merge_file_path = build_cube_path(record.warped_collection_id, record.band,
                                       merge_date.replace(data_set, ''), tile_id)
 
+    reused = False
+
     # Reuse merges already done. Rebuild only with flag ``--force``
     if not force and merge_file_path.exists() and merge_file_path.is_file():
         efficacy = cloudratio = 0
@@ -93,6 +95,8 @@ def warp_merge(activity, band_map, force=False):
         if activity['band'] == band_map['quality']:
             # When file exists, compute the file statistics
             efficacy, cloudratio = compute_data_set_stats(str(merge_file_path))
+
+        reused = True
 
         activity['args']['file'] = str(merge_file_path)
         activity['args']['efficacy'] = efficacy
@@ -137,6 +141,8 @@ def warp_merge(activity, band_map, force=False):
         record.args['cloudratio']
     ))
 
+    activity['args']['reused'] = reused
+
     return activity
 
 
@@ -152,15 +158,20 @@ def prepare_blend(merges, band_map: dict, **kwargs):
 
     # Prepare map of efficacy/cloud_ratio based in quality merge result
     quality_date_stats = {
-        m['date']: (m['args']['efficacy'], m['args']['cloudratio'], m['args']['file']) for m in merges if m['band'] == band_map['quality']
+        m['date']: (m['args']['efficacy'], m['args']['cloudratio'], m['args']['file'], m['args']['reused'])
+        for m in merges if m['band'] == band_map['quality']
     }
 
     for period, stats in quality_date_stats.items():
-        _, _, quality_file = stats
+        _, _, quality_file, was_reused = stats
 
-        logging.info(f'Applying post-processing in {str(quality_file)}')
-        post_processing_quality(quality_file, list(band_map.values()), merges[0]['warped_collection_id'],
-                                period, merges[0]['tile_id'], band_map['quality'])
+        # Do not apply post-processing on reused data cube since it may be already processed.
+        if not was_reused:
+            logging.info(f'Applying post-processing in {str(quality_file)}')
+            post_processing_quality(quality_file, list(band_map.values()), merges[0]['warped_collection_id'],
+                                    period, merges[0]['tile_id'], band_map['quality'])
+        else:
+            logging.info(f'Skipping post-processing {str(quality_file)}')
 
     def _is_not_stk(_merge):
         """Control flag to generate cloud mask.
@@ -186,7 +197,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         activity['nodata'] = _merge['args'].get('nodata')
 
         # Map efficacy/cloud ratio to the respective merge date before pass to blend
-        efficacy, cloudratio, quality_file = quality_date_stats[_merge['date']]
+        efficacy, cloudratio, quality_file, _ = quality_date_stats[_merge['date']]
         activity['scenes'][_merge['args']['date']]['efficacy'] = efficacy
         activity['scenes'][_merge['args']['date']]['cloudratio'] = cloudratio
 
@@ -301,8 +312,8 @@ def publish(blends, band_map, **kwargs):
         publish_merge(quick_look_bands, wcube, tile_id, period, date, definition, band_map)
 
     try:
-        refresh_materialized_view(db.session, AssetMV.__table__)
+        # refresh_materialized_view(db.session, AssetMV.__table__)
         db.session.commit()
-        logging.info('View refreshed.')
+        # logging.info('View refreshed.')
     except:
         db.session.rollback()

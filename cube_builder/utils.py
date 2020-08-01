@@ -365,7 +365,7 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
         nodata = profile.get('nodata', 255)
         raster_merge = merge_dataset.read(1)
 
-    bands_without_quality = [b for b in bands if b != quality_band and b.lower() not in ('ndvi', 'evi', )]
+    bands_without_quality = [b for b in bands if b != quality_band and b.lower() not in ('ndvi', 'evi', 'cnc', TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME)]
 
     for _, block in blocks:
         nodata_positions = []
