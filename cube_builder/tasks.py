@@ -83,8 +83,8 @@ def warp_merge(activity, band_map, force=False):
     tile_id = activity['tile_id']
     data_set = activity['args'].get('dataset')
 
-    merge_file_path = build_cube_path(record.warped_collection_id, record.band,
-                                      merge_date.replace(data_set, ''), tile_id)
+    merge_file_path = build_cube_path(record.warped_collection_id, merge_date.replace(data_set, ''),
+                                      tile_id, record.band)
 
     reused = False
 

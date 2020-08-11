@@ -10,10 +10,9 @@
 
 # Python Native
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 # 3rdparty
 import numpy
@@ -124,7 +123,7 @@ class DataCubeFragments(list):
     def parse(datacube: str) -> List[str]:
         cube_fragments = datacube.split('_')
 
-        if len(cube_fragments) > 4 or len(cube_fragments) < 2:
+        if len(cube_fragments) > 5 or len(cube_fragments) < 3:
             abort(400, 'Invalid data cube name. "{}"'.format(datacube))
 
         return cube_fragments
@@ -139,10 +138,10 @@ class DataCubeFragments(list):
 
         TODO: Add reference to document User Guide - Convention Data Cube Names
         """
-        if len(self) < 4:
+        if len(self) < 5:
             return 'IDENTITY'
 
-        return self[-1]
+        return self[-2]
 
 
 def get_cube_parts(datacube: str) -> DataCubeFragments:
@@ -155,18 +154,18 @@ def get_cube_id(datacube: str, func=None):
     cube_fragments = get_cube_parts(datacube)
 
     if not func or func.upper() == 'IDENTITY':
-        return '_'.join(cube_fragments[:2])
+        return f"{'_'.join(cube_fragments[:2])}_{cube_fragments[-1]}"
 
     # Ensure that data cube with composite function must have a
     # temporal resolution
-    if len(cube_fragments) == 2:
+    if len(cube_fragments) <= 3:
         raise ValueError('Invalid cube id without temporal resolution. "{}"'.format(datacube))
 
     # When data cube have temporal resolution (S2_10_1M) use it
     # Otherwise, just remove last cube part (composite function)
-    cube = datacube if len(cube_fragments) == 3 else '_'.join(cube_fragments[:-1])
+    cube = datacube if len(cube_fragments) == 4 else '_'.join(cube_fragments[:-2])
 
-    return '{}_{}'.format(cube, func)
+    return f'{cube}_{func}_{cube_fragments[-1]}'
 
 
 def save_as_cog(destination: str, raster, mode='w', **profile):
@@ -374,7 +373,7 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
         col_offset = block.col_off + block.width
 
         for band in bands_without_quality:
-            band_file = build_cube_path(get_cube_id(cube), band, date, tile_id)
+            band_file = build_cube_path(get_cube_id(cube), date, tile_id, band=band)
 
             with rasterio.open(str(band_file)) as ds:
                 raster = ds.read(1, window=block)
@@ -566,12 +565,8 @@ def blend(activity, band_map, build_clear_observation=False):
     datacube = activity.get('datacube')
     period = activity.get('period')
     tile_id = activity.get('tile_id')
-    file_name = '{}_{}_{}'.format(datacube, tile_id, period)
-    output_name = '{}_{}'.format(file_name, band)
 
-    absolute_prefix_path = Path(Config.DATA_DIR) / 'Repository/Mosaic'
-
-    cube_file = absolute_prefix_path / '{}/{}/{}/{}.tif'.format(datacube, tile_id, period, output_name)
+    cube_file = build_cube_path(datacube, period, tile_id, band, suffix='.tif')
 
     # Create directory
     cube_file.parent.mkdir(parents=True, exist_ok=True)
@@ -580,13 +575,13 @@ def blend(activity, band_map, build_clear_observation=False):
 
     if build_clear_observation:
         logging.warning('Creating and computing Clear Observation (ClearOb) file...')
-        clear_ob_file_path = absolute_prefix_path / '{}/{}/{}/{}_{}.tif'.format(datacube, tile_id, period,
-                                                                                file_name, CLEAR_OBSERVATION_NAME)
+
+        clear_ob_file_path = build_cube_path(datacube, period, tile_id, band=CLEAR_OBSERVATION_NAME, suffix='.tif')
 
         clear_ob_profile = profile.copy()
         clear_ob_profile['dtype'] = CLEAR_OBSERVATION_ATTRIBUTES['data_type']
         clear_ob_profile.pop('nodata', None)
-        clear_ob_data_set = SmartDataSet(clear_ob_file_path, 'w', **clear_ob_profile)
+        clear_ob_data_set = SmartDataSet(str(clear_ob_file_path), 'w', **clear_ob_profile)
 
     provenance_array = numpy.full((height, width), dtype=numpy.int16, fill_value=-1)
 
@@ -630,7 +625,7 @@ def blend(activity, band_map, build_clear_observation=False):
 
             # Get current observation file name
             file_name = Path(bandlist[order].name).stem
-            file_date = file_name.split('_')[3]
+            file_date = file_name.split('_')[4]
             day_of_year = datetime.strptime(file_date, '%Y-%m-%d').timetuple().tm_yday
 
             # Find all no data in destination STACK image
@@ -706,7 +701,7 @@ def blend(activity, band_map, build_clear_observation=False):
         clear_ob_data_set.close()
         logging.warning('Clear Observation (ClearOb) file generated successfully.')
 
-        total_observation_file = build_cube_path(datacube, TOTAL_OBSERVATION_NAME, period, tile_id)
+        total_observation_file = build_cube_path(datacube, period, tile_id, band=TOTAL_OBSERVATION_NAME)
         total_observation_profile = profile.copy()
         total_observation_profile.pop('nodata', None)
         total_observation_profile['dtype'] = 'uint8'
@@ -737,7 +732,7 @@ def blend(activity, band_map, build_clear_observation=False):
             stack_dataset.update_tags(ns='rio_overview', resampling='nearest')
 
         if build_clear_observation:
-            provenance_file = build_cube_path(datacube, PROVENANCE_NAME, period, tile_id)
+            provenance_file = build_cube_path(datacube, period, tile_id, PROVENANCE_NAME)
             provenance_profile = profile.copy()
             provenance_profile.pop('nodata', -1)
             provenance_profile['dtype'] = PROVENANCE_ATTRIBUTES['data_type']
@@ -803,7 +798,7 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio,
     cube_parts = get_cube_parts(cube.id)
 
     for composite_function in [cube_parts.composite_function]:
-        item_datacube = '{}_{}'.format("_".join(cube.id.split('_')[:-1]), composite_function)
+        item_datacube = get_cube_id(cube.id, composite_function)
 
         item_id = '{}_{}_{}'.format(item_datacube, tile_id, period)
 
@@ -811,32 +806,24 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio,
 
         cube_bands = Band.query().filter(Band.collection_id == _datacube).all()
 
-        quick_look_name = '{}_{}_{}'.format(_datacube, tile_id, period)
-
-        quick_look_relpath = 'Repository/Mosaic/{}/{}/{}/{}'.format(
-            _datacube, tile_id, period, quick_look_name
-        )
-        quick_look_file = os.path.join(
-            Config.DATA_DIR,
-            quick_look_relpath
-        )
+        quick_look_file = build_cube_path(_datacube, period, tile_id, suffix=None)
 
         ql_files = []
         for band in bands:
             ql_files.append(scenes[band][composite_function])
 
-        quick_look_file = generate_quick_look(quick_look_file, ql_files)
+        quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
         if kwargs.get('with_rgb'):
-            rgb_file = build_cube_path(cube.id, 'RGB', period, tile_id)
+            rgb_file = build_cube_path(cube.id, period, tile_id, 'RGB')
             generate_rgb(rgb_file, ql_files)
 
         if has_vegetation_index_support(scenes.keys(), band_map):
             # Generate VI
             evi_name = band_map.get('evi', 'EVI')
-            evi_path = build_cube_path(cube.id, evi_name, period, tile_id)
+            evi_path = build_cube_path(cube.id, period, tile_id, band=evi_name)
             ndvi_name = band_map.get('ndvi', 'NDVI')
-            ndvi_path = build_cube_path(cube.id, ndvi_name, period, tile_id)
+            ndvi_path = build_cube_path(cube.id, period, tile_id, band=ndvi_name)
 
             generate_evi_ndvi(scenes[band_map['red']][composite_function],
                               scenes[band_map['nir']][composite_function],
@@ -901,14 +888,8 @@ def publish_merge(bands, datacube, tile_id, period, date, scenes, band_map):
     TODO: Review it with publish_datacube
     """
     item_id = '{}_{}_{}'.format(datacube.id, tile_id, date)
-    quick_look_name = '{}_{}_{}'.format(datacube.id, tile_id, date)
 
-    quick_look_file = os.path.join(
-        Config.DATA_DIR,
-        'Repository/Warped/{}/{}/{}/{}'.format(
-            datacube.id, tile_id, date, quick_look_name
-        )
-    )
+    quick_look_file = build_cube_path(datacube.id, date, tile_id, suffix=None)
 
     cube_bands = Band.query().filter(Band.collection_id == datacube.id).all()
     raster_size_schemas = datacube.raster_size_schemas
@@ -917,7 +898,7 @@ def publish_merge(bands, datacube, tile_id, period, date, scenes, band_map):
     for band in bands:
         ql_files.append(scenes['ARDfiles'][band])
 
-    quick_look_file = generate_quick_look(quick_look_file, ql_files)
+    quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
     Asset.query().filter(Asset.collection_item_id == item_id).delete()
 
@@ -926,9 +907,9 @@ def publish_merge(bands, datacube, tile_id, period, date, scenes, band_map):
     # Generate VI
     if has_vegetation_index_support(scenes['ARDfiles'].keys(), band_map):
         evi_name = band_map.get('evi', 'EVI')
-        evi_path = build_cube_path(datacube.id, evi_name, date, tile_id)
+        evi_path = build_cube_path(datacube.id, date, tile_id, band=evi_name)
         ndvi_name = band_map.get('ndvi', 'NDVI')
-        ndvi_path = build_cube_path(datacube.id, ndvi_name, date, tile_id)
+        ndvi_path = build_cube_path(datacube.id, date, tile_id, band=ndvi_name)
 
         generate_evi_ndvi(scenes['ARDfiles'][band_map['red']],
                           scenes['ARDfiles'][band_map['nir']],
@@ -1128,16 +1109,26 @@ def generate_evi_ndvi(red_band_path: str, nir_band_path: str, blue_bland_path: s
         save_as_cog(evi_name_path, raster_evi, **profile)
 
 
-def build_cube_path(datacube: str, band: str, period: str, tile_id: str) -> Path:
+def build_cube_path(datacube: str, period: str, tile_id: str, band: str = None, suffix: Union[str, None] = '.tif') -> Path:
     """Retrieve the path to the Data cube file in Brazil Data Cube Cluster."""
     folder = 'Warped'
     date = period
 
     fragments = DataCubeFragments(datacube)
 
-    file_name = '{}_{}_{}_{}.tif'.format(datacube, tile_id, period, band)
+    file_name = f'{datacube}_{tile_id}_{period}'
+
+    if band is not None:
+        file_name = f'{file_name}_{band}'
+
+    if suffix is None:
+        suffix = ''
+
+    file_name = f'{file_name}{suffix}'
+
+    datacube = datacube.replace(f'_{Config.VERSION_PATH_PREFIX}', '')
 
     if fragments.composite_function != 'IDENTITY':  # For cube with temporal composition
         folder = 'Mosaic'
 
-    return Path(Config.DATA_DIR) / 'Repository' / folder / datacube / tile_id / date / file_name
+    return Path(Config.DATA_DIR) / 'Repository' / folder / datacube / Config.VERSION_PATH_PREFIX / tile_id / date / file_name

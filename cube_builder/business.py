@@ -20,6 +20,7 @@ from shapely.geometry import Polygon
 from sqlalchemy import func
 from werkzeug.exceptions import BadRequest, Conflict, NotFound
 
+from .config import Config
 from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
                         PROVENANCE_NAME, PROVENANCE_ATTRIBUTES,
                         TOTAL_OBSERVATION_NAME, TOTAL_OBSERVATION_ATTRIBUTES)
@@ -181,7 +182,7 @@ class CubeBusiness:
 
         with db.session.begin_nested():
             # Create data cube IDENTITY
-            cube = cls._create_cube_definition(cube_name, params)
+            cube = cls._create_cube_definition(f'{cube_name}_{Config.VERSION_PATH_PREFIX}', params)
 
             cube_serialized = [cube]
 
@@ -192,7 +193,8 @@ class CubeBusiness:
 
                 temporal_str = f'{temporal_schema.temporal_composite_t}{temporal_schema.temporal_composite_unit[0].upper()}'
 
-                cube_name_composite = f'{cube_name}_{temporal_str}_{params["composite_function"]}'
+                cube_name_composite = \
+                    f'{cube_name}_{temporal_str}_{params["composite_function"]}_{Config.VERSION_PATH_PREFIX}'
 
                 # Create data cube with temporal composition
                 cube_composite = cls._create_cube_definition(cube_name_composite, params)
@@ -363,7 +365,7 @@ class CubeBusiness:
         }
         tile_srs_p4 = "+proj=longlat +ellps=GRS80 +datum=GRS80 +no_defs"
         if projection == 'aea':
-            tile_srs_p4 = "+proj=aea +lat_1=-1 +lat_2=-29 +lat_0=0 +lon_0={} +x_0=0 +y_0=0 +ellps=GRS80 +datum=GRS80 +units=m +no_defs".format(
+            tile_srs_p4 = '+proj=aea +lat_0=-12 +lon_0={} +lat_1=-2 +lat_2=-22 +x_0=5000000 +y_0=10000000 +ellps=GRS80 +units=m +no_defs'.format(
                 meridian)
         elif projection == 'sinu':
             tile_srs_p4 = "+proj=sinu +lon_0={} +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs".format(
