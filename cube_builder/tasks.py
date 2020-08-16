@@ -20,6 +20,7 @@ from sqlalchemy_utils import refresh_materialized_view
 
 # Cube Builder
 from .celery import celery_app
+from .config import Config
 from .constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME
 from .models import Activity
 from .utils import DataCubeFragments, blend as blend_processing, build_cube_path, post_processing_quality
@@ -178,7 +179,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
 
         This function is a utility to dispatch the cloud mask generation only for STK data cubes.
         """
-        return _merge['band'] == band_map['quality'] and not _merge['collection_id'].endswith('STK')
+        return _merge['band'] == band_map['quality'] and not _merge['collection_id'].endswith(f'STK_{Config.VERSION_PATH_PREFIX}')
 
     for _merge in merges:
         # Skip quality generation for MEDIAN, AVG
