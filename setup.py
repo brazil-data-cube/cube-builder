@@ -41,7 +41,7 @@ setup_requires = []
 
 install_requires = [
     'bdc-core @ git+git://github.com/brazil-data-cube/bdc-core.git@v0.2.0#egg=bdc-core',
-    'bdc-db @ git+git://github.com/brazil-data-cube/bdc-db.git@b-0.2#egg=bdc-db',
+    'bdc-db @ git+git://github.com/brazil-data-cube/bdc-catalog.git@v0.2.1#egg=bdc-db',
     'celery[librabbitmq]>=4.3.0',
     'Flask>=1.1.1,<2',
     'flask-cors>=3.0,<4',
