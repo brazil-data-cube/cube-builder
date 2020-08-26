@@ -48,6 +48,7 @@ class Config:
         GDAL_DISABLE_READDIR_ON_OPEN=True,
         CPL_VSIL_CURL_ALLOWED_EXTENSIONS='.tif'
     )
+    VERSION_PATH_PREFIX = os.getenv('VERSION_PATH_PREFIX', 'v1')
 
 
 class ProductionConfig(Config):

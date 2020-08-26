@@ -125,7 +125,7 @@ class RasterSchemaController(Resource):
 
 
 @api.route('/create-grs-schema')
-class RasterSchemaController(Resource):
+class GRSSchemaController(Resource):
     """Define route for RasterSizeSchema creation."""
 
     def post(self):

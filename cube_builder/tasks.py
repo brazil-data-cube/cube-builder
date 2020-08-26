@@ -20,9 +20,10 @@ from sqlalchemy_utils import refresh_materialized_view
 
 # Cube Builder
 from .celery import celery_app
+from .config import Config
 from .constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME
 from .models import Activity
-from .utils import DataCubeFragments, blend as blend_processing, build_cube_path
+from .utils import DataCubeFragments, blend as blend_processing, build_cube_path, post_processing_quality
 from .utils import compute_data_set_stats, get_or_create_model
 from .utils import merge as merge_processing
 from .utils import publish_datacube, publish_merge
@@ -58,7 +59,7 @@ def create_execution(activity: dict) -> Activity:
 
 
 @celery_app.task()
-def warp_merge(activity, force=False):
+def warp_merge(activity, band_map, force=False):
     """Execute datacube merge task.
 
     This task consists in the following steps:
@@ -83,16 +84,20 @@ def warp_merge(activity, force=False):
     tile_id = activity['tile_id']
     data_set = activity['args'].get('dataset')
 
-    merge_file_path = build_cube_path(record.warped_collection_id, record.band,
-                                      merge_date.replace(data_set, ''), tile_id)
+    merge_file_path = build_cube_path(record.warped_collection_id, merge_date.replace(data_set, ''),
+                                      tile_id, record.band)
+
+    reused = False
 
     # Reuse merges already done. Rebuild only with flag ``--force``
     if not force and merge_file_path.exists() and merge_file_path.is_file():
         efficacy = cloudratio = 0
 
-        if activity['band'] == 'quality':
+        if activity['band'] == band_map['quality']:
             # When file exists, compute the file statistics
             efficacy, cloudratio = compute_data_set_stats(str(merge_file_path))
+
+        reused = True
 
         activity['args']['file'] = str(merge_file_path)
         activity['args']['efficacy'] = efficacy
@@ -112,7 +117,7 @@ def warp_merge(activity, force=False):
             args['date'] = record.date.strftime('%Y-%m-%d')
             args['cube'] = record.warped_collection_id
 
-            res = merge_processing(str(merge_file_path), **args)
+            res = merge_processing(str(merge_file_path), band_map=band_map, **args)
 
             merge_args = activity['args']
             merge_args.update(res)
@@ -137,11 +142,13 @@ def warp_merge(activity, force=False):
         record.args['cloudratio']
     ))
 
+    activity['args']['reused'] = reused
+
     return activity
 
 
 @celery_app.task()
-def prepare_blend(merges, **kwargs):
+def prepare_blend(merges, band_map: dict, **kwargs):
     """Receive merges by period and prepare task blend.
 
     This task aims to prepare celery task definition for blend.
@@ -152,15 +159,27 @@ def prepare_blend(merges, **kwargs):
 
     # Prepare map of efficacy/cloud_ratio based in quality merge result
     quality_date_stats = {
-        m['date']: (m['args']['efficacy'], m['args']['cloudratio']) for m in merges if m['band'] == 'quality'
+        m['date']: (m['args']['efficacy'], m['args']['cloudratio'], m['args']['file'], m['args']['reused'])
+        for m in merges if m['band'] == band_map['quality']
     }
+
+    for period, stats in quality_date_stats.items():
+        _, _, quality_file, was_reused = stats
+
+        # Do not apply post-processing on reused data cube since it may be already processed.
+        if not was_reused:
+            logging.info(f'Applying post-processing in {str(quality_file)}')
+            post_processing_quality(quality_file, list(band_map.values()), merges[0]['warped_collection_id'],
+                                    period, merges[0]['tile_id'], band_map['quality'])
+        else:
+            logging.info(f'Skipping post-processing {str(quality_file)}')
 
     def _is_not_stk(_merge):
         """Control flag to generate cloud mask.
 
         This function is a utility to dispatch the cloud mask generation only for STK data cubes.
         """
-        return _merge['band'] == 'quality' and not _merge['collection_id'].endswith('STK')
+        return _merge['band'] == band_map['quality'] and not _merge['collection_id'].endswith(f'STK_{Config.VERSION_PATH_PREFIX}')
 
     for _merge in merges:
         # Skip quality generation for MEDIAN, AVG
@@ -179,12 +198,12 @@ def prepare_blend(merges, **kwargs):
         activity['nodata'] = _merge['args'].get('nodata')
 
         # Map efficacy/cloud ratio to the respective merge date before pass to blend
-        efficacy, cloudratio = quality_date_stats[_merge['date']]
+        efficacy, cloudratio, quality_file, _ = quality_date_stats[_merge['date']]
         activity['scenes'][_merge['args']['date']]['efficacy'] = efficacy
         activity['scenes'][_merge['args']['date']]['cloudratio'] = cloudratio
 
         activity['scenes'][_merge['args']['date']]['ARDfiles'] = {
-            "quality": _merge['args']['file'].replace(_merge['band'], 'quality'),
+            band_map['quality']: quality_file,
             _merge['band']: _merge['args']['file']
         }
 
@@ -212,34 +231,34 @@ def prepare_blend(merges, **kwargs):
     # Trigger all except the last
     for activity in activity_list[:-1]:
         # TODO: Persist
-        blends.append(blend.s(activity))
+        blends.append(blend.s(activity, band_map))
 
     # Trigger last blend to execute Clear Observation
-    blends.append(blend.s(last_activity, build_clear_observation=True))
+    blends.append(blend.s(last_activity, band_map, build_clear_observation=True))
 
-    task = chain(group(blends), publish.s(**kwargs))
+    task = chain(group(blends), publish.s(band_map, **kwargs))
     task.apply_async()
 
 
 @celery_app.task()
-def blend(activity, build_clear_observation=False):
+def blend(activity, band_map, build_clear_observation=False):
     """Execute datacube blend task.
 
-    TODO: Describe how it works.
-
     Args:
-        activity - Datacube Activity Model
+        activity - Datacube Activity Model.
+        band_map - Band mapping with common_name and band original name.
+        build_clear_observation - Generate band "Clear Observation".
 
     Returns:
         Validated activity
     """
     logging.warning('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
 
-    return blend_processing(activity, build_clear_observation)
+    return blend_processing(activity, band_map, build_clear_observation)
 
 
 @celery_app.task()
-def publish(blends, **kwargs):
+def publish(blends, band_map, **kwargs):
     """Execute publish task and catalog datacube result.
 
     Args:
@@ -283,7 +302,7 @@ def publish(blends, **kwargs):
         cloudratio = blends[0]['cloudratio']
 
         # Generate quick looks for cube scenes
-        publish_datacube(cube, quick_look_bands, cube.id, tile_id, period, blend_files, cloudratio, **kwargs)
+        publish_datacube(cube, quick_look_bands, cube.id, tile_id, period, blend_files, cloudratio, band_map, **kwargs)
 
     # Generate quick looks of irregular cube
     wcube = Collection.query().filter(Collection.id == warped_datacube).first()
@@ -291,11 +310,11 @@ def publish(blends, **kwargs):
     for merge_date, definition in merges.items():
         date = merge_date.replace(definition['dataset'], '')
 
-        publish_merge(quick_look_bands, wcube, definition['dataset'], tile_id, period, date, definition)
+        publish_merge(quick_look_bands, wcube, tile_id, period, date, definition, band_map)
 
     try:
-        refresh_materialized_view(db.session, AssetMV.__table__)
+        # refresh_materialized_view(db.session, AssetMV.__table__)
         db.session.commit()
-        logging.info('View refreshed.')
+        # logging.info('View refreshed.')
     except:
         db.session.rollback()

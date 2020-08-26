@@ -50,9 +50,9 @@ install_requires = [
     'numpngw>=0.0.8',
     'python-dateutil>=2.8,<3',
     'rasterio>=1.1.2,<2',
+    'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
     'stac @ git+git://github.com/brazil-data-cube/stac.py.git@b-0.8.0#egg=stac',
-    'scikit-image>=0.16.2',
 ]
 
 packages = find_packages()
