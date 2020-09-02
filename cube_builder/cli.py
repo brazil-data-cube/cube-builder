@@ -9,63 +9,41 @@
 """Create a python click context and inject it to the global flask commands."""
 
 import click
-from bdc_db.cli import create_cli
-from bdc_db.cli import create_db as bdc_create_db
-from bdc_db.models import db
-from flask.cli import with_appcontext
-from flask_migrate.cli import db as flask_migrate_db
+from bdc_catalog.models import CompositeFunction, db
+from flask.cli import with_appcontext, FlaskGroup
 
 from . import create_app
-from .config import Config
+
 
 # Create cube-builder cli from bdc-db
-cli = create_cli(create_app=create_app)
-
-
-@flask_migrate_db.command()
-@with_appcontext
-@click.pass_context
-def create_db(ctx: click.Context):
-    """Create database. Make sure the variable SQLALCHEMY_DATABASE_URI is set."""
-    ctx.forward(bdc_create_db)
-
-    click.secho('Creating schema {}...'.format(Config.ACTIVITIES_SCHEMA), fg='green')
-    with db.session.begin_nested():
-        db.session.execute('CREATE SCHEMA IF NOT EXISTS {}'.format(Config.ACTIVITIES_SCHEMA))
-
-    db.session.commit()
+@click.group(cls=FlaskGroup, create_app=create_app)
+def cli():
+    """Command line for data cube builder."""
 
 
 @cli.command('load-data')
 @with_appcontext
 def load_data():
     """Create Cube Builder composite functions supported."""
-    from bdc_db.models import CompositeFunctionSchema, TemporalCompositionSchema, db
     from .utils import get_or_create_model
 
     with db.session.begin_nested():
         _, _ = get_or_create_model(
-            CompositeFunctionSchema,
-            defaults=dict(id='MED', description='Median by pixels'),
-            id='MED'
+            CompositeFunction,
+            defaults=dict(name='Median', alias='MED', description='Median by pixels'),
+            alias='MED'
         )
 
         _, _ = get_or_create_model(
-            CompositeFunctionSchema,
-            defaults=dict(id='STK', description='Best pixel'),
+            CompositeFunction,
+            defaults=dict(name='Stack', alias='STK', description='Best pixel'),
             id='STK'
         )
 
         _, _ = get_or_create_model(
-            CompositeFunctionSchema,
-            defaults=dict(id='IDENTITY', description=''),
-            id='IDENTITY'
-        )
-
-        _, _ = get_or_create_model(
-            TemporalCompositionSchema,
-            defaults=dict(id='Anull', temporal_composite_unit='', temporal_schema='', temporal_composite_t=''),
-            id='Anull'
+            CompositeFunction,
+            defaults=dict(name='Identity', description=''),
+            alias='IDT'
         )
 
     db.session.commit()
@@ -103,9 +81,10 @@ def worker(ctx: click.Context):
 @click.option('--bands', type=click.STRING, help='Comma delimited bands to generate')
 @click.option('--force', '-f', is_flag=True, help='Build data cube without cache')
 @click.option('--with-rgb', is_flag=True, help='Generate a file with RGB bands, based in quick look.')
+@click.option('--token', type=click.STRING, help='Token to access data from STAC.')
 @with_appcontext
 def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None,
-          force=False, with_rgb=False):
+          force=False, with_rgb=False, **kwargs):
     """Build data cube through command line.
 
     Args:
@@ -127,7 +106,8 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
         end_date=end,
         tiles=tiles.split(','),
         force=force,
-        with_rgb=with_rgb
+        with_rgb=with_rgb,
+        **kwargs
     )
 
     if bands:

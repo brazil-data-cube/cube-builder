@@ -14,7 +14,7 @@ from flask_restplus import Namespace, Resource
 
 # Cube Builder
 from .business import CubeBusiness
-from .forms import GrsSchemaForm, RasterSchemaForm, TemporalSchemaForm
+from .forms import GridRefSysForm
 from .parsers import DataCubeParser, DataCubeProcessParser, PeriodParser
 
 api = Namespace('cubes', description='cubes')
@@ -90,7 +90,6 @@ class TemporalSchemaController(Resource):
 
         Expects a JSON that matches with ``TemporalSchemaParser``.
         """
-        form = TemporalSchemaForm()
 
         args = request.get_json()
 
@@ -130,7 +129,7 @@ class GRSSchemaController(Resource):
 
     def post(self):
         """Create the raster schema using HTTP Post method."""
-        form = GrsSchemaForm()
+        form = GridRefSysForm()
 
         args = request.get_json()
 

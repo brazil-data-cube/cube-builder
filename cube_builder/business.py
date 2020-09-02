@@ -7,25 +7,22 @@
 #
 
 """Define Cube Builder business interface."""
-
+from copy import deepcopy
 from typing import Tuple
 
 # 3rdparty
-from bdc_db.models import (Band, Collection, GrsSchema, RasterSizeSchema,
-                           TemporalCompositionSchema, Tile)
-from bdc_db.models.base_sql import BaseModel, db
+from bdc_catalog.models import Band, Collection, GridRefSys, Quicklook, SpatialRefSys, Tile, db, CompositeFunction, \
+    ResolutionUnit, MimeType, BandSRC
 from geoalchemy2.shape import from_shape
+from pyproj import CRS
 from rasterio.warp import transform
 from shapely.geometry import Polygon
-from sqlalchemy import func
-from werkzeug.exceptions import BadRequest, Conflict, NotFound
+from werkzeug.exceptions import NotFound, abort
 
-from .config import Config
 from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
                         PROVENANCE_NAME, PROVENANCE_ATTRIBUTES,
-                        TOTAL_OBSERVATION_NAME, TOTAL_OBSERVATION_ATTRIBUTES)
-from .forms import (CollectionForm, GrsSchemaForm, RasterSchemaForm,
-                    TemporalSchemaForm)
+                        TOTAL_OBSERVATION_NAME, TOTAL_OBSERVATION_ATTRIBUTES, COG_MIME_TYPE)
+from .forms import CollectionForm, GridRefSysForm
 from .image import validate_merges
 from .maestro import Maestro, decode_periods
 from .models import Activity
@@ -36,8 +33,9 @@ class CubeBusiness:
     """Define Cube Builder interface for data cube creation."""
 
     @classmethod
-    def get_or_create_band(cls, cube, name, common_name, min, max,
-                           fill, data_type, res_x, res_y, scale, description=None) -> Band:
+    def get_or_create_band(cls, cube, name, common_name, min_value, max_value,
+                           nodata, data_type, resolution_x, resolution_y, scale,
+                           resolution_unit_id, description=None) -> Band:
         """Get or try to create a data cube band on database.
 
         Notes:
@@ -53,21 +51,32 @@ class CubeBusiness:
         )
 
         defaults = dict(
-            min=min,
-            max=max,
-            fill=fill,
+            min_value=min_value,
+            max_value=max_value,
+            nodata=nodata,
             data_type=data_type,
             description=description,
             scale=scale,
             common_name=common_name,
-            resolution_x=res_x,
-            resolution_y=res_y,
-            resolution_unit='m'
+            resolution_x=resolution_x,
+            resolution_y=resolution_y,
+            resolution_unit_id=resolution_unit_id
         )
 
         band, _ = get_or_create_model(Band, defaults=defaults, **where)
 
         return band
+
+    @staticmethod
+    def _validate_band_metadata(metadata: dict, band_map: dict) -> dict:
+        bands = []
+
+        for band in metadata['expression']['bands']:
+            bands.append(band_map[band].id)
+
+        metadata['expression']['bands'] = bands
+
+        return metadata
 
     @classmethod
     def _create_cube_definition(cls, cube_id: str, params: dict) -> dict:
@@ -89,27 +98,35 @@ class CubeBusiness:
 
         function = cube_parts.composite_function
 
-        raster_size_id = '{}-{}'.format(params['grs'], int(params['resolution']))
-
         cube_id = cube_parts.datacube
 
-        cube = Collection.query().filter(Collection.id == cube_id).first()
+        cube = Collection.query().filter(Collection.name == cube_id, Collection.version == params['version']).first()
+
+        grs = GridRefSys.query().filter(GridRefSys.name == params['grs']).first()
+
+        if grs is None:
+            abort(404, f'Grid {params["grs"]} not found.')
+
+        cube_function = CompositeFunction.query().filter(CompositeFunction.alias == function).first()
+
+        if cube_function is None:
+            abort(404, f'Function {function} not found.')
+
+        data = dict(name='Meter', symbol='m')
+        resolution_meter, _ = get_or_create_model(ResolutionUnit, defaults=data, symbol='m')
+
+        mime_type, _ = get_or_create_model(MimeType, defaults=dict(name=COG_MIME_TYPE), name=COG_MIME_TYPE)
 
         if cube is None:
             cube = Collection(
-                id=cube_id,
-                temporal_composition_schema_id=params['temporal_schema'] if function.upper() != 'IDENTITY' else 'Anull',
-                raster_size_schema_id=raster_size_id,
-                composite_function_schema_id=function,
-                grs_schema_id=params['grs'],
+                name=cube_id,
+                title=params['title'],
+                temporal_composition_schema=params['temporal_schema'] if function != 'IDT' else None,
+                composite_function_id=cube_function.id,
+                grs=grs,
                 description=params['description'],
-                radiometric_processing=None,
-                geometry_processing=None,
-                sensor=None,
-                is_cube=True,
-                oauth_scope=params.get('oauth_scope', None),
-                license=params['license'],
-                bands_quicklook=','.join(params['bands_quicklook'])
+                collection_type='cube',
+                version=params['version']
             )
 
             cube.save(commit=False)
@@ -117,6 +134,8 @@ class CubeBusiness:
             bands = []
 
             default_bands = (CLEAR_OBSERVATION_NAME.lower(), TOTAL_OBSERVATION_NAME.lower(), PROVENANCE_NAME.lower())
+
+            band_map = dict()
 
             for band in params['bands']:
                 name = band['name'].strip()
@@ -133,32 +152,50 @@ class CubeBusiness:
 
                 band_model = Band(
                     name=name,
-                    collection_id=cube.id,
-                    min=0,
-                    max=10000 if is_not_cloud else 4,
-                    fill=-9999 if is_not_cloud else 255,
+                    common_name=band['common_name'],
+                    collection=cube,
+                    min_value=0,
+                    max_value=10000 if is_not_cloud else 4,
+                    nodata=-9999 if is_not_cloud else 255,
                     scale=0.0001 if is_not_cloud else 1,
                     data_type=data_type,
-                    common_name=band['common_name'],
                     resolution_x=params['resolution'],
                     resolution_y=params['resolution'],
-                    resolution_unit='m',
+                    resolution_unit_id=resolution_meter.id,
                     description='',
-                    mime_type='image/tiff'
+                    mime_type_id=mime_type.id
                 )
+
+                if band.get('metadata'):
+                    band_model._metadata = cls._validate_band_metadata(deepcopy(band['metadata']), band_map)
+
                 band_model.save(commit=False)
                 bands.append(band_model)
 
+                band_map[name] = band_model
+
+                if band_model._metadata:
+                    for _band_origin_id in band_model._metadata['expression']['bands']:
+                        band_provenance = BandSRC(band_src_id=_band_origin_id, band_id=band_model.id)
+                        band_provenance.save(commit=False)
+
+            quicklook = Quicklook(red=band_map[params['bands_quicklook'][0]].id,
+                                  green=band_map[params['bands_quicklook'][1]].id,
+                                  blue=band_map[params['bands_quicklook'][2]].id,
+                                  collection=cube)
+
+            quicklook.save(commit=False)
+
         # Create default Cube Bands
-        if function != 'IDENTITY':
-            _ = cls.get_or_create_band(cube_id, **CLEAR_OBSERVATION_ATTRIBUTES,
-                                       res_x=params['resolution'], res_y=params['resolution'])
-            _ = cls.get_or_create_band(cube_id, **TOTAL_OBSERVATION_ATTRIBUTES,
-                                       res_x=params['resolution'], res_y=params['resolution'])
+        if function != 'IDT':
+            _ = cls.get_or_create_band(cube.id, **CLEAR_OBSERVATION_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
+                                       resolution_x=params['resolution'], resolution_y=params['resolution'])
+            _ = cls.get_or_create_band(cube.id, **TOTAL_OBSERVATION_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
+                                       resolution_x=params['resolution'], resolution_y=params['resolution'])
 
             if function == 'STK':
-                _ = cls.get_or_create_band(cube_id, **PROVENANCE_ATTRIBUTES,
-                                           res_x=params['resolution'], res_y=params['resolution'])
+                _ = cls.get_or_create_band(cube.id, **PROVENANCE_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
+                                           resolution_x=params['resolution'], resolution_y=params['resolution'])
 
         return CollectionForm().dump(cube)
 
@@ -168,7 +205,7 @@ class CubeBusiness:
 
         Note:
             If you provide a data cube with composite function like MED, STK, it creates
-            the cube metadata IDENTITY and the given function name.
+            the cube metadata Identity and the given function name.
 
         Returns:
              Tuple with serialized cube and HTTP Status code, respectively.
@@ -181,20 +218,17 @@ class CubeBusiness:
         params['bands'].extend(params['indexes'])
 
         with db.session.begin_nested():
-            # Create data cube IDENTITY
-            cube = cls._create_cube_definition(f'{cube_name}_{Config.VERSION_PATH_PREFIX}', params)
+            # Create data cube Identity
+            cube = cls._create_cube_definition(cube_name, params)
 
             cube_serialized = [cube]
 
-            if params['composite_function'] != 'IDENTITY':
-                temporal_schema = TemporalCompositionSchema.query() \
-                    .filter(TemporalCompositionSchema.id == params['temporal_schema']) \
-                    .first_or_404()
+            if params['composite_function'] != 'IDT':
+                step = params['temporal_schema']['step']
+                unit = params['temporal_schema']['unit'][0].upper()
+                temporal_str = f'{step}{unit}'
 
-                temporal_str = f'{temporal_schema.temporal_composite_t}{temporal_schema.temporal_composite_unit[0].upper()}'
-
-                cube_name_composite = \
-                    f'{cube_name}_{temporal_str}_{params["composite_function"]}_{Config.VERSION_PATH_PREFIX}'
+                cube_name_composite = f'{cube_name}_{temporal_str}_{params["composite_function"]}'
 
                 # Create data cube with temporal composition
                 cube_composite = cls._create_cube_definition(cube_name_composite, params)
@@ -225,7 +259,7 @@ class CubeBusiness:
         return dict(ok=True)
 
     @classmethod
-    def check_for_invalid_merges(cls, datacube: str, tile: str, start_date: str, last_date: str) -> dict:
+    def check_for_invalid_merges(cls, datacube: str, tile: str, start_date: str, last_date: str) -> Tuple[dict, int]:
         """List merge files used in data cube and check for invalid scenes.
 
         Args:
@@ -249,39 +283,6 @@ class CubeBusiness:
         result = validate_merges(res)
 
         return result, 200
-
-    @classmethod
-    def create_temporal_composition(cls, params: dict) -> Tuple[dict, int]:
-        """Create a temporal composition schema on database.
-
-        The TemporalCompositionSchema is used to describe how the data cube will be created.
-
-        You can define a data cube montly, each 16 days, season, etc. Once defined,
-        the ``cube_builder`` will seek for all images within period given and will
-        generate data cube passing these images to a composite function.
-
-        Raises:
-            Conflict when a duplicated composition is given.
-
-        Args:
-            params - Required parameters for a ``TemporalCompositionSchema``.
-
-        Returns:
-            Tuple with object created and respective HTTP Status code
-        """
-        object_id = '{}{}{}'.format(params['temporal_schema'],
-                                    params['temporal_composite_t'],
-                                    params['temporal_composite_unit'])
-
-        temporal_schema, created = get_or_create_model(TemporalCompositionSchema, defaults=params, id=object_id)
-
-        if created:
-            # Persist
-            temporal_schema.save()
-
-            return TemporalSchemaForm().dump(temporal_schema), 201
-
-        raise Conflict('Schema "{}" already exists.'.format(object_id))
 
     @classmethod
     def generate_periods(cls, schema, step, start_date=None, last_date=None, **kwargs):
@@ -313,49 +314,9 @@ class CubeBusiness:
         return sorted(list(periods))
 
     @classmethod
-    def create_raster_schema(cls, grs_schema, resolution, chunk_size_x, chunk_size_y) -> Tuple[dict, int]:
-        """Create Brazil Data Cube Raster Schema Size based in GrsSchema."""
-        tile = db.session() \
-            .query(
-            Tile, func.ST_Xmin(Tile.geom), func.ST_Xmax(Tile.geom),
-            func.ST_Ymin(Tile.geom), func.ST_Ymax(Tile.geom)
-        ).filter(
-            Tile.grs_schema_id == grs_schema
-        ).first()
-        if not tile:
-            raise BadRequest('GrsSchema "{}" not found.'.format(grs_schema))
-
-        # x = Xmax - Xmin || y = Ymax - Ymin
-        raster_size_x = int(round((tile[2] - tile[1]) / int(resolution), 0))
-        raster_size_y = int(round((tile[4] - tile[3]) / int(resolution), 0))
-
-        raster_schema_id = '{}-{}'.format(grs_schema, resolution)
-
-        raster_schema = RasterSizeSchema.query().filter(
-            RasterSizeSchema.id == raster_schema_id
-        ).first()
-
-        if raster_schema is None:
-            model = RasterSizeSchema(
-                id=raster_schema_id,
-                raster_size_x=raster_size_x,
-                raster_size_y=raster_size_y,
-                raster_size_t=1,
-                chunk_size_x=chunk_size_x,
-                chunk_size_y=chunk_size_y,
-                chunk_size_t=1
-            )
-
-            model.save()
-
-            return RasterSchemaForm().dump(model), 201
-
-        raise Conflict('RasterSchema "{}" already exists.'.format(raster_schema_id))
-
-    @classmethod
     def create_grs_schema(cls, name, description, projection, meridian, degreesx, degreesy, bbox):
         """Create a Brazil Data Cube Grid Schema."""
-
+        srid = 100001
         bbox = bbox.split(',')
         bbox_obj = {
             "w": float(bbox[0]),
@@ -410,76 +371,68 @@ class CubeBusiness:
         v_min = int((y_max - yu) / dy)
         v_max = int((y_max - yb) / dy)
 
-        # Insert grid
-        grs = GrsSchema.query().filter(
-            GrsSchema.id == name
-        ).first()
-        if not grs:
-            grs = GrsSchema(
-                id=name,
-                description=description,
-                crs=tile_srs_p4
-            ).save()
-
         tiles = []
+        features = []
         dst_crs = '+proj=longlat +ellps=GRS80 +datum=GRS80 +no_defs'
         src_crs = tile_srs_p4
-        for ix in range(h_min, h_max + 1):
-            x1 = x_min + ix * dx
-            x2 = x1 + dx
-            for iy in range(v_min, v_max + 1):
-                y1 = y_max - iy * dy
-                y2 = y1 - dy
-                # Evaluate the bounding box of tile in longlat
-                xs = [x1, x2, x2, x1]
-                ys = [y1, y1, y2, y2]
-                out = transform(src_crs, dst_crs, xs, ys, zs=None)
-                ul_lon = out[0][0]
-                ul_lat = out[1][0]
-                ur_lon = out[0][1]
-                ur_lat = out[1][1]
-                lr_lon = out[0][2]
-                lr_lat = out[1][2]
-                ll_lon = out[0][3]
-                ll_lat = out[1][3]
 
-                poly_wgs84 = from_shape(
-                    Polygon(
-                        [
-                            (ul_lon, ul_lat),
-                            (ur_lon, ur_lat),
-                            (lr_lon, lr_lat),
-                            (ll_lon, ll_lat),
-                            (ul_lon, ul_lat)
-                        ]
-                    ),
-                    srid=4674
-                )
+        with db.session.begin_nested():
+            crs = CRS.from_proj4(tile_srs_p4)
+            data = dict(
+                auth_name='Albers Equal Area',
+                auth_srid=srid,
+                srid=srid,
+                srtext=crs.to_wkt(),
+                proj4text=tile_srs_p4
+            )
 
-                poly_aea = from_shape(
-                    Polygon(
-                        [
-                            (x1, y2),
-                            (x2, y2),
-                            (x2, y1),
-                            (x1, y1),
-                            (x1, y2)
-                        ]
-                    ),
-                    srid=0
-                )
+            spatial_index, _ = get_or_create_model(SpatialRefSys, defaults=data, srid=srid)
 
-                # Insert tile
-                tiles.append(Tile(
-                    id='{0:03d}{1:03d}'.format(ix, iy),
-                    grs_schema_id=name,
-                    geom_wgs84=poly_wgs84,
-                    geom=poly_aea
-                ))
+            for ix in range(h_min, h_max + 1):
+                x1 = x_min + ix * dx
+                x2 = x1 + dx
+                for iy in range(v_min, v_max + 1):
+                    y1 = y_max - iy * dy
+                    y2 = y1 - dy
+                    # Evaluate the bounding box of tile in longlat
+                    xs = [x1, x2, x2, x1]
+                    ys = [y1, y1, y2, y2]
+                    out = transform(src_crs, dst_crs, xs, ys, zs=None)
 
-        BaseModel.save_all(tiles)
+                    poly_aea = from_shape(
+                        Polygon(
+                            [
+                                (x1, y2),
+                                (x2, y2),
+                                (x2, y1),
+                                (x1, y1),
+                                (x1, y2)
+                            ]
+                        ),
+                        srid=srid
+                    )
 
-        data = GrsSchemaForm().dump(grs)
-        data['tiles'] = [t.id for t in tiles]
+                    tile_name = '{0:03d}{1:03d}'.format(ix, iy)
 
+                    features.append(dict(tile=tile_name, geom=poly_aea))
+
+                    # Insert tile
+                    tiles.append(Tile(
+                        name=tile_name
+                    ))
+
+            grs = GridRefSys.create_geometry_table(table_name=name.lower(), features=features, srid=srid)
+            grs.description = description
+
+            db.session.add(grs)
+
+            for tile in tiles:
+                tile.grs = grs
+
+                db.session.add(tile)
+
+            data = GridRefSysForm().dump(grs)
+            data['tiles'] = [t.name for t in tiles]
+
+        db.session.commit()
         return data, 201

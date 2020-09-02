@@ -15,9 +15,9 @@ CLEAR_OBSERVATION_ATTRIBUTES = dict(
     name=CLEAR_OBSERVATION_NAME,
     description='Clear Observation Count.',
     data_type='uint8',
-    min=0,
-    max=255,
-    fill=0,
+    min_value=0,
+    max_value=255,
+    nodata=0,
     scale=1,
     common_name='ClearOb',
 )
@@ -28,9 +28,9 @@ TOTAL_OBSERVATION_ATTRIBUTES = dict(
     name=TOTAL_OBSERVATION_NAME,
     description='Total Observation Count',
     data_type='uint8',
-    min=0,
-    max=255,
-    fill=0,
+    min_value=0,
+    max_value=255,
+    nodata=0,
     scale=1,
     common_name='TotalOb',
 )
@@ -41,9 +41,11 @@ PROVENANCE_ATTRIBUTES = dict(
     name=PROVENANCE_NAME,
     description='Provenance value Day of Year',
     data_type='int16',
-    min=1,
-    max=366,
-    fill=-1,
+    min_value=1,
+    max_value=366,
+    nodata=-1,
     scale=1,
     common_name='Provenance',
 )
+
+COG_MIME_TYPE = 'image/tiff; application=geotiff; profile=cloud-optimized'

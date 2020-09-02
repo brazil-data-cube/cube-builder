@@ -8,7 +8,7 @@
 
 """Python Module for Cube Builder."""
 
-from bdc_db.ext import BDCDatabase
+from bdc_catalog.ext import BDCCatalog
 from flask import Flask
 from flask_cors import CORS
 
@@ -29,7 +29,7 @@ def create_app(config_name=None):
 
     with app.app_context():
         # Initialize Flask SQLAlchemy
-        BDCDatabase(app)
+        BDCCatalog(app)
 
         # Just make sure to initialize db before celery
         celery_app = celery.create_celery_app(app)

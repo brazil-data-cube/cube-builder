@@ -12,20 +12,24 @@
 import datetime
 from contextlib import contextmanager
 from time import time
-from typing import List
+from typing import List, Union, Optional
 
 # 3rdparty
 import numpy
-from bdc_db.models import Band, Collection, CollectionTile, Tile, db
+from bdc_catalog.models import Band, Collection, Tile, db, GridRefSys
+from celery import group, chain
 from dateutil.relativedelta import relativedelta
 from geoalchemy2 import func
 from stac import STAC
 
 # Cube Builder
+from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
 from .constants import TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME
-from .forms import BandForm
 from .utils import get_cube_id, get_or_create_activity
+
+
+SchemaType = Union['cyclic', 'continuous']
 
 
 def days_in_month(date):
@@ -59,7 +63,7 @@ def timing(description: str) -> None:
     print(f'{description}: {ellapsed_time} seconds')
 
 
-def decode_periods(temporal_schema, start_date, end_date, time_step):
+def decode_periods(schema: SchemaType, step: int, unit: str, start_date, end_date, cycle: Optional[dict] = None):
     """Retrieve datacube temporal resolution by periods.
 
     TODO: Describe how it works.
@@ -70,25 +74,18 @@ def decode_periods(temporal_schema, start_date, end_date, time_step):
     if isinstance(start_date, datetime.date):
         start_date = start_date.strftime('%Y-%m-%d')
 
-    td_time_step = datetime.timedelta(days=time_step)
-    steps_per_period = int(round(365./time_step))
+    td_time_step = datetime.timedelta(days=step)
+    steps_per_period = int(round(365./step))
 
     if end_date is None:
         end_date = datetime.datetime.now().strftime('%Y-%m-%d')
     if isinstance(end_date, datetime.date):
         end_date = end_date.strftime('%Y-%m-%d')
 
-    if temporal_schema is None:
-        periodkey = start_date + '_' + start_date + '_' + end_date
-        requested_period = list()
-        requested_period.append(periodkey)
-        requested_periods[start_date] = requested_period
-        return requested_periods
-
-    if temporal_schema == 'M':
+    if unit == 'M' and schema == 'continuous':
         start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')
         end_date = datetime.datetime.strptime(end_date, '%Y-%m-%d')
-        delta = relativedelta(months=time_step)
+        delta = relativedelta(months=step)
         requested_period = []
         while start_date <= end_date:
             next_date = start_date + delta
@@ -101,7 +98,7 @@ def decode_periods(temporal_schema, start_date, end_date, time_step):
     # Find the exact start_date based on periods that start on yyyy-01-01
     firstyear = start_date.split('-')[0]
     new_start_date = datetime.datetime.strptime(start_date, '%Y-%m-%d')
-    if temporal_schema == 'A':
+    if unit == 'day':
         dbase = datetime.datetime.strptime(firstyear+'-01-01', '%Y-%m-%d')
         while dbase < new_start_date:
             dbase += td_time_step
@@ -113,7 +110,7 @@ def decode_periods(temporal_schema, start_date, end_date, time_step):
     # Find the exact end_date based on periods that start on yyyy-01-01
     lastyear = end_date.split('-')[0]
     new_end_date = datetime.datetime.strptime(end_date, '%Y-%m-%d')
-    if temporal_schema == 'A':
+    if unit == 'day':
         dbase = datetime.datetime.strptime(lastyear+'-12-31', '%Y-%m-%d')
         while dbase > new_end_date:
             dbase -= td_time_step
@@ -123,7 +120,7 @@ def decode_periods(temporal_schema, start_date, end_date, time_step):
         end_date = end_date.strftime('%Y-%m-%d')
 
     # For annual periods
-    if temporal_schema == 'A':
+    if unit == 'day' and cycle:
         dbase = new_start_date
         yearold = dbase.year
         count = 0
@@ -180,7 +177,7 @@ def decode_periods(temporal_schema, start_date, end_date, time_step):
 class Maestro:
     """Define class for handling data cube generation."""
 
-    datacube = None
+    datacube: Collection = None
     _warped = None
     bands = []
     tiles = []
@@ -225,7 +222,7 @@ class Maestro:
             return self._stac(collection, 'http://cdsr.dpi.inpe.br/inpe-stac')
 
     @classmethod
-    def _stac(cls, collection: str, url: str) -> STAC:
+    def _stac(cls, collection: str, url: str, **kwargs) -> STAC:
         """Check if collection is provided by given STAC url.
 
         The provided STAC must follow the `SpatioTemporal Asset Catalogs spec <https://stacspec.org/>`_.
@@ -241,7 +238,11 @@ class Maestro:
             STAC client
         """
         try:
-            stac = cls.cached_stacs.get(url) or STAC(url)
+            options = dict()
+            if kwargs.get('token'):
+                options['access_token'] = kwargs.get('token')
+
+            stac = cls.cached_stacs.get(url) or STAC(url, **options)
 
             _ = stac.catalog
 
@@ -254,61 +255,11 @@ class Maestro:
             # STAC Error
             raise RuntimeError('An error occurred in STAC {}'.format(str(e)))
 
-    @staticmethod
-    def create_tile(datacube, tile_id, grs_schema_id):
-        """Create a Brazil Data Cube Tile and associate with data cube collection."""
-        collection_tile = CollectionTile.query().filter(
-            CollectionTile.collection_id == datacube,
-            CollectionTile.grs_schema_id == grs_schema_id,
-            CollectionTile.tile_id == tile_id
-        ).first()
-        if not collection_tile:
-            CollectionTile(
-                collection_id=datacube,
-                grs_schema_id=grs_schema_id,
-                tile_id=tile_id
-            ).save(commit=False)
-
-    def create_tiles(self, tiles: List[str], collection: Collection):
-        """Create Collection tiles on database.
-
-        Args:
-            tiles - List of tiles in same GRS schema of collection
-            collection - Collection object
-        """
-        tiles_by_grs = db.session() \
-            .query(Tile, func.ST_AsText(func.ST_BoundingDiagonal(Tile.geom_wgs84))) \
-            .filter(
-                Tile.grs_schema_id == collection.grs_schema_id,
-                Tile.id.in_(tiles)
-            ).all()
-
-        tiles = list(set(tiles))
-        tiles_infos = {}
-
-        with db.session.begin_nested():
-            for tile in tiles:
-                # verify tile exists
-                tile_info = list(filter(lambda t: t[0].id == tile, tiles_by_grs))
-                if not tile_info:
-                    raise RuntimeError('Tile ({}) not found in GRS ({})'.format(tile, collection.grs_schema_id))
-
-                tiles_infos[tile] = tile_info[0]
-
-                self.create_tile(self.warped_datacube.id, tile, collection.grs_schema_id)
-                self.create_tile(self.datacube.id, tile, collection.grs_schema_id)
-
-        db.session.commit()
-
     def orchestrate(self):
         """Orchestrate datacube defintion and prepare temporal resolutions."""
-        self.datacube = Collection.query().filter(Collection.id == self.params['datacube']).one()
+        self.datacube = Collection.query().filter(Collection.name == self.params['datacube']).one()
 
-        temporal_schema = self.datacube.temporal_composition_schema.temporal_schema
-        temporal_step = self.datacube.temporal_composition_schema.temporal_composite_t
-
-        # Create tiles
-        self.create_tiles(self.params['tiles'], self.datacube)
+        temporal_schema = self.datacube.temporal_composition_schema
 
         cube_start_date = self.params['start_date']
 
@@ -320,24 +271,32 @@ class Maestro:
 
         cube_end_date = dend.strftime('%Y-%m-%d')
 
-        periodlist = decode_periods(temporal_schema, cube_start_date, cube_end_date, int(temporal_step or 1))
+        periodlist = decode_periods(**temporal_schema, start_date=cube_start_date, end_date=cube_end_date)
 
-        where = [Tile.grs_schema_id == self.datacube.grs_schema_id]
+        where = [Tile.grid_ref_sys_id == self.datacube.grid_ref_sys_id]
 
         if self.params.get('tiles'):
-            where.append(Tile.id.in_(self.params['tiles']))
+            where.append(Tile.name.in_(self.params['tiles']))
 
-        self.tiles = db.session.query(Tile,
-            (func.ST_XMin(Tile.geom)).label('min_x'),
-            (func.ST_YMax(Tile.geom)).label('max_y'),
-            (func.ST_XMax(Tile.geom) - func.ST_XMin(Tile.geom)).label('dist_x'),
-            (func.ST_YMax(Tile.geom) - func.ST_YMin(Tile.geom)).label('dist_y')).filter(*where).all()
+        self.tiles = db.session.query(Tile, GridRefSys).filter(*where).all()
 
         self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
 
         for tile in self.tiles:
-            tile_id = tile.Tile.id
-            self.mosaics[tile_id] = dict(
+            tile_name = tile.Tile.name
+
+            grs: GridRefSys = tile.GridRefSys
+
+            grid_geom = grs.geom_table
+
+            tile_stats = db.session.query(
+                (func.ST_XMin(grid_geom.c.geom)).label('min_x'),
+                (func.ST_YMax(grid_geom.c.geom)).label('max_y'),
+                (func.ST_XMax(grid_geom.c.geom) - func.ST_XMin(grid_geom.c.geom)).label('dist_x'),
+                (func.ST_YMax(grid_geom.c.geom) - func.ST_YMin(grid_geom.c.geom)).label('dist_y')
+            ).filter(grid_geom.c.tile == tile_name).first()
+
+            self.mosaics[tile_name] = dict(
                 periods=dict()
             )
 
@@ -351,20 +310,26 @@ class Maestro:
                     if dend is not None and enddate > dend.strftime('%Y-%m-%d'):
                         continue
 
-                    self.mosaics[tile_id]['periods'][periodkey] = {}
-                    self.mosaics[tile_id]['periods'][periodkey]['start'] = startdate
-                    self.mosaics[tile_id]['periods'][periodkey]['end'] = enddate
-                    self.mosaics[tile_id]['periods'][periodkey]['dist_x'] = tile.dist_x
-                    self.mosaics[tile_id]['periods'][periodkey]['dist_y'] = tile.dist_y
-                    self.mosaics[tile_id]['periods'][periodkey]['dirname'] = '{}/{}/{}-{}/'.format(self.datacube.id, tile_id, startdate, enddate)
+                    period = f'{startdate}_{enddate}'
+                    cube_relative_path = '{0}/v{1:03d}/{2}/{3}'.format(self.datacube.name, self.datacube.version,
+                                                                       tile_name, period)
+
+                    self.mosaics[tile_name]['periods'][periodkey] = {}
+                    self.mosaics[tile_name]['periods'][periodkey]['start'] = startdate
+                    self.mosaics[tile_name]['periods'][periodkey]['end'] = enddate
+                    self.mosaics[tile_name]['periods'][periodkey]['dist_x'] = tile_stats.dist_x
+                    self.mosaics[tile_name]['periods'][periodkey]['dist_y'] = tile_stats.dist_y
+                    self.mosaics[tile_name]['periods'][periodkey]['min_x'] = tile_stats.min_x
+                    self.mosaics[tile_name]['periods'][periodkey]['max_y'] = tile_stats.max_y
+                    self.mosaics[tile_name]['periods'][periodkey]['dirname'] = cube_relative_path
 
     @property
     def warped_datacube(self) -> Collection:
         """Retrieve cached datacube defintion."""
         if not self._warped:
-            datacube_warped = get_cube_id(self.datacube.id)
+            datacube_warped = get_cube_id(self.datacube.name)
 
-            self._warped = Collection.query().filter(Collection.id == datacube_warped).first()
+            self._warped = Collection.query().filter(Collection.name == datacube_warped).first()
 
         return self._warped
 
@@ -376,14 +341,15 @@ class Maestro:
         return self.bands
 
     @staticmethod
-    def get_bbox(tile_id: str, grs_schema_id: str) -> str:
+    def get_bbox(tile_id: str, grs: GridRefSys) -> str:
         """Retrieve the bounding box representation as string."""
+        geom_table = grs.geom_table
+
         bbox_result = db.session.query(
-            Tile.id,
-            func.ST_AsText(func.ST_BoundingDiagonal(func.ST_Force2D(Tile.geom_wgs84)))
+            geom_table.c.tile,
+            func.ST_AsText(func.ST_BoundingDiagonal(func.ST_Transform(geom_table.c.geom, 4326)))
         ).filter(
-            Tile.id == tile_id,
-            Tile.grs_schema_id == grs_schema_id
+            geom_table.c.tile == tile_id
         ).first()
 
         bbox = bbox_result[1][bbox_result[1].find('(') + 1:bbox_result[0].find(')')]
@@ -396,9 +362,6 @@ class Maestro:
 
         Make sure celery is running. Check RUNNING.rst for further details.
         """
-        from celery import group, chain
-        from .tasks import prepare_blend, warp_merge
-
         with timing('Time total to dispatch'):
             bands = self.datacube_bands
 
@@ -409,14 +372,16 @@ class Maestro:
             if not band_map.get('quality'):
                 raise RuntimeError('Quality band is required')
 
-            warped_datacube = self.warped_datacube.id
+            warped_datacube = self.warped_datacube.name
 
             for tileid in self.mosaics:
                 blends = []
 
-                bbox = self.get_bbox(tileid, self.datacube.grs_schema_id)
+                bbox = self.get_bbox(tileid, self.datacube.grs)
 
-                tile = next(filter(lambda t: t.Tile.id == tileid, self.tiles))
+                tile = next(filter(lambda t: t.Tile.name == tileid, self.tiles))
+
+                grid_crs = tile.GridRefSys.crs
 
                 # For each blend
                 for period in self.mosaics[tileid]['periods']:
@@ -425,7 +390,7 @@ class Maestro:
 
                     assets_by_period = self.search_images(bbox, start, end, tileid)
 
-                    if self.datacube.composite_function_schema_id == 'IDENTITY':
+                    if self.datacube.composite_function.alias == 'IDT':
                         stats_bands = (TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME,)
                         # Mount list of True/False values
                         is_any_empty = list(map(lambda k: k not in stats_bands and len(assets_by_period[k]) == 0, assets_by_period.keys()))
@@ -437,6 +402,8 @@ class Maestro:
 
                     dist_x = self.mosaics[tileid]['periods'][period]['dist_x']
                     dist_y = self.mosaics[tileid]['periods'][period]['dist_y']
+                    min_x = self.mosaics[tileid]['periods'][period]['min_x']
+                    max_y = self.mosaics[tileid]['periods'][period]['max_y']
                     start_date = self.mosaics[tileid]['periods'][period]['start']
                     end_date = self.mosaics[tileid]['periods'][period]['end']
                     period_start_end = '{}_{}'.format(start_date, end_date)
@@ -453,21 +420,22 @@ class Maestro:
                                 properties = dict(
                                     date=merge_date,
                                     dataset=collection,
-                                    xmin=tile.min_x,
-                                    ymax=tile.max_y,
-                                    resx=band.resolution_x,
-                                    resy=band.resolution_y,
+                                    xmin=min_x,
+                                    ymax=max_y,
+                                    resx=float(band.resolution_x),
+                                    resy=float(band.resolution_y),
                                     dist_x=dist_x,
                                     dist_y=dist_y,
-                                    srs=tile.Tile.grs_schema.crs,
+                                    srs=grid_crs,
                                     tile_id=tileid,
                                     assets=assets,
-                                    nodata=band.fill,
+                                    nodata=float(band.nodata),
                                     bands=band_str_list,
+                                    version=self.datacube.version
                                 )
 
                                 activity = get_or_create_activity(
-                                    cube=self.datacube.id,
+                                    cube=self.datacube.name,
                                     warped=warped_datacube,
                                     activity_type='MERGE',
                                     scene_type='WARPED',
@@ -477,7 +445,7 @@ class Maestro:
                                     **properties
                                 )
 
-                                task = warp_merge.s(activity, band_map, self.params['force'])
+                                task = warp_merge.s(activity, band_map, **self.properties)
                                 merges_tasks.append(task)
 
                     if len(merges_tasks) > 0:
@@ -495,18 +463,22 @@ class Maestro:
         scenes = {}
         options = dict(
             bbox=bbox,
-            time='{}/{}'.format(start, end),
+            datetime='{}/{}'.format(start, end),
             limit=100000
         )
 
         bands = self.datacube_bands
 
-        band_serializer = BandForm()
-
         # Retrieve band definition in dict format.
         # TODO: Should we use from STAC?
-        band_data = band_serializer.dump(bands, many=True)
-        collection_bands = {band_dump['name']: band_dump for band_dump in band_data}
+        collection_bands = dict()
+
+        for band_obj in bands:
+            collection_bands[band_obj.name] = dict(
+                min_value=float(band_obj.min_value),
+                max_value=float(band_obj.max_value),
+                nodata=float(band_obj.nodata),
+            )
 
         for band in bands:
             scenes[band.name] = dict()

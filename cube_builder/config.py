@@ -35,7 +35,7 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         'SQLALCHEMY_DATABASE_URI',
-        'postgresql://postgres:bdc-scripts2019@localhost:5435/bdc_scripts'
+        'postgresql://postgres:postgres@localhost:5432/bdc_catalog'
     )
     STAC_URL = os.environ.get(
         'STAC_URL',

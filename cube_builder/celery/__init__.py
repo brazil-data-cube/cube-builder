@@ -11,8 +11,8 @@
 # 3rdparty
 from celery import Celery
 from flask import Flask
+from bdc_catalog.models import db
 from cube_builder.config import Config
-from bdc_db.models import db
 import logging
 import flask
 
