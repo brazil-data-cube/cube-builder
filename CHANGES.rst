@@ -13,7 +13,7 @@ Changes
 Version 0.2.0
 -------------
 
-Released 2020-05-29
+Released 2020-08-26
 
 - First experimental version.
 - Create own Grid for the Data Cubes.
