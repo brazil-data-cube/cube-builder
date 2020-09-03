@@ -19,9 +19,13 @@ from typing import List, Tuple, Union
 # 3rdparty
 import numpy
 import rasterio
+import rasterio.features
+import shapely
+import shapely.geometry
 from bdc_catalog.models import Item, db, Tile
 from bdc_catalog.utils import multihash_checksum_sha256
 from flask import abort
+from geoalchemy2.shape import from_shape
 from numpngw import write_png
 from rasterio import Affine, MemoryFile
 from rasterio.warp import Resampling, reproject
@@ -853,6 +857,9 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                 )
             )
 
+            extent = None
+            min_convex_hull = None
+
             for band in scenes:
                 band_model = list(filter(lambda b: b.name == band, cube_bands))
 
@@ -863,6 +870,12 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
 
                 asset_relative_path = scenes[band][composite_function].replace(Config.DATA_DIR, '')
 
+                if extent is None:
+                    extent = raster_extent(str(scenes[band][composite_function]))
+
+                if min_convex_hull is None:
+                    min_convex_hull = raster_convexhull(str(scenes[band][composite_function]))
+
                 assets[band_model[0].name] = create_asset_definition(
                     href=str(asset_relative_path),
                     mime_type=COG_MIME_TYPE,
@@ -872,6 +885,8 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                 )
 
             item.assets = assets
+            item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
+            item.geom = from_shape(extent, srid=4326)
 
         db.session.commit()
 
@@ -923,6 +938,9 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
         item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=datacube.id)
         item.cloud_cover = scenes.get('cloudratio', 0)
 
+        extent = None
+        min_convex_hull = None
+
         assets = item.assets or dict()
 
         assets.update(
@@ -944,6 +962,12 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
 
             asset_relative_path = scenes['ARDfiles'][band].replace(Config.DATA_DIR, '')
 
+            if extent is None:
+                extent = raster_extent(str(scenes['ARDfiles'][band]))
+
+            if min_convex_hull is None:
+                min_convex_hull = raster_convexhull(str(scenes['ARDfiles'][band]))
+
             assets[band_model[0].name] = create_asset_definition(
                 href=str(asset_relative_path),
                 mime_type=COG_MIME_TYPE,
@@ -952,6 +976,8 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
                 is_raster=True
             )
 
+        item.geom = from_shape(extent, srid=4326)
+        item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
         item.assets = assets
 
     db.session.commit()
@@ -1251,3 +1277,50 @@ def rasterio_access_token(access_token=None):
             options.update(GDAL_HTTP_HEADER_FILE=str(tmp_file))
 
         yield options
+
+
+def raster_convexhull(imagepath: str, epsg='EPSG:4326') -> dict:
+    """get image footprint
+
+    Args:
+        imagepath (str): image file
+        epsg (str): geometry EPSG
+
+    See:
+        https://rasterio.readthedocs.io/en/latest/topics/masks.html
+    """
+    with rasterio.open(imagepath) as dataset:
+        # Read raster data, masking nodata values
+        data = dataset.read(1, masked=True)
+        # Create mask, which 1 represents valid data and 0 nodata
+        mask = numpy.invert(data.mask).astype(numpy.uint8)
+
+        geoms = []
+        res = {'val': []}
+        for geom, val in rasterio.features.shapes(mask, mask=mask, transform=dataset.transform):
+            geom = rasterio.warp.transform_geom(dataset.crs, epsg, geom, precision=6)
+
+            res['val'].append(val)
+            geoms.append(shapely.geometry.shape(geom))
+
+        if len(geoms) == 1:
+            return geoms[0]
+
+        multi_polygons = shapely.geometry.MultiPolygon(geoms)
+
+        return multi_polygons.convex_hull
+
+
+def raster_extent(imagepath: str, epsg = 'EPSG:4326') -> shapely.geometry.Polygon:
+    """Get raster extent in arbitrary CRS
+
+    Args:
+        imagepath (str): Path to image
+        epsg (str): EPSG Code of result crs
+    Returns:
+        dict: geojson-like geometry
+    """
+
+    with rasterio.open(imagepath) as dataset:
+        _geom = shapely.geometry.mapping(shapely.geometry.box(*dataset.bounds))
+        return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom, precision=6))

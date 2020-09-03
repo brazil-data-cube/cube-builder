@@ -106,7 +106,7 @@ class DataCubeProcessParser(Schema):
     bands = fields.List(fields.String, required=False)
     force = fields.Boolean(required=False, default=False)
     with_rgb = fields.Boolean(required=False, default=False)
-    token = fields.String(required=False, allow_none=False)
+    token = fields.String(required=False, allow_none=True)
 
 
 class PeriodParser(Schema):

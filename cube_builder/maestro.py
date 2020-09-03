@@ -216,7 +216,7 @@ class Maestro:
             STAC client
         """
         try:
-            return self._stac(collection, Config.STAC_URL)
+            return self._stac(collection, Config.STAC_URL, **self.properties)
         except RuntimeError:
             # Search in INPE STAC
             return self._stac(collection, 'http://cdsr.dpi.inpe.br/inpe-stac')
