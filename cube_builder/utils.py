@@ -30,7 +30,7 @@ from numpngw import write_png
 from rasterio import Affine, MemoryFile
 from rasterio.warp import Resampling, reproject
 
-# BDC Scripts
+# Builder
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 
@@ -697,7 +697,7 @@ def blend(activity, band_map, build_clear_observation=False):
         masklist[order].close()
 
     # Evaluate cloud cover
-    cloudcover = 100. * ((height * width - numpy.count_nonzero(stack_raster)) / (height * width))
+    efficacy, cloudcover = _qa_statistics(stack_raster)
 
     profile.update({
         'compress': 'LZW',
@@ -718,10 +718,7 @@ def blend(activity, band_map, build_clear_observation=False):
         total_observation_profile['dtype'] = 'uint8'
 
         save_as_cog(str(total_observation_file), stack_total_observation, **total_observation_profile)
-
-        with rasterio.open(str(clear_ob_file_path), 'r+', **clear_ob_profile) as dataset:
-            dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-            dataset.update_tags(ns='rio_overview', resampling='nearest')
+        generate_cogs(str(clear_ob_file_path), str(clear_ob_file_path))
 
         activity['clear_observation_file'] = str(clear_ob_data_set.path)
         activity['total_observation'] = str(total_observation_file)

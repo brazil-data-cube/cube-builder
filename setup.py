@@ -50,6 +50,7 @@ install_requires = [
     'numpngw>=0.0.8',
     'python-dateutil>=2.8,<3',
     'rasterio>=1.1.2,<2',
+    'rio_cogeo>=1.1,<2',
     'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
     'stac @ git+git://github.com/brazil-data-cube/stac.py.git@v0.9.0-1#egg=stac',

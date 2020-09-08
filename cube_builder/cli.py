@@ -9,13 +9,16 @@
 """Create a python click context and inject it to the global flask commands."""
 
 import click
-from bdc_catalog.models import CompositeFunction, db
+from bdc_catalog.models import Application, CompositeFunction, db
 from flask.cli import with_appcontext, FlaskGroup
 
 from . import create_app
 
 
 # Create cube-builder cli from bdc-db
+from .package import package_info
+
+
 @click.group(cls=FlaskGroup, create_app=create_app)
 def cli():
     """Command line for data cube builder."""
@@ -37,13 +40,30 @@ def load_data():
         _, _ = get_or_create_model(
             CompositeFunction,
             defaults=dict(name='Stack', alias='STK', description='Best pixel'),
-            id='STK'
+            alias='STK'
         )
 
         _, _ = get_or_create_model(
             CompositeFunction,
             defaults=dict(name='Identity', description=''),
             alias='IDT'
+        )
+
+        info = package_info()
+
+        where = dict(
+            name=info.name,
+            version=info.version
+        )
+
+        # Cube-Builder application
+        application, _ = get_or_create_model(
+            Application,
+            defaults=dict(
+                name=info.name,
+                uri=info.url
+            ),
+            **where
         )
 
     db.session.commit()
