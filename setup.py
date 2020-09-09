@@ -41,7 +41,7 @@ setup_requires = []
 
 install_requires = [
     'bdc-core @ git+git://github.com/brazil-data-cube/bdc-core.git@v0.2.0#egg=bdc-core',
-    'bdc-db @ git+git://github.com/brazil-data-cube/bdc-catalog.git@v0.2.1#egg=bdc-db',
+    'bdc-catalog @ git+git://github.com/brazil-data-cube/bdc-catalog.git@v0.6.0#egg=bdc-catalog',
     'celery[librabbitmq]>=4.3.0',
     'Flask>=1.1.1,<2',
     'flask-cors>=3.0,<4',
@@ -50,9 +50,10 @@ install_requires = [
     'numpngw>=0.0.8',
     'python-dateutil>=2.8,<3',
     'rasterio>=1.1.2,<2',
+    'rio_cogeo>=1.1,<2',
     'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
-    'stac @ git+git://github.com/brazil-data-cube/stac.py.git@b-0.8.0#egg=stac',
+    'stac @ git+git://github.com/brazil-data-cube/stac.py.git@v0.9.0-1#egg=stac',
 ]
 
 packages = find_packages()
@@ -77,6 +78,12 @@ setup(
     include_package_data=True,
     platforms='any',
     entry_points={
+        'bdc_db.alembic': [
+            'cube_builder = cube_builder:alembic'
+        ],
+        'bdc_db.models': [
+            'cube_builder = cube_builder.models'
+        ],
         'console_scripts': [
             'cube-builder = cube_builder.cli:cli'
         ]

@@ -9,12 +9,16 @@
 """Define Cube Builder Task Activity to track celery execution."""
 
 from datetime import datetime
-from typing import List, Union
+from typing import Union
 
 # 3rdparty
 from sqlalchemy import Column, Date, String, ARRAY, Integer, JSON, Text
 from sqlalchemy.engine.result import ResultProxy
-from bdc_db.models.base_sql import BaseModel, db
+from bdc_catalog.models.base_sql import BaseModel, db
+from ..config import Config
+
+
+db.metadata.schema = Config.ACTIVITIES_SCHEMA
 
 
 class Activity(BaseModel):

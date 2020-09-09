@@ -10,26 +10,36 @@
 
 # Python Native
 import logging
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import List, Tuple, Union
 
 # 3rdparty
 import numpy
 import rasterio
-from bdc_db.models import Asset, Band, CollectionItem, db
+import rasterio.features
+import shapely
+import shapely.geometry
+from bdc_catalog.models import Item, db, Tile
+from bdc_catalog.utils import multihash_checksum_sha256
 from flask import abort
+from geoalchemy2.shape import from_shape
 from numpngw import write_png
 from rasterio import Affine, MemoryFile
 from rasterio.warp import Resampling, reproject
 
-# BDC Scripts
+# Builder
+from rio_cogeo.cogeo import cog_translate
+from rio_cogeo.profiles import cog_profiles
+
 from .config import Config
 
 
 # Constant to define required bands to generate both NDVI and EVI
 from .constants import CLEAR_OBSERVATION_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, \
-    PROVENANCE_ATTRIBUTES
+    PROVENANCE_ATTRIBUTES, COG_MIME_TYPE
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 
@@ -93,7 +103,7 @@ class DataCubeFragments(list):
     A data cube is composed by the following structure:
     ``Collections_Resolution_TemporalPeriod_CompositeFunction``.
 
-    An IDENTITY data cube does not have TemporalPeriod and CompositeFunction.
+    An IDT data cube does not have TemporalPeriod and CompositeFunction.
 
     Examples:
         >>> # Parse Sentinel 2 Monthly MEDIAN
@@ -103,7 +113,7 @@ class DataCubeFragments(list):
         >>> # Parse Sentinel 2 IDENTITY
         >>> cube_parts = DataCubeFragments('S2_10') # ['S2', '10']
         >>> cube_parts.composite_function
-        ... 'IDENTITY'
+        ... 'IDT'
         >>> DataCubeFragments('S2-10') # ValueError Invalid data cube name
     """
 
@@ -123,7 +133,7 @@ class DataCubeFragments(list):
     def parse(datacube: str) -> List[str]:
         cube_fragments = datacube.split('_')
 
-        if len(cube_fragments) > 5 or len(cube_fragments) < 3:
+        if len(cube_fragments) > 4 or len(cube_fragments) < 2:
             abort(400, 'Invalid data cube name. "{}"'.format(datacube))
 
         return cube_fragments
@@ -138,10 +148,12 @@ class DataCubeFragments(list):
 
         TODO: Add reference to document User Guide - Convention Data Cube Names
         """
-        if len(self) < 5:
-            return 'IDENTITY'
+        if len(self) < 4:
+            return 'IDT'
 
-        return self[-2]
+        return self[-1
+
+        ]
 
 
 def get_cube_parts(datacube: str) -> DataCubeFragments:
@@ -153,8 +165,8 @@ def get_cube_id(datacube: str, func=None):
     """Prepare data cube name based on temporal function."""
     cube_fragments = get_cube_parts(datacube)
 
-    if not func or func.upper() == 'IDENTITY':
-        return f"{'_'.join(cube_fragments[:2])}_{cube_fragments[-1]}"
+    if not func or func.upper() == 'IDT':
+        return f"{'_'.join(cube_fragments[:2])}"
 
     # Ensure that data cube with composite function must have a
     # temporal resolution
@@ -163,33 +175,26 @@ def get_cube_id(datacube: str, func=None):
 
     # When data cube have temporal resolution (S2_10_1M) use it
     # Otherwise, just remove last cube part (composite function)
-    cube = datacube if len(cube_fragments) == 4 else '_'.join(cube_fragments[:-2])
+    cube = datacube if len(cube_fragments) == 3 else '_'.join(cube_fragments[:-1])
 
-    return f'{cube}_{func}_{cube_fragments[-1]}'
-
-
-def save_as_cog(destination: str, raster, mode='w', **profile):
-    """Save the raster file as Cloud Optimized GeoTIFF.
-
-    See Also:
-        Cloud Optimized GeoTiff https://gdal.org/drivers/raster/cog.html
-
-    Args:
-        destination: Path to store the data set.
-        raster: Numpy raster values to persist in disk
-        mode: Default rasterio mode. Default is 'w' but you also can set 'r+'.
-        **profile: Rasterio profile values to add in dataset.
-    """
-    with rasterio.open(str(destination), mode, **profile) as dataset:
-        if profile.get('nodata'):
-            dataset.nodata = profile['nodata']
-
-        dataset.write_band(1, raster)
-        dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-        dataset.update_tags(ns='rio_overview', resampling='nearest')
+    return f'{cube}_{func}'
 
 
-def merge(merge_file: str, assets: List[dict], band_map, **kwargs):
+def get_item_id(datacube: str, version: int, tile: str, date: str) -> str:
+    version_str = '{0:03d}'.format(version)
+
+    return f'{datacube}_v{version_str}_{tile}_{date}'
+
+
+def prepare_asset_url(url: str) -> str:
+    from urllib.parse import urljoin, urlparse
+
+    parsed_url = urlparse(url)
+
+    return urljoin(url, parsed_url.path)
+
+
+def merge(merge_file: str, assets: List[dict], band: str, band_map, **kwargs):
     """Apply datacube merge scenes.
 
     TODO: Describe how it works.
@@ -197,7 +202,8 @@ def merge(merge_file: str, assets: List[dict], band_map, **kwargs):
     Args:
         merge_file: Path to store data cube merge
         assets: List of collections assets during period
-        bands: List of bands from current merge date.
+        band: Merge band name
+        band_map: Map of cube band name and common name.
         **kwargs: Extra properties
     """
     nodata = kwargs.get('nodata', -9999)
@@ -206,8 +212,7 @@ def merge(merge_file: str, assets: List[dict], band_map, **kwargs):
     dist_x = kwargs.get('dist_x')
     dist_y = kwargs.get('dist_y')
     dataset = kwargs.get('dataset')
-    band = assets[0]['band']
-    resx, resy = kwargs.get('resx'), kwargs.get('resy')
+    resx, resy = kwargs['resx'], kwargs['resy']
 
     num_pixel_x = round(dist_x / resx)
     num_pixel_y = round(dist_y / resy)
@@ -247,59 +252,62 @@ def merge(merge_file: str, assets: List[dict], band_map, **kwargs):
 
     template = None
 
-    with rasterio.Env(CPL_CURL_VERBOSE=False, **get_rasterio_config()):
-        for asset in assets:
-            with rasterio.open(asset['link']) as src:
-                meta = src.meta.copy()
-                meta.update({
-                    'crs': srs,
-                    'transform': transform,
-                    'width': cols,
-                    'height': rows
-                })
+    with rasterio_access_token(kwargs.get('token')) as options:
+        with rasterio.Env(CPL_CURL_VERBOSE=False, **get_rasterio_config(), **options):
+            for asset in assets:
+                link = prepare_asset_url(asset['link'])
 
-                if src.profile['nodata'] is not None:
-                    source_nodata = src.profile['nodata']
-                elif 'LC8SR' in dataset:
-                    if band != band_map['quality']:
-                        # Temporary workaround for landsat
-                        # Sometimes, the laSRC does not generate the data set properly and
-                        # the data maybe UInt16 instead Int16
-                        source_nodata = nodata if src.profile['dtype'] == 'int16' else 0
-                elif 'CBERS' in dataset and band != band_map['quality']:
-                    source_nodata = nodata
+                with rasterio.open(link) as src:
+                    meta = src.meta.copy()
+                    meta.update({
+                        'crs': srs,
+                        'transform': transform,
+                        'width': cols,
+                        'height': rows
+                    })
 
-                kwargs.update({
-                    'nodata': source_nodata
-                })
+                    if src.profile['nodata'] is not None:
+                        source_nodata = src.profile['nodata']
+                    elif 'LC8SR' in dataset:
+                        if band != band_map['quality']:
+                            # Temporary workaround for landsat
+                            # Sometimes, the laSRC does not generate the data set properly and
+                            # the data maybe UInt16 instead Int16
+                            source_nodata = nodata if src.profile['dtype'] == 'int16' else 0
+                    elif 'CBERS' in dataset and band != band_map['quality']:
+                        source_nodata = nodata
 
-                with MemoryFile() as mem_file:
-                    with mem_file.open(**meta) as dst:
-                        reproject(
-                            source=rasterio.band(src, 1),
-                            destination=raster,
-                            src_transform=src.transform,
-                            src_crs=src.crs,
-                            dst_transform=transform,
-                            dst_crs=srs,
-                            src_nodata=source_nodata,
-                            dst_nodata=nodata,
-                            resampling=resampling)
+                    kwargs.update({
+                        'nodata': source_nodata
+                    })
 
-                        if band != 'quality' or is_sentinel_landsat_quality_fmask:
-                            valid_data_scene = raster[raster != nodata]
-                            raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
-                        else:
-                            raster_merge = raster_merge + raster * raster_mask
-                            raster_mask[raster != nodata] = 0
+                    with MemoryFile() as mem_file:
+                        with mem_file.open(**meta) as dst:
+                            reproject(
+                                source=rasterio.band(src, 1),
+                                destination=raster,
+                                src_transform=src.transform,
+                                src_crs=src.crs,
+                                dst_transform=transform,
+                                dst_crs=srs,
+                                src_nodata=source_nodata,
+                                dst_nodata=nodata,
+                                resampling=resampling)
 
-                        if template is None:
-                            template = dst.profile
-                            # Ensure type is >= int16
+                            if band != 'quality' or is_sentinel_landsat_quality_fmask:
+                                valid_data_scene = raster[raster != nodata]
+                                raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
+                            else:
+                                raster_merge = raster_merge + raster * raster_mask
+                                raster_mask[raster != nodata] = 0
 
-                            if band != band_map['quality']:
-                                template['dtype'] = 'int16'
-                                template['nodata'] = nodata
+                            if template is None:
+                                template = dst.profile
+                                # Ensure type is >= int16
+
+                                if band != band_map['quality']:
+                                    template['dtype'] = 'int16'
+                                    template['nodata'] = nodata
 
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
@@ -334,7 +342,7 @@ def merge(merge_file: str, assets: List[dict], band_map, **kwargs):
 
 
 def post_processing_quality(quality_file: str, bands: List[str], cube: str,
-                            date: str, tile_id, quality_band: str):
+                            date: str, tile_id, quality_band: str, version: int):
     """Stack the merge bands in order to apply a filter on the quality band.
 
     We have faced some issues regarding `nodata` value in spectral bands, which was resulting
@@ -352,7 +360,7 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
     Args:
          quality_file: Path to the merge fmask.
          bands: All the bands from the merge date.
-         cube: IDENTITY data cube name
+         cube: Identity data cube name
          date: Merge date
          tile_id: Brazil data cube tile identifier
          quality_band: Quality band name
@@ -373,7 +381,7 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
         col_offset = block.col_off + block.width
 
         for band in bands_without_quality:
-            band_file = build_cube_path(get_cube_id(cube), date, tile_id, band=band)
+            band_file = build_cube_path(get_cube_id(cube), date, tile_id, version=version, band=band)
 
             with rasterio.open(str(band_file)) as ds:
                 raster = ds.read(1, window=block)
@@ -505,6 +513,8 @@ def blend(activity, band_map, build_clear_observation=False):
 
     band = activity['band']
 
+    version = activity['version']
+
     nodata = activity.get('nodata', -9999)
     if band == 'quality':
         nodata = 255
@@ -566,7 +576,7 @@ def blend(activity, band_map, build_clear_observation=False):
     period = activity.get('period')
     tile_id = activity.get('tile_id')
 
-    cube_file = build_cube_path(datacube, period, tile_id, band, suffix='.tif')
+    cube_file = build_cube_path(datacube, period, tile_id, version=version, band=band, suffix='.tif')
 
     # Create directory
     cube_file.parent.mkdir(parents=True, exist_ok=True)
@@ -576,7 +586,7 @@ def blend(activity, band_map, build_clear_observation=False):
     if build_clear_observation:
         logging.warning('Creating and computing Clear Observation (ClearOb) file...')
 
-        clear_ob_file_path = build_cube_path(datacube, period, tile_id, band=CLEAR_OBSERVATION_NAME, suffix='.tif')
+        clear_ob_file_path = build_cube_path(datacube, period, tile_id, version=version, band=CLEAR_OBSERVATION_NAME, suffix='.tif')
 
         clear_ob_profile = profile.copy()
         clear_ob_profile['dtype'] = CLEAR_OBSERVATION_ATTRIBUTES['data_type']
@@ -605,6 +615,7 @@ def blend(activity, band_map, build_clear_observation=False):
 
             # Mask valid data (0 and 1) as True
             mask[mask < 2] = 1
+            mask[mask == 3] = 1
             # Mask cloud/snow/shadow/no-data as False
             mask[mask >= 2] = 0
             # Ensure that Raster noda value (-9999 maybe) is set to False
@@ -686,7 +697,7 @@ def blend(activity, band_map, build_clear_observation=False):
         masklist[order].close()
 
     # Evaluate cloud cover
-    cloudcover = 100. * ((height * width - numpy.count_nonzero(stack_raster)) / (height * width))
+    efficacy, cloudcover = _qa_statistics(stack_raster)
 
     profile.update({
         'compress': 'LZW',
@@ -701,16 +712,13 @@ def blend(activity, band_map, build_clear_observation=False):
         clear_ob_data_set.close()
         logging.warning('Clear Observation (ClearOb) file generated successfully.')
 
-        total_observation_file = build_cube_path(datacube, period, tile_id, band=TOTAL_OBSERVATION_NAME)
+        total_observation_file = build_cube_path(datacube, period, tile_id, version=version, band=TOTAL_OBSERVATION_NAME)
         total_observation_profile = profile.copy()
         total_observation_profile.pop('nodata', None)
         total_observation_profile['dtype'] = 'uint8'
 
         save_as_cog(str(total_observation_file), stack_total_observation, **total_observation_profile)
-
-        with rasterio.open(str(clear_ob_file_path), 'r+', **clear_ob_profile) as dataset:
-            dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-            dataset.update_tags(ns='rio_overview', resampling='nearest')
+        generate_cogs(str(clear_ob_file_path), str(clear_ob_file_path))
 
         activity['clear_observation_file'] = str(clear_ob_data_set.path)
         activity['total_observation'] = str(total_observation_file)
@@ -719,20 +727,12 @@ def blend(activity, band_map, build_clear_observation=False):
 
     if cube_function == 'MED':
         # Close and upload the MEDIAN dataset
-        with rasterio.open(str(cube_file), 'w', **profile) as ds_median:
-            ds_median.nodata = nodata
-            ds_median.write_band(1, median_raster)
-            ds_median.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-            ds_median.update_tags(ns='rio_overview', resampling='nearest')
+        save_as_cog(str(cube_file), median_raster, mode='w', **profile)
     else:
-        with rasterio.open(str(cube_file), 'w', **profile) as stack_dataset:
-            stack_dataset.nodata = nodata
-            stack_dataset.write_band(1, stack_raster)
-            stack_dataset.build_overviews([2, 4, 8, 16, 32, 64], Resampling.nearest)
-            stack_dataset.update_tags(ns='rio_overview', resampling='nearest')
+        save_as_cog(str(cube_file), stack_raster, mode='w', **profile)
 
         if build_clear_observation:
-            provenance_file = build_cube_path(datacube, period, tile_id, PROVENANCE_NAME)
+            provenance_file = build_cube_path(datacube, period, tile_id, version=version, band=PROVENANCE_NAME)
             provenance_profile = profile.copy()
             provenance_profile.pop('nodata', -1)
             provenance_profile['dtype'] = PROVENANCE_ATTRIBUTES['data_type']
@@ -789,24 +789,22 @@ def has_vegetation_index_support(scene_bands: List[str], band_map: dict):
         and VEGETATION_INDEX_BANDS <= set(common_name_bands)
 
 
-def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio, band_map, **kwargs):
+def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
 
-    raster_size_schemas = cube.raster_size_schemas
+    datacube = cube.name
 
-    cube_parts = get_cube_parts(cube.id)
+    cube_parts = get_cube_parts(datacube)
 
     for composite_function in [cube_parts.composite_function]:
-        item_datacube = get_cube_id(cube.id, composite_function)
+        item_datacube = get_cube_id(datacube, composite_function)
 
-        item_id = '{}_{}_{}'.format(item_datacube, tile_id, period)
+        item_id = get_item_id(item_datacube, cube.version, tile_id, period)
 
-        _datacube = get_cube_id(datacube, composite_function)
+        cube_bands = cube.bands
 
-        cube_bands = Band.query().filter(Band.collection_id == _datacube).all()
-
-        quick_look_file = build_cube_path(_datacube, period, tile_id, suffix=None)
+        quick_look_file = build_cube_path(item_datacube, period, tile_id, version=cube.version, suffix=None)
 
         ql_files = []
         for band in bands:
@@ -815,15 +813,15 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio,
         quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
         if kwargs.get('with_rgb'):
-            rgb_file = build_cube_path(cube.id, period, tile_id, 'RGB')
+            rgb_file = build_cube_path(item_datacube, period, tile_id, version=cube.version, band='RGB')
             generate_rgb(rgb_file, ql_files)
 
         if has_vegetation_index_support(scenes.keys(), band_map):
             # Generate VI
             evi_name = band_map.get('evi', 'EVI')
-            evi_path = build_cube_path(cube.id, period, tile_id, band=evi_name)
+            evi_path = build_cube_path(item_datacube, period, tile_id, version=cube.version, band=evi_name)
             ndvi_name = band_map.get('ndvi', 'NDVI')
-            ndvi_path = build_cube_path(cube.id, period, tile_id, band=ndvi_name)
+            ndvi_path = build_cube_path(item_datacube, period, tile_id, version=cube.version, band=ndvi_name)
 
             generate_evi_ndvi(scenes[band_map['red']][composite_function],
                               scenes[band_map['nir']][composite_function],
@@ -832,24 +830,32 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio,
             scenes[evi_name] = {composite_function: str(evi_path)}
             scenes[ndvi_name] = {composite_function: str(ndvi_path)}
 
-        Asset.query().filter(Asset.collection_item_id == item_id).delete()
-
-        CollectionItem.query().filter(CollectionItem.id == item_id).delete()
+        tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == cube.grid_ref_sys_id).first()
 
         with db.session.begin_nested():
-            CollectionItem(
-                id=item_id,
-                collection_id=item_datacube,
-                grs_schema_id=cube.grs_schema_id,
-                tile_id=tile_id,
-                item_date=start_date,
-                composite_start=start_date,
-                composite_end=end_date,
-                quicklook=quick_look_file.replace(Config.DATA_DIR, ''),
-                cloud_cover=cloudratio,
-                scene_type=composite_function,
-                compressed_file=None
-            ).save(commit=False)
+            item_data = dict(
+                name=item_id,
+                collection_id=cube.id,
+                tile_id=tile.id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+            item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=cube.id)
+            item.cloud_cover = cloudratio
+
+            assets = item.assets or dict()
+            assets.update(
+                thumbnail=create_asset_definition(
+                    href=quick_look_file.replace(Config.DATA_DIR, ''),
+                    mime_type=COG_MIME_TYPE,
+                    role=['thumbnail'],
+                    absolute_path=str(quick_look_file)
+                )
+            )
+
+            extent = None
+            min_convex_hull = None
 
             for band in scenes:
                 band_model = list(filter(lambda b: b.name == band, cube_bands))
@@ -861,38 +867,39 @@ def publish_datacube(cube, bands, datacube, tile_id, period, scenes, cloudratio,
 
                 asset_relative_path = scenes[band][composite_function].replace(Config.DATA_DIR, '')
 
-                Asset(
-                    collection_id=item_datacube,
-                    band_id=band_model[0].id,
-                    grs_schema_id=cube.grs_schema_id,
-                    tile_id=tile_id,
-                    collection_item_id=item_id,
-                    url='{}'.format(asset_relative_path),
-                    source=None,
-                    raster_size_x=raster_size_schemas.raster_size_x,
-                    raster_size_y=raster_size_schemas.raster_size_y,
-                    raster_size_t=1,
-                    chunk_size_x=raster_size_schemas.chunk_size_x,
-                    chunk_size_y=raster_size_schemas.chunk_size_y,
-                    chunk_size_t=1
-                ).save(commit=False)
+                if extent is None:
+                    extent = raster_extent(str(scenes[band][composite_function]))
+
+                if min_convex_hull is None:
+                    min_convex_hull = raster_convexhull(str(scenes[band][composite_function]))
+
+                assets[band_model[0].name] = create_asset_definition(
+                    href=str(asset_relative_path),
+                    mime_type=COG_MIME_TYPE,
+                    role=['data'],
+                    absolute_path=str(scenes[band][composite_function]),
+                    is_raster=True
+                )
+
+            item.assets = assets
+            item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
+            item.geom = from_shape(extent, srid=4326)
 
         db.session.commit()
 
     return quick_look_file
 
 
-def publish_merge(bands, datacube, tile_id, period, date, scenes, band_map):
+def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
     """Generate quicklook and catalog warped datacube on database.
 
     TODO: Review it with publish_datacube
     """
-    item_id = '{}_{}_{}'.format(datacube.id, tile_id, date)
+    item_id = get_item_id(datacube.name, datacube.version, tile_id, date)
 
-    quick_look_file = build_cube_path(datacube.id, date, tile_id, suffix=None)
+    quick_look_file = build_cube_path(datacube.name, date, tile_id, version=datacube.version, suffix=None)
 
-    cube_bands = Band.query().filter(Band.collection_id == datacube.id).all()
-    raster_size_schemas = datacube.raster_size_schemas
+    cube_bands = datacube.bands
 
     ql_files = []
     for band in bands:
@@ -900,16 +907,12 @@ def publish_merge(bands, datacube, tile_id, period, date, scenes, band_map):
 
     quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
-    Asset.query().filter(Asset.collection_item_id == item_id).delete()
-
-    CollectionItem.query().filter(CollectionItem.id == item_id).delete()
-
     # Generate VI
     if has_vegetation_index_support(scenes['ARDfiles'].keys(), band_map):
         evi_name = band_map.get('evi', 'EVI')
-        evi_path = build_cube_path(datacube.id, date, tile_id, band=evi_name)
+        evi_path = build_cube_path(datacube.name, date, tile_id, version=datacube.version, band=evi_name)
         ndvi_name = band_map.get('ndvi', 'NDVI')
-        ndvi_path = build_cube_path(datacube.id, date, tile_id, band=ndvi_name)
+        ndvi_path = build_cube_path(datacube.name, date, tile_id, version=datacube.version, band=ndvi_name)
 
         generate_evi_ndvi(scenes['ARDfiles'][band_map['red']],
                           scenes['ARDfiles'][band_map['nir']],
@@ -918,20 +921,33 @@ def publish_merge(bands, datacube, tile_id, period, date, scenes, band_map):
         scenes['ARDfiles'][evi_name] = str(evi_path)
         scenes['ARDfiles'][ndvi_name] = str(ndvi_path)
 
+    tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == datacube.grid_ref_sys_id).first()
+
     with db.session.begin_nested():
-        CollectionItem(
-            id=item_id,
+        item_data = dict(
+            name=item_id,
             collection_id=datacube.id,
-            grs_schema_id=datacube.grs_schema_id,
-            tile_id=tile_id,
-            item_date=date,
-            composite_start=date,
-            composite_end=period.split('_')[-1],
-            quicklook=quick_look_file.replace(Config.DATA_DIR, ''),
-            cloud_cover=scenes.get('cloudratio', 0),
-            scene_type='WARPED',
-            compressed_file=None
-        ).save(commit=False)
+            tile_id=tile.id,
+            start_date=date,
+            end_date=date,
+        )
+
+        item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=datacube.id)
+        item.cloud_cover = scenes.get('cloudratio', 0)
+
+        extent = None
+        min_convex_hull = None
+
+        assets = item.assets or dict()
+
+        assets.update(
+            thumbnail=create_asset_definition(
+                href=quick_look_file.replace(Config.DATA_DIR, ''),
+                mime_type=COG_MIME_TYPE,
+                role=['thumbnail'],
+                absolute_path=str(quick_look_file)
+            )
+        )
 
         for band in scenes['ARDfiles']:
             band_model = list(filter(lambda b: b.name == band, cube_bands))
@@ -943,21 +959,23 @@ def publish_merge(bands, datacube, tile_id, period, date, scenes, band_map):
 
             asset_relative_path = scenes['ARDfiles'][band].replace(Config.DATA_DIR, '')
 
-            Asset(
-                collection_id=datacube.id,
-                band_id=band_model[0].id,
-                grs_schema_id=datacube.grs_schema_id,
-                tile_id=tile_id,
-                collection_item_id=item_id,
-                url='{}'.format(asset_relative_path),
-                source=None,
-                raster_size_x=raster_size_schemas.raster_size_x,
-                raster_size_y=raster_size_schemas.raster_size_y,
-                raster_size_t=1,
-                chunk_size_x=raster_size_schemas.chunk_size_x,
-                chunk_size_y=raster_size_schemas.chunk_size_y,
-                chunk_size_t=1
-            ).save(commit=False)
+            if extent is None:
+                extent = raster_extent(str(scenes['ARDfiles'][band]))
+
+            if min_convex_hull is None:
+                min_convex_hull = raster_convexhull(str(scenes['ARDfiles'][band]))
+
+            assets[band_model[0].name] = create_asset_definition(
+                href=str(asset_relative_path),
+                mime_type=COG_MIME_TYPE,
+                role=['data'],
+                absolute_path=str(scenes['ARDfiles'][band]),
+                is_raster=True
+            )
+
+        item.geom = from_shape(extent, srid=4326)
+        item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
+        item.assets = assets
 
     db.session.commit()
 
@@ -1109,14 +1127,16 @@ def generate_evi_ndvi(red_band_path: str, nir_band_path: str, blue_bland_path: s
         save_as_cog(evi_name_path, raster_evi, **profile)
 
 
-def build_cube_path(datacube: str, period: str, tile_id: str, band: str = None, suffix: Union[str, None] = '.tif') -> Path:
+def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band: str = None, suffix: Union[str, None] = '.tif') -> Path:
     """Retrieve the path to the Data cube file in Brazil Data Cube Cluster."""
     folder = 'Warped'
     date = period
 
     fragments = DataCubeFragments(datacube)
 
-    file_name = f'{datacube}_{tile_id}_{period}'
+    version_str = 'v{0:03d}'.format(version)
+
+    file_name = f'{datacube}_{version_str}_{tile_id}_{period}'
 
     if band is not None:
         file_name = f'{file_name}_{band}'
@@ -1128,7 +1148,176 @@ def build_cube_path(datacube: str, period: str, tile_id: str, band: str = None, 
 
     datacube = datacube.replace(f'_{Config.VERSION_PATH_PREFIX}', '')
 
-    if fragments.composite_function != 'IDENTITY':  # For cube with temporal composition
+    if fragments.composite_function != 'IDT':  # For cube with temporal composition
         folder = 'Mosaic'
 
-    return Path(Config.DATA_DIR) / 'Repository' / folder / datacube / Config.VERSION_PATH_PREFIX / tile_id / date / file_name
+    return Path(Config.DATA_DIR) / 'Repository' / folder / datacube / version_str / tile_id / date / file_name
+
+
+def create_asset_definition(href: str, mime_type: str, role: List[str], absolute_path: str,
+                            created=None, is_raster=False):
+    """Create a valid asset definition for collections.
+
+    TODO: Generate the asset for `Item` field with all bands
+
+    Args:
+        href - Relative path to the asset
+        mime_type - Asset Mime type str
+        role - Asset role. Available values are: ['data'], ['thumbnail']
+        absolute_path - Absolute path to the asset. Required to generate check_sum
+        created - Date time str of asset. When not set, use current timestamp.
+        is_raster - Flag to identify raster. When set, `raster_size` and `chunk_size` will be set to the asset.
+    """
+    fmt = '%Y-%m-%dT%H:%M:%S'
+    _now_str = datetime.utcnow().strftime(fmt)
+
+    if created is None:
+        created = _now_str
+    elif isinstance(created, datetime):
+        created = created.strftime(fmt)
+
+    asset = {
+        'href': str(href),
+        'type': mime_type,
+        'size': Path(absolute_path).stat().st_size,
+        'checksum:multihash': multihash_checksum_sha256(str(absolute_path)),
+        'roles': role,
+        'created': created,
+        'updated': _now_str
+    }
+
+    if is_raster:
+        with rasterio.open(str(absolute_path)) as data_set:
+            asset['raster_size'] = dict(
+                x=data_set.shape[1],
+                y=data_set.shape[0],
+            )
+
+            chunk_x, chunk_y = data_set.profile.get('blockxsize'), data_set.profile.get('blockxsize')
+
+            if chunk_x is None or chunk_x is None:
+                raise RuntimeError('Can\'t compute raster chunk size. Is it a tiled/ valid Cloud Optimized GeoTIFF?')
+
+            asset['chunk_size'] = dict(x=chunk_x, y=chunk_y)
+
+    return asset
+
+
+def save_as_cog(destination: str, raster, mode='w', **profile):
+    """Save the raster file as Cloud Optimized GeoTIFF.
+
+    See Also:
+        Cloud Optimized GeoTiff https://gdal.org/drivers/raster/cog.html
+
+    Args:
+        destination: Path to store the data set.
+        raster: Numpy raster values to persist in disk
+        mode: Default rasterio mode. Default is 'w' but you also can set 'r+'.
+        **profile: Rasterio profile values to add in dataset.
+    """
+    with rasterio.open(str(destination), mode, **profile) as dataset:
+        if profile.get('nodata'):
+            dataset.nodata = profile['nodata']
+
+        dataset.write_band(1, raster)
+
+    generate_cogs(str(destination), str(destination))
+
+
+def generate_cogs(input_data_set_path, file_path, profile='lzw', profile_options=None, **options):
+    """Generate Cloud Optimized GeoTIFF files (COG).
+
+    Args:
+        input_data_set_path (str) - Path to the input data set
+        file_path (str) - Target data set filename
+        profile (str) - A COG profile based in `rio_cogeo.profiles`.
+        profile_options (dict) - Custom options to the profile.
+
+    Returns:
+        Path to COG.
+    """
+    if profile_options is None:
+        profile_options = dict()
+
+    output_profile = cog_profiles.get(profile)
+    output_profile.update(dict(BIGTIFF="IF_SAFER"))
+    output_profile.update(profile_options)
+
+    # Dataset Open option (see gdalwarp `-oo` option)
+    config = dict(
+        GDAL_NUM_THREADS="ALL_CPUS",
+        GDAL_TIFF_INTERNAL_MASK=True,
+        GDAL_TIFF_OVR_BLOCKSIZE="128",
+    )
+
+    cog_translate(
+        str(input_data_set_path),
+        str(file_path),
+        output_profile,
+        config=config,
+        in_memory=False,
+        quiet=True,
+        **options,
+    )
+    return str(file_path)
+
+
+@contextmanager
+def rasterio_access_token(access_token=None):
+    with TemporaryDirectory() as tmp:
+        options = dict()
+
+        if access_token:
+            tmp_file = Path(tmp) / f'{access_token}.txt'
+            with open(str(tmp_file), 'w') as f:
+                f.write(f'X-Api-Key: {access_token}')
+            options.update(GDAL_HTTP_HEADER_FILE=str(tmp_file))
+
+        yield options
+
+
+def raster_convexhull(imagepath: str, epsg='EPSG:4326') -> dict:
+    """get image footprint
+
+    Args:
+        imagepath (str): image file
+        epsg (str): geometry EPSG
+
+    See:
+        https://rasterio.readthedocs.io/en/latest/topics/masks.html
+    """
+    with rasterio.open(imagepath) as dataset:
+        # Read raster data, masking nodata values
+        data = dataset.read(1, masked=True)
+        # Create mask, which 1 represents valid data and 0 nodata
+        mask = numpy.invert(data.mask).astype(numpy.uint8)
+
+        geoms = []
+        res = {'val': []}
+        for geom, val in rasterio.features.shapes(mask, mask=mask, transform=dataset.transform):
+            geom = rasterio.warp.transform_geom(dataset.crs, epsg, geom, precision=6)
+
+            res['val'].append(val)
+            geoms.append(shapely.geometry.shape(geom))
+
+        if len(geoms) == 1:
+            return geoms[0]
+
+        multi_polygons = shapely.geometry.MultiPolygon(geoms)
+
+        return multi_polygons.convex_hull
+
+
+def raster_extent(imagepath: str, epsg = 'EPSG:4326') -> shapely.geometry.Polygon:
+    """Get raster extent in arbitrary CRS
+
+    Args:
+        imagepath (str): Path to image
+        epsg (str): EPSG Code of result crs
+    Returns:
+        dict: geojson-like geometry
+    """
+
+    with rasterio.open(imagepath) as dataset:
+        _geom = shapely.geometry.mapping(shapely.geometry.box(*dataset.bounds))
+        return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom, precision=6))

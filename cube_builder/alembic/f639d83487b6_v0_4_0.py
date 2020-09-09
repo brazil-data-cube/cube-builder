@@ -1,16 +1,16 @@
-"""Add activities
+"""v0.4.0
 
-Revision ID: 0c77843c0f5e
-Revises:
-Create Date: 2020-02-05 08:52:06.675752
+Revision ID: f639d83487b6
+Revises: 
+Create Date: 2020-09-02 10:27:00.477876
 
 """
 from alembic import op
 import sqlalchemy as sa
-
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '0c77843c0f5e'
+revision = 'f639d83487b6'
 down_revision = None
 branch_labels = ('cube_builder',)
 depends_on = None
@@ -25,13 +25,16 @@ def upgrade():
     sa.Column('activity_type', sa.String(length=64), nullable=False),
     sa.Column('period', sa.String(length=64), nullable=False),
     sa.Column('date', sa.Date(), nullable=False),
+    sa.Column('tile_id', sa.String(), nullable=False),
     sa.Column('status', sa.String(length=64), nullable=False),
     sa.Column('args', sa.JSON(), nullable=True),
     sa.Column('tags', sa.ARRAY(sa.String()), nullable=True),
     sa.Column('scene_type', sa.String(), nullable=True),
     sa.Column('band', sa.String(length=64), nullable=False),
     sa.Column('traceback', sa.Text(), nullable=True),
-    sa.PrimaryKeyConstraint('id'),
+    sa.Column('created', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.PrimaryKeyConstraint('id', name=op.f('activities_pkey')),
     schema='cube_builder'
     )
     # ### end Alembic commands ###

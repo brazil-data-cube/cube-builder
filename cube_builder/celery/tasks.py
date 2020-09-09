@@ -14,19 +14,18 @@ import traceback
 from copy import deepcopy
 
 # 3rdparty
-from bdc_db.models import AssetMV, Collection, db
+from bdc_catalog.models import Collection, db, Quicklook
 from celery import chain, group
-from sqlalchemy_utils import refresh_materialized_view
 
 # Cube Builder
-from .celery import celery_app
-from .config import Config
-from .constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME
-from .models import Activity
-from .utils import DataCubeFragments, blend as blend_processing, build_cube_path, post_processing_quality
-from .utils import compute_data_set_stats, get_or_create_model
-from .utils import merge as merge_processing
-from .utils import publish_datacube, publish_merge
+from ..celery import celery_app
+from ..config import Config
+from ..constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME
+from ..models import Activity
+from ..utils import DataCubeFragments, blend as blend_processing, build_cube_path, post_processing_quality
+from ..utils import compute_data_set_stats, get_or_create_model
+from ..utils import merge as merge_processing
+from ..utils import publish_datacube, publish_merge
 
 
 def capture_traceback(exception=None):
@@ -59,7 +58,7 @@ def create_execution(activity: dict) -> Activity:
 
 
 @celery_app.task()
-def warp_merge(activity, band_map, force=False):
+def warp_merge(activity, band_map, force=False, **kwargs):
     """Execute datacube merge task.
 
     This task consists in the following steps:
@@ -83,9 +82,10 @@ def warp_merge(activity, band_map, force=False):
     merge_date = activity['date']
     tile_id = activity['tile_id']
     data_set = activity['args'].get('dataset')
+    version = activity['args']['version']
 
     merge_file_path = build_cube_path(record.warped_collection_id, merge_date.replace(data_set, ''),
-                                      tile_id, record.band)
+                                      tile_id, version=version, band=record.band)
 
     reused = False
 
@@ -117,7 +117,7 @@ def warp_merge(activity, band_map, force=False):
             args['date'] = record.date.strftime('%Y-%m-%d')
             args['cube'] = record.warped_collection_id
 
-            res = merge_processing(str(merge_file_path), band_map=band_map, **args)
+            res = merge_processing(str(merge_file_path), band_map=band_map, band=record.band, **args, **kwargs)
 
             merge_args = activity['args']
             merge_args.update(res)
@@ -163,6 +163,8 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         for m in merges if m['band'] == band_map['quality']
     }
 
+    version = merges[0]['args']['version']
+
     for period, stats in quality_date_stats.items():
         _, _, quality_file, was_reused = stats
 
@@ -170,7 +172,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         if not was_reused:
             logging.info(f'Applying post-processing in {str(quality_file)}')
             post_processing_quality(quality_file, list(band_map.values()), merges[0]['warped_collection_id'],
-                                    period, merges[0]['tile_id'], band_map['quality'])
+                                    period, merges[0]['tile_id'], band_map['quality'], version=version)
         else:
             logging.info(f'Skipping post-processing {str(quality_file)}')
 
@@ -179,7 +181,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
 
         This function is a utility to dispatch the cloud mask generation only for STK data cubes.
         """
-        return _merge['band'] == band_map['quality'] and not _merge['collection_id'].endswith(f'STK_{Config.VERSION_PATH_PREFIX}')
+        return _merge['band'] == band_map['quality'] and not _merge['collection_id'].endswith('STK')
 
     for _merge in merges:
         # Skip quality generation for MEDIAN, AVG
@@ -196,6 +198,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         activity['period'] = _merge['period']
         activity['tile_id'] = _merge['tile_id']
         activity['nodata'] = _merge['args'].get('nodata')
+        activity['version'] = version
 
         # Map efficacy/cloud ratio to the respective merge date before pass to blend
         efficacy, cloudratio, quality_file, _ = quality_date_stats[_merge['date']]
@@ -267,17 +270,27 @@ def publish(blends, band_map, **kwargs):
     period = blends[0]['period']
     logging.info(f'Executing publish {period}')
 
-    cube = Collection.query().filter(Collection.id == blends[0]['datacube']).first()
+    version = blends[0]['version']
+
+    cube: Collection = Collection.query().filter(
+        Collection.name == blends[0]['datacube'],
+        Collection.version == version
+    ).first()
     warped_datacube = blends[0]['warped_datacube']
     tile_id = blends[0]['tile_id']
 
     # Retrieve which bands to generate quick look
-    quick_look_bands = cube.bands_quicklook.split(',')
+    bands = cube.bands
+    band_id_map = {band.id: band.name for band in bands}
+
+    quicklook = cube.quicklook[0]
+
+    quick_look_bands = [band_id_map[quicklook.red], band_id_map[quicklook.green], band_id_map[quicklook.blue]]
 
     merges = dict()
     blend_files = dict()
 
-    composite_function = DataCubeFragments(cube.id).composite_function
+    composite_function = DataCubeFragments(cube.name).composite_function
 
     for blend_result in blends:
         if composite_function != 'IDENTITY':
@@ -298,23 +311,21 @@ def publish(blends, band_map, **kwargs):
                                                ARDfiles=dict()))
             merges[merge_date]['ARDfiles'].update(definition['ARDfiles'])
 
-    if composite_function != 'IDENTITY':
+    if composite_function != 'IDT':
         cloudratio = blends[0]['cloudratio']
 
         # Generate quick looks for cube scenes
-        publish_datacube(cube, quick_look_bands, cube.id, tile_id, period, blend_files, cloudratio, band_map, **kwargs)
+        publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, **kwargs)
 
     # Generate quick looks of irregular cube
-    wcube = Collection.query().filter(Collection.id == warped_datacube).first()
+    wcube = Collection.query().filter(Collection.name == warped_datacube, Collection.version == version).first()
 
     for merge_date, definition in merges.items():
         date = merge_date.replace(definition['dataset'], '')
 
-        publish_merge(quick_look_bands, wcube, tile_id, period, date, definition, band_map)
+        publish_merge(quick_look_bands, wcube, tile_id, date, definition, band_map)
 
     try:
-        # refresh_materialized_view(db.session, AssetMV.__table__)
         db.session.commit()
-        # logging.info('View refreshed.')
     except:
         db.session.rollback()
