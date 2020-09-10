@@ -48,6 +48,7 @@ install_requires = [
     'marshmallow-sqlalchemy>=0.19.0,<1',
     'numpy>=1.17.2',
     'numpngw>=0.0.8',
+    'pyproj>=2.6,<3',
     'python-dateutil>=2.8,<3',
     'rasterio[s3]>=1.1.2,<2',
     'rio_cogeo>=1.1,<2',
