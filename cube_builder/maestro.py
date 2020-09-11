@@ -506,7 +506,6 @@ class Maestro:
                         identifier = feature['id']
 
                         for band in bands:
-                            # TODO: Change when STAC supports name as dict key instead common name
                             if band.name not in feature['assets']:
                                 continue
 
