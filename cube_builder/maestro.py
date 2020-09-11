@@ -74,6 +74,8 @@ def decode_periods(schema: SchemaType, step: int, unit: str, start_date, end_dat
     if isinstance(start_date, datetime.date):
         start_date = start_date.strftime('%Y-%m-%d')
 
+    step = int(step)
+
     td_time_step = datetime.timedelta(days=step)
     steps_per_period = int(round(365./step))
 
@@ -278,14 +280,14 @@ class Maestro:
         if self.params.get('tiles'):
             where.append(Tile.name.in_(self.params['tiles']))
 
-        self.tiles = db.session.query(Tile, GridRefSys).filter(*where).all()
+        self.tiles = db.session.query(Tile).filter(*where).all()
 
         self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
 
         for tile in self.tiles:
-            tile_name = tile.Tile.name
+            tile_name = tile.name
 
-            grs: GridRefSys = tile.GridRefSys
+            grs: GridRefSys = tile.grs
 
             grid_geom = grs.geom_table
 
@@ -379,9 +381,9 @@ class Maestro:
 
                 bbox = self.get_bbox(tileid, self.datacube.grs)
 
-                tile = next(filter(lambda t: t.Tile.name == tileid, self.tiles))
+                tile = next(filter(lambda t: t.name == tileid, self.tiles))
 
-                grid_crs = tile.GridRefSys.crs
+                grid_crs = tile.grs.crs
 
                 # For each blend
                 for period in self.mosaics[tileid]['periods']:
@@ -504,13 +506,12 @@ class Maestro:
                         identifier = feature['id']
 
                         for band in bands:
-                            # TODO: Change when STAC supports name as dict key instead common name
-                            if band.common_name not in feature['assets']:
+                            if band.name not in feature['assets']:
                                 continue
 
                             scenes[band.name].setdefault(dataset, dict())
 
-                            link = feature['assets'][band.common_name]['href']
+                            link = feature['assets'][band.name]['href']
 
                             scene = dict(**collection_bands[band.name])
                             scene['sceneid'] = identifier

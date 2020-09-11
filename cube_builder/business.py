@@ -14,7 +14,7 @@ from typing import Tuple
 from bdc_catalog.models import Band, Collection, GridRefSys, Quicklook, SpatialRefSys, Tile, db, CompositeFunction, \
     ResolutionUnit, MimeType, BandSRC
 from geoalchemy2.shape import from_shape
-from pyproj import CRS
+from rasterio.crs import CRS
 from rasterio.warp import transform
 from shapely.geometry import Polygon
 from werkzeug.exceptions import NotFound, abort
