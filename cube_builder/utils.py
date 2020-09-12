@@ -406,6 +406,7 @@ class SmartDataSet:
     def __init__(self, file_path: str, mode='r', **properties):
         """Initialize SmartDataSet definition and open rasterio data set."""
         self.path = Path(file_path)
+        self.mode = mode
         self.dataset = rasterio.open(file_path, mode=mode, **properties)
 
     def __del__(self):
@@ -426,6 +427,9 @@ class SmartDataSet:
             logging.warning('Closing dataset {}'.format(str(self.path)))
 
             self.dataset.close()
+
+            if self.mode == 'w':
+                generate_cogs(str(path), str(path))
 
 
 def compute_data_set_stats(file_path: str) -> Tuple[float, float]:
@@ -765,30 +769,6 @@ def generate_rgb(rgb_file: Path, qlfiles: List[str]):
     logging.info(f'Done RGB {str(rgb_file)}')
 
 
-def has_vegetation_index_support(scene_bands: List[str], band_map: dict):
-    """Check if can generate NDVI and EVI bands.
-
-    This method tries to check if the cube execution has all required bands
-    to generate both Normalized Difference Vegetation Index (NDVI) and
-    Enhanced Vegetation Index (EVI).
-
-    Args:
-        scene_bands: Data cube bands names generated in current execution
-        band_map: All data cube bands, mapped by `band_common_name`: `band_name`.
-    """
-    common_name_bands = set()
-
-    for common_name, name in band_map.items():
-        if name in scene_bands:
-            common_name_bands.add(common_name)
-
-    ndvi_in_band_map = 'ndvi' in band_map or 'NDVI' in band_map
-    evi_in_band_map = 'evi' in band_map or 'EVI' in band_map
-
-    return (ndvi_in_band_map and evi_in_band_map) \
-        and VEGETATION_INDEX_BANDS <= set(common_name_bands)
-
-
 def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
@@ -816,19 +796,11 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
             rgb_file = build_cube_path(item_datacube, period, tile_id, version=cube.version, band='RGB')
             generate_rgb(rgb_file, ql_files)
 
-        if has_vegetation_index_support(scenes.keys(), band_map):
-            # Generate VI
-            evi_name = band_map.get('evi', 'EVI')
-            evi_path = build_cube_path(item_datacube, period, tile_id, version=cube.version, band=evi_name)
-            ndvi_name = band_map.get('ndvi', 'NDVI')
-            ndvi_path = build_cube_path(item_datacube, period, tile_id, version=cube.version, band=ndvi_name)
+        map_band_scene = {name: composite_map[composite_function] for name, composite_map in scenes.items()}
 
-            generate_evi_ndvi(scenes[band_map['red']][composite_function],
-                              scenes[band_map['nir']][composite_function],
-                              scenes[band_map['blue']][composite_function],
-                              str(evi_path), str(ndvi_path))
-            scenes[evi_name] = {composite_function: str(evi_path)}
-            scenes[ndvi_name] = {composite_function: str(ndvi_path)}
+        custom_bands = generate_band_indexes(cube, map_band_scene, period, tile_id)
+        for name, file in custom_bands.items():
+            scenes[name] = {composite_function: str(file)}
 
         tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == cube.grid_ref_sys_id).first()
 
@@ -908,18 +880,8 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
     quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
     # Generate VI
-    if has_vegetation_index_support(scenes['ARDfiles'].keys(), band_map):
-        evi_name = band_map.get('evi', 'EVI')
-        evi_path = build_cube_path(datacube.name, date, tile_id, version=datacube.version, band=evi_name)
-        ndvi_name = band_map.get('ndvi', 'NDVI')
-        ndvi_path = build_cube_path(datacube.name, date, tile_id, version=datacube.version, band=ndvi_name)
-
-        generate_evi_ndvi(scenes['ARDfiles'][band_map['red']],
-                          scenes['ARDfiles'][band_map['nir']],
-                          scenes['ARDfiles'][band_map['blue']],
-                          str(evi_path), str(ndvi_path))
-        scenes['ARDfiles'][evi_name] = str(evi_path)
-        scenes['ARDfiles'][ndvi_name] = str(ndvi_path)
+    custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id)
+    scenes['ARDfiles'].update(custom_bands)
 
     tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == datacube.grid_ref_sys_id).first()
 
@@ -1082,49 +1044,6 @@ def _qa_statistics(raster) -> Tuple[float, float]:
     efficacy = round(100.*clearpix/totpix, 2)
 
     return efficacy, cloudratio
-
-
-def generate_evi_ndvi(red_band_path: str, nir_band_path: str, blue_bland_path: str, evi_name_path: str, ndvi_name_path: str):
-    """Generate Normalized Difference Vegetation Index (NDVI) and Enhanced Vegetation Index (EVI).
-
-    Args:
-        red_band_path: Path to the RED band
-        nir_band_path: Path to the NIR band
-        blue_bland_path: Path to the BLUE band
-        evi_name_path: Path to save EVI file
-        ndvi_name_path: Path to save NDVI file
-    """
-    with rasterio.open(nir_band_path) as ds_nir, rasterio.open(red_band_path) as ds_red,\
-            rasterio.open(blue_bland_path) as ds_blue:
-        profile = ds_nir.profile
-        nodata = int(profile['nodata'])
-        blocks = ds_nir.block_windows()
-        data_type = profile['dtype']
-
-        raster_ndvi = numpy.full((profile['height'], profile['width']), dtype=data_type, fill_value=nodata)
-        raster_evi = numpy.full((profile['height'], profile['width']), dtype=data_type, fill_value=nodata)
-
-        for _, block in blocks:
-            row_offset = block.row_off + block.height
-            col_offset = block.col_off + block.width
-
-            red = ds_red.read(1, masked=True, window=block)
-            nir = ds_nir.read(1, masked=True, window=block)
-
-            ndvi_block = (10000. * ((nir - red) / (nir + red))).astype(numpy.int16)
-            ndvi_block[ndvi_block == numpy.ma.masked] = nodata
-
-            raster_ndvi[block.row_off: row_offset, block.col_off: col_offset] = ndvi_block
-
-            blue = ds_blue.read(1, masked=True, window=block)
-
-            evi_block = (10000. * 2.5 * (nir - red) / (nir + 6. * red - 7.5 * blue + 10000.)).astype(numpy.int16)
-            evi_block[evi_block == numpy.ma.masked] = nodata
-
-            raster_evi[block.row_off: row_offset, block.col_off: col_offset] = evi_block
-
-        save_as_cog(ndvi_name_path, raster_ndvi, **profile)
-        save_as_cog(evi_name_path, raster_evi, **profile)
 
 
 def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band: str = None, suffix: Union[str, None] = '.tif') -> Path:
