@@ -486,6 +486,12 @@ class Maestro:
             scenes[band.name] = dict()
 
         for dataset in self.params['collections']:
+            if 'CBERS' in dataset:
+                options = dict(
+                    bbox=bbox,
+                    time='{}/{}'.format(start, end),
+                    limit=100000
+                )
             stac = self.get_stac(dataset)
 
             token = ''
@@ -506,12 +512,19 @@ class Maestro:
                         identifier = feature['id']
 
                         for band in bands:
-                            if band.name not in feature['assets']:
-                                continue
+                            band_name_href = band.name
+                            if 'CBERS' in dataset and band.common_name not in ('evi', 'ndvi'):
+                                band_name_href = band.common_name
+
+                            elif band.name not in feature['assets']:
+                                if f'sr_{band.name}' not in feature['assets']:
+                                    continue
+                                else:
+                                    band_name_href = f'sr_{band.name}'
 
                             scenes[band.name].setdefault(dataset, dict())
 
-                            link = feature['assets'][band.name]['href']
+                            link = feature['assets'][band_name_href]['href']
 
                             scene = dict(**collection_bands[band.name])
                             scene['sceneid'] = identifier
