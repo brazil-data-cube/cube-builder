@@ -39,7 +39,7 @@ from .config import Config
 
 # Constant to define required bands to generate both NDVI and EVI
 from .constants import CLEAR_OBSERVATION_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, \
-    PROVENANCE_ATTRIBUTES, COG_MIME_TYPE, PNG_MIME_TYPE
+    PROVENANCE_ATTRIBUTES, COG_MIME_TYPE, PNG_MIME_TYPE, SRID_ALBERS_EQUAL_AREA
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 
@@ -880,8 +880,9 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                     absolute_path=str(scenes[band][composite_function]),
                     is_raster=True
                 )
-
+        
             item.assets = assets
+            item.srid = SRID_ALBERS_EQUAL_AREA
             item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
             item.geom = from_shape(extent, srid=4326)
 
@@ -973,6 +974,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
                 is_raster=True
             )
 
+        item.srid = SRID_ALBERS_EQUAL_AREA
         item.geom = from_shape(extent, srid=4326)
         item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
         item.assets = assets
