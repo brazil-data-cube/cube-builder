@@ -39,7 +39,7 @@ from .config import Config
 
 # Constant to define required bands to generate both NDVI and EVI
 from .constants import CLEAR_OBSERVATION_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, \
-    PROVENANCE_ATTRIBUTES, COG_MIME_TYPE
+    PROVENANCE_ATTRIBUTES, COG_MIME_TYPE, PNG_MIME_TYPE
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 
@@ -848,7 +848,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
             assets.update(
                 thumbnail=create_asset_definition(
                     href=quick_look_file.replace(Config.DATA_DIR, ''),
-                    mime_type=COG_MIME_TYPE,
+                    mime_type=PNG_MIME_TYPE,
                     role=['thumbnail'],
                     absolute_path=str(quick_look_file)
                 )
@@ -943,7 +943,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
         assets.update(
             thumbnail=create_asset_definition(
                 href=quick_look_file.replace(Config.DATA_DIR, ''),
-                mime_type=COG_MIME_TYPE,
+                mime_type=PNG_MIME_TYPE,
                 role=['thumbnail'],
                 absolute_path=str(quick_look_file)
             )

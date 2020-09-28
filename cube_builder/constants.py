@@ -49,3 +49,5 @@ PROVENANCE_ATTRIBUTES = dict(
 )
 
 COG_MIME_TYPE = 'image/tiff; application=geotiff; profile=cloud-optimized'
+
+PNG_MIME_TYPE = 'image/png'
