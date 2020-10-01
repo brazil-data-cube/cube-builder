@@ -70,7 +70,7 @@ setup(
     license='MIT',
     author='Brazil Data Cube Team',
     author_email='brazildatacube@inpe.br',
-    url='https://github.com/brazil-data-cube/wtss',
+    url='https://github.com/brazil-data-cube/cube-builder',
     packages=packages,
     zip_safe=False,
     include_package_data=True,
