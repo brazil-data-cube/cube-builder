@@ -40,11 +40,9 @@ extras_require['all'] = [ req for exts, reqs in extras_require.items() for req i
 setup_requires = []
 
 install_requires = [
-    'bdc-core @ git+git://github.com/brazil-data-cube/bdc-core.git@v0.2.0#egg=bdc-core',
     'bdc-catalog @ git+git://github.com/brazil-data-cube/bdc-catalog.git@v0.6.1#egg=bdc-catalog',
     'celery[librabbitmq]>=4.3.0',
     'Flask>=1.1.1,<2',
-    'flask-cors>=3.0,<4',
     'marshmallow-sqlalchemy>=0.19.0,<1',
     'numpy>=1.17.2',
     'numpngw>=0.0.8',
@@ -53,7 +51,7 @@ install_requires = [
     'rio_cogeo>=1.1,<2',
     'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
-    'stac @ git+git://github.com/brazil-data-cube/stac.py.git@v0.9.0-1#egg=stac',
+    'stac.py==0.9.0.post5',
 ]
 
 packages = find_packages()
@@ -70,8 +68,8 @@ setup(
     long_description=readme + '\n\n' + history,
     keywords=('Cube Builder', 'Datacube', ),
     license='MIT',
-    author='INPE',
-    author_email='admin@admin.com',
+    author='Brazil Data Cube Team',
+    author_email='brazildatacube@inpe.br',
     url='https://github.com/brazil-data-cube/cube-builder',
     packages=packages,
     zip_safe=False,

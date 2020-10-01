@@ -27,9 +27,7 @@ The ``Cube Builder`` depends essentially on:
 
 - `marshmallow-SQLAlchemy <https://marshmallow-sqlalchemy.readthedocs.io/en/latest/>`_
 
-- `Brazil Data Cube DataBase Module <https://github.com/brazil-data-cube/bdc-db.git>`_
-
-- `Brazil Data Cube Core Module <https://github.com/brazil-data-cube/bdc-core.git>`_
+- `Brazil Data Cube Catalog Module <https://github.com/brazil-data-cube/bdc-catalog.git>`_
 
 
 Development Installation

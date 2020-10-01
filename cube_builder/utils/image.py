@@ -15,7 +15,7 @@ from pathlib import Path
 import rasterio
 from sqlalchemy.engine.result import ResultProxy, RowProxy
 
-from cube_builder.config import Config
+from ..config import Config
 
 LANDSAT_BANDS = dict(
     int16=['band1', 'band2', 'band3', 'band4', 'band5', 'band6', 'band7', 'evi', 'ndvi'],

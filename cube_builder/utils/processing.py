@@ -34,11 +34,11 @@ from rasterio.warp import Resampling, reproject
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 
-from .config import Config
+from ..config import Config
 
 
 # Constant to define required bands to generate both NDVI and EVI
-from .constants import CLEAR_OBSERVATION_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, \
+from ..constants import CLEAR_OBSERVATION_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, \
     PROVENANCE_ATTRIBUTES, COG_MIME_TYPE, PNG_MIME_TYPE, SRID_ALBERS_EQUAL_AREA
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
@@ -1149,8 +1149,6 @@ def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band
         suffix = ''
 
     file_name = f'{file_name}{suffix}'
-
-    datacube = datacube.replace(f'_{Config.VERSION_PATH_PREFIX}', '')
 
     if fragments.composite_function != 'IDT':  # For cube with temporal composition
         folder = 'Mosaic'

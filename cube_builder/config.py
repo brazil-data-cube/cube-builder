@@ -23,14 +23,15 @@ def get_settings(env=None):
 class Config:
     """Base configuration with default flags."""
 
+    DEBUG = False
+    TESTING = False
+
     # Factor to reserve tasks of the broker. By default, multiply by 1
     CELERYD_PREFETCH_MULTIPLIER = 1 * int(os.environ.get('CELERYD_PREFETCH_MULTIPLIER', 1))
     CBERS_AUTH_TOKEN = os.environ.get('CBERS_AUTH_TOKEN', '')
-    DEBUG = False
-    TESTING = False
     # Path to store data
-    DATA_DIR = os.environ.get('DATA_DIR', '/data')
     ACTIVITIES_SCHEMA = 'cube_builder'
+    DATA_DIR = os.environ.get('DATA_DIR', '/data')
     RABBIT_MQ_URL = os.environ.get('RABBIT_MQ_URL', 'pyamqp://guest@localhost')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_DATABASE_URI = os.environ.get(
@@ -39,16 +40,14 @@ class Config:
     )
     STAC_URL = os.environ.get(
         'STAC_URL',
-        'http://brazildatacube.dpi.inpe.br/bdc-stac/0.8.1'
+        'http://brazildatacube.dpi.inpe.br/stac/'
     )
-    SECRET_KEY = 'cube-builder'
     MAX_THREADS_IMAGE_VALIDATOR = int(os.environ.get('MAX_THREADS_IMAGE_VALIDATOR', os.cpu_count()))
     # rasterio
     RASTERIO_ENV = dict(
         GDAL_DISABLE_READDIR_ON_OPEN=True,
         CPL_VSIL_CURL_ALLOWED_EXTENSIONS='.tif'
     )
-    VERSION_PATH_PREFIX = os.getenv('VERSION_PATH_PREFIX', 'v1')
 
 
 class ProductionConfig(Config):
@@ -70,8 +69,6 @@ class TestingConfig(Config):
     TESTING = True
     DEBUG = True
 
-
-key = Config.SECRET_KEY
 
 CONFIG = {
     "development": DevelopmentConfig(),

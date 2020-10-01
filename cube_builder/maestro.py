@@ -26,7 +26,7 @@ from stac import STAC
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
 from .constants import TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME
-from .utils import get_cube_id, get_or_create_activity
+from .utils.processing import get_cube_id, get_or_create_activity
 
 
 SchemaType = Union['cyclic', 'continuous']
