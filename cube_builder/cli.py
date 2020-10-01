@@ -16,7 +16,7 @@ from . import create_app
 
 
 # Create cube-builder cli from bdc-db
-from .package import package_info
+from .utils.package import package_info
 
 
 @click.group(cls=FlaskGroup, create_app=create_app)
@@ -28,7 +28,7 @@ def cli():
 @with_appcontext
 def load_data():
     """Create Cube Builder composite functions supported."""
-    from .utils import get_or_create_model
+    from .utils.processing import get_or_create_model
 
     with db.session.begin_nested():
         _, _ = get_or_create_model(
@@ -116,8 +116,8 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
         bands - Comma separated bands to generate
         force - Flag to build data cube without cache. Default is False
     """
-    from .business import CubeBusiness
-    from .parsers import DataCubeProcessParser
+    from .controller import CubeController
+    from .forms import DataCubeProcessForm
 
     data = dict(
         datacube=datacube,
@@ -133,11 +133,11 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
     if bands:
         data['bands'] = bands.split(',')
 
-    parser = DataCubeProcessParser()
+    parser = DataCubeProcessForm()
     parsed_data = parser.load(data)
 
     click.secho('Triggering data cube generation...', fg='green')
-    res = CubeBusiness.maestro(**parsed_data)
+    res = CubeController.maestro(**parsed_data)
 
     assert res['ok']
 

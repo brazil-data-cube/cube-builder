@@ -20,12 +20,11 @@ from celery import chain, group
 # Cube Builder
 from ..celery import celery_app
 from ..config import Config
-from ..constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME
 from ..models import Activity
-from ..utils import DataCubeFragments, blend as blend_processing, build_cube_path, post_processing_quality
-from ..utils import compute_data_set_stats, get_or_create_model
-from ..utils import merge as merge_processing
-from ..utils import publish_datacube, publish_merge
+from ..constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME
+from ..utils.processing import DataCubeFragments, build_cube_path, post_processing_quality
+from ..utils.processing import compute_data_set_stats, get_or_create_model
+from ..utils.processing import blend as blend_processing, merge as merge_processing, publish_datacube, publish_merge
 
 
 def capture_traceback(exception=None):
