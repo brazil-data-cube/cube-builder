@@ -49,3 +49,7 @@ PROVENANCE_ATTRIBUTES = dict(
 )
 
 COG_MIME_TYPE = 'image/tiff; application=geotiff; profile=cloud-optimized'
+
+PNG_MIME_TYPE = 'image/png'
+
+SRID_ALBERS_EQUAL_AREA = 100001
