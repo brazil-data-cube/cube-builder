@@ -9,12 +9,12 @@
 """Define Brazil Data Cube Cube Builder routes."""
 
 # 3rdparty
-from flask import Blueprint, request
+from flask import Blueprint, request, jsonify
 
 # Cube Builder
 from .version import __version__
 from .controller import CubeController
-from .forms import GridRefSysForm, DataCubeForm, DataCubeProcessForm, PeriodForm
+from .forms import GridRefSysForm, DataCubeForm, DataCubeProcessForm, PeriodForm, CubeStatusForm
 
 
 bp = Blueprint('cubes', import_name=__name__)
@@ -26,6 +26,55 @@ def status():
         description = 'Cube Builder',
         version = __version__
     ), 200
+
+
+
+@bp.route('/cube-status', methods=('GET', ))
+def cube_status():
+    form = CubeStatusForm()
+
+    args = request.args.to_dict()
+
+    errors = form.validate(args)
+
+    if errors:
+        return errors, 400
+
+    return jsonify(CubeController.get_cube_status(**args))
+
+
+@bp.route('/cubes', defaults=dict(cube_id=None), methods=['GET'])
+@bp.route('/cubes/<cube_id>', methods=['GET'])
+def list_cubes(cube_id):
+    if cube_id is not None:
+        message, status_code = CubeController.get_cube(cube_id)
+
+    else:
+        message, status_code = CubeController.list_cubes()
+
+    return jsonify(message), status_code
+
+
+@bp.route('/cubes/<cube_id>/tiles', methods=['GET'])
+def list_tiles(cube_id):
+    message, status_code = CubeController.list_tiles_cube(cube_id, only_ids=True)
+
+    return jsonify(message), status_code
+
+
+@bp.route('/cubes/<cube_id>/tiles/geom', methods=['GET'])
+def list_tiles_as_features(cube_id):
+    message, status_code = CubeController.list_tiles_cube(cube_id)
+
+    return jsonify(message), status_code
+
+
+@bp.route('/cubes/<cube_id>/meta', methods=['GET'])
+def get_cube_meta(cube_id):
+    """Retrieve the meta information of a data cube such STAC provider used, collection, etc."""
+    message, status_code = CubeController.cube_meta(cube_id)
+
+    return jsonify(message), status_code
 
 
 @bp.route('/create-cube', methods=['POST'])
