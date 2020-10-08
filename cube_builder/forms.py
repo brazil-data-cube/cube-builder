@@ -136,8 +136,11 @@ class PeriodForm(Schema):
 
     schema = fields.String(required=True, allow_none=False)
     step = fields.Integer(required=True)
+    unit = fields.String(required=True)
     start_date = fields.String(required=False)
     last_date = fields.String(required=False)
+    cycle = fields.Dict(required=False, allow_none=True)
+    intervals = fields.List(fields.String, required=False)
 
 
 class CubeStatusForm(Schema):

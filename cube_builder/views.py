@@ -109,6 +109,11 @@ def start_cube():
 
     form = DataCubeProcessForm()
 
+    errors = form.validate(args)
+
+    if errors:
+        return errors, 400
+
     data = form.load(args)
 
     proc = CubeController.maestro(**data)
@@ -177,7 +182,7 @@ def list_periods():
     """
     parser = PeriodForm()
 
-    args = request.args
+    args = request.get_json()
 
     errors = parser.validate(args)
 
