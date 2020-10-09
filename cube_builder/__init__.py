@@ -70,8 +70,12 @@ def setup_app(app):
 
     class ImprovedJSONEncoder(JSONEncoder):
         def default(self, o):
+            from datetime import datetime
+            
             if isinstance(o, set):
                 return list(o)
+            if isinstance(o, datetime):
+                return o.isoformat()
             return super(ImprovedJSONEncoder, self).default(o)
 
     app.json_encoder = ImprovedJSONEncoder

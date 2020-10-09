@@ -8,17 +8,21 @@
 
 """Define Cube Builder business interface."""
 from copy import deepcopy
+from datetime import datetime
 from typing import Tuple
+import sqlalchemy
 
 # 3rdparty
 from bdc_catalog.models import Band, Collection, GridRefSys, Quicklook, SpatialRefSys, Tile, db, CompositeFunction, \
-    ResolutionUnit, MimeType, BandSRC
+    ResolutionUnit, MimeType, BandSRC, Item
+from geoalchemy2 import func
 from geoalchemy2.shape import from_shape
 from rasterio.crs import CRS
 from rasterio.warp import transform
 from shapely.geometry import Polygon
 from werkzeug.exceptions import NotFound, abort
 
+from .celery.utils import list_pending_tasks, list_running_tasks
 from .maestro import Maestro, decode_periods
 from .models import Activity
 from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
@@ -27,11 +31,23 @@ from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
 from .forms import CollectionForm, GridRefSysForm
 from .utils.image import validate_merges
 from .utils.processing import get_cube_parts, get_or_create_model
+from .utils.serializer import Serializer
 
 
 class CubeController:
     """Define Cube Builder interface for data cube creation."""
 
+    @staticmethod
+    def get_cube_or_404(cube_id: int = None, cube_full_name: str = '-'):
+        if cube_id:
+            return Collection.query().filter(Collection.id == cube_id).first_or_404()
+        else:
+            cube_name, cube_version = cube_full_name.split('-')
+            return Collection.query().filter(
+                Collection.name == cube_name,
+                Collection.version == cube_version
+            ).first_or_404()
+        
     @classmethod
     def get_or_create_band(cls, cube, name, common_name, min_value, max_value,
                            nodata, data_type, resolution_x, resolution_y, scale,
@@ -239,6 +255,93 @@ class CubeController:
         return cube_serialized, 201
 
     @classmethod
+    def get_cube(cls, cube_id: int):
+        cube = cls.get_cube_or_404(cube_id=cube_id)
+
+        dump_cube = Serializer.serialize(cube)
+        dump_cube['bands'] = [Serializer.serialize(b) for b in cube.bands]
+        dump_cube['quicklook'] = [
+            list(filter(lambda b: b.id == cube.quicklook[0].red, cube.bands))[0].name,
+            list(filter(lambda b: b.id == cube.quicklook[0].green, cube.bands))[0].name,
+            list(filter(lambda b: b.id == cube.quicklook[0].blue, cube.bands))[0].name
+        ]
+        dump_cube['extent'] = None
+        dump_cube['grid'] = cube.grs.name
+        dump_cube['composite_function'] = cube.composite_function.name
+
+        return dump_cube, 200
+
+    @classmethod
+    def list_cubes(cls):
+        """Retrieve the list of data cubes from Brazil Data Cube database."""
+        cubes = Collection.query().filter(Collection.collection_type == 'cube').all()
+
+        serializer = CollectionForm()
+
+        list_cubes = []
+
+        for cube in cubes:
+            cube_dict = serializer.dump(cube)
+
+            list_tasks = list_pending_tasks() + list_running_tasks()
+            count_tasks = len(list(filter(lambda t: t['collection_id'] == cube.name, list_tasks)))
+
+            cube_dict['status'] = 'Finished' if count_tasks == 0 else 'Pending'
+
+            list_cubes.append(cube_dict)
+
+        return list_cubes, 200
+    
+    @classmethod
+    def get_cube_status(cls, cube_name: str) -> Tuple[dict, int]:
+        cube = cls.get_cube_or_404(cube_full_name=cube_name)
+
+        dates = db.session.query(
+            sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
+        ).first()
+
+        count_items = Item.query().filter(Item.collection_id == cube.id).count()
+
+        list_tasks = list_pending_tasks() + list_running_tasks()
+        count_tasks = len(list(filter(lambda t: t['collection_id'] == cube_name, list_tasks)))
+
+        count_acts_errors = Activity.query().filter(
+            Activity.collection_id == cube.name,
+            Activity.status == 'FAILURE'
+        ).count()
+
+        count_acts_success = Activity.query().filter(
+            Activity.collection_id == cube.name,
+            Activity.status == 'SUCCESS'
+        ).count()
+
+        if count_tasks > 0:
+            return dict(
+                finished = False,
+                done = count_acts_success,
+                not_done = count_tasks,
+                error = count_acts_errors
+            )
+
+        return dict(
+            finished = True,
+            start_date = str(dates[0]),
+            last_date = str(dates[1]),
+            done = count_acts_success,
+            error = count_acts_errors,
+            collection_item = count_items
+        )
+
+    @classmethod
+    def list_tiles_cube(cls, cube_id: int, only_ids=False):
+        features = db.session.query(
+            Item.tile_id.label('tile_id'), 
+            func.ST_AsGeoJSON(Item.geom, 6, 3).cast(sqlalchemy.JSON).label('geom')
+        ).distinct(Item.tile_id).filter(Item.collection_id == cube_id).all()
+
+        return [feature.tile_id if only_ids else feature.geom for feature in features], 200
+
+    @classmethod
     def maestro(cls, datacube, collections, tiles, start_date, end_date, **properties):
         """Search and Dispatch datacube generation on cluster.
 
@@ -312,6 +415,15 @@ class CubeController:
                 periods.add(date)
 
         return sorted(list(periods))
+
+    @classmethod
+    def cube_meta(cls, cube_id: int):
+        cube = cls.get_cube_or_404(cube_id=cube_id)
+
+        activity = Activity.query().filter(Activity.collection_id == cube.name).first()
+        return dict(
+            collections=activity.args['dataset']
+        ), 200
 
     @classmethod
     def create_grs_schema(cls, name, description, projection, meridian, degreesx, degreesy, bbox):

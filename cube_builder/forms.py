@@ -138,3 +138,9 @@ class PeriodForm(Schema):
     step = fields.Integer(required=True)
     start_date = fields.String(required=False)
     last_date = fields.String(required=False)
+
+
+class CubeStatusForm(Schema):
+    """Parser for access data cube status resource."""
+
+    cube_name = fields.String(required=True, allow_none=False)
