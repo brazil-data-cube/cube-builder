@@ -8,7 +8,7 @@
 
 """Define Cube Builder business interface."""
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, date
 from typing import Tuple
 import sqlalchemy
 
@@ -23,7 +23,7 @@ from shapely.geometry import Polygon
 from werkzeug.exceptions import NotFound, abort
 
 from .celery.utils import list_pending_tasks, list_running_tasks
-from .maestro import Maestro, decode_periods
+from .maestro import Maestro
 from .models import Activity
 from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
                         PROVENANCE_NAME, PROVENANCE_ATTRIBUTES, SRID_ALBERS_EQUAL_AREA,
@@ -32,6 +32,7 @@ from .forms import CollectionForm, GridRefSysForm
 from .utils.image import validate_merges
 from .utils.processing import get_cube_parts, get_or_create_model
 from .utils.serializer import Serializer
+from .utils.timeline import Timeline
 
 
 class CubeController:
@@ -388,33 +389,27 @@ class CubeController:
         return result, 200
 
     @classmethod
-    def generate_periods(cls, schema, step, start_date=None, last_date=None, **kwargs):
+    def generate_periods(cls, schema, step, unit, start_date=None, last_date=None, cycle=None, intervals=None):
         """Generate data cube periods using temporal composition schema.
 
         Args:
-            schema: Temporal Schema (M, A)
+            schema: Temporal Schema (continuous, cyclic)
             step: Temporal Step
+            unit: Temporal Unit (day, month, year)
             start_date: Start date offset. Default is '2016-01-01'.
             last_date: End data offset. Default is '2019-12-31'
-            **kwargs: Optional parameters
 
         Returns:
             List of periods between start/last date
         """
-        start_date = start_date or '2016-01-01'
-        last_date = last_date or '2019-12-31'
+        start_date = datetime.strptime((start_date or '2016-01-01'), '%Y-%m-%d').date()
+        last_date = datetime.strptime((last_date or '2019-12-31'), '%Y-%m-%d').date()
 
-        total_periods = decode_periods(schema, start_date, last_date, int(step))
+        periods = Timeline(schema, start_date, last_date, unit, step, cycle, intervals).mount()
 
-        periods = set()
-
-        for period_array in total_periods.values():
-            for period in period_array:
-                date = period.split('_')[0]
-
-                periods.add(date)
-
-        return sorted(list(periods))
+        return dict(
+            timeline=[[str(period[0]), str(period[1])] for period in periods]
+        )
 
     @classmethod
     def cube_meta(cls, cube_id: int):
