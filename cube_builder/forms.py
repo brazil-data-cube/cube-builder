@@ -147,3 +147,14 @@ class CubeStatusForm(Schema):
     """Parser for access data cube status resource."""
 
     cube_name = fields.String(required=True, allow_none=False)
+
+
+class CubeItemsForm(Schema):
+    """Parser for access data cube items resource."""
+
+    tiles = fields.String(required=False)
+    bbox = fields.String(required=False)
+    start = fields.String(required=False)
+    end = fields.String(required=False)
+    page = fields.Integer(required=False)
+    per_page = fields.Integer(required=False)
