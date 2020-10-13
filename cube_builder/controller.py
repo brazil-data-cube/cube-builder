@@ -336,11 +336,12 @@ class CubeController:
     @classmethod
     def list_tiles_cube(cls, cube_id: int, only_ids=False):
         features = db.session.query(
-            Item.tile_id.label('tile_id'), 
+            Item.tile_id, 
+            Tile,
             func.ST_AsGeoJSON(Item.geom, 6, 3).cast(sqlalchemy.JSON).label('geom')
-        ).distinct(Item.tile_id).filter(Item.collection_id == cube_id).all()
+        ).distinct(Item.tile_id).filter(Item.collection_id == cube_id, Item.tile_id == Tile.id).all()
 
-        return [feature.tile_id if only_ids else feature.geom for feature in features], 200
+        return [feature.Tile.name if only_ids else feature.geom for feature in features], 200
 
     @classmethod
     def maestro(cls, datacube, collections, tiles, start_date, end_date, **properties):
@@ -363,26 +364,26 @@ class CubeController:
         return dict(ok=True)
 
     @classmethod
-    def check_for_invalid_merges(cls, datacube: str, tile: str, start_date: str, last_date: str) -> Tuple[dict, int]:
+    def check_for_invalid_merges(cls, cube_id: str, tile_id: str, start_date: str, end_date: str) -> Tuple[dict, int]:
         """List merge files used in data cube and check for invalid scenes.
 
         Args:
             datacube: Data cube name
             tile: Brazil Data Cube Tile identifier
             start_date: Activity start date (period)
-            last_date: Activity End (period)
+            end_date: Activity End (period)
 
         Returns:
             List of Images used in period
         """
-        cube = Collection.query().filter(Collection.id == datacube).first()
+        cube = cls.get_cube_or_404(cube_id=cube_id)
 
-        if cube is None or not cube.is_cube:
-            raise NotFound('Cube {} not found'.format(datacube))
+        if not cube:
+            raise NotFound('Cube {} not found'.format(cube_id))
 
         # TODO validate schema to avoid start/end too abroad
 
-        res = Activity.list_merge_files(datacube, tile, start_date, last_date)
+        res = Activity.list_merge_files(cube.name, tile_id, start_date[:10], end_date[:10])
 
         result = validate_merges(res)
 
@@ -402,10 +403,10 @@ class CubeController:
         Returns:
             List of periods between start/last date
         """
-        start_date = datetime.strptime((start_date or '2016-01-01'), '%Y-%m-%d').date()
-        last_date = datetime.strptime((last_date or '2019-12-31'), '%Y-%m-%d').date()
+        start_date = datetime.strptime((start_date[:10] or '2016-01-01'), '%Y-%m-%d').date()
+        last_date = datetime.strptime((last_date[:10] or '2019-12-31'), '%Y-%m-%d').date()
 
-        periods = Timeline(schema, start_date, last_date, unit, step, cycle, intervals).mount()
+        periods = Timeline(schema, start_date, last_date, unit, int(step), cycle, intervals).mount()
 
         return dict(
             timeline=[[str(period[0]), str(period[1])] for period in periods]
@@ -531,3 +532,59 @@ class CubeController:
         db.session.commit()        
 
         return 'Grid {} created with successfully'.format(name), 201
+
+    @classmethod
+    def list_cube_items(cls, cube_id: str, bbox: str = None, start: str = None,
+                        end: str = None, tiles: str = None, page: int = 1, per_page: int = 10):
+        cube = cls.get_cube_or_404(cube_id=cube_id)
+
+        where = [
+            Item.collection_id == cube_id,
+            Tile.id == Item.tile_id
+        ]
+
+        # temporal filter
+        if start:
+            where.append(Item.start_date >= start)
+        if end:
+            where.append(Item.end_date <= end)
+
+        # tile(string) filter
+        if tiles:
+            tiles = tiles.split(',') if isinstance(tiles, str) else tiles
+            where.append(
+                Tile.name.in_(tiles)
+            )
+
+        # spatial filter
+        if bbox:
+            xmin, ymin, xmax, ymax = [float(coord) for coord in bbox.split(',')]
+            where.append(
+                func.ST_Intersects(
+                    func.ST_SetSRID(Item.geom, 4326), func.ST_MakeEnvelope(xmin, ymin, xmax, ymax, 4326)
+                )
+            )
+
+        paginator = db.session.query(Item).filter(
+            *where
+        ).order_by(Item.start_date.desc()).paginate(int(page), int(per_page), error_out=False)
+
+        result = []
+        for item in paginator.items:
+            obj = Serializer.serialize(item)
+            obj['geom'] = None
+            obj['min_convex_hull'] = None
+            obj['tile_id'] = item.tile.name
+            if item.assets.get('thumbnail'):
+                obj['quicklook'] = item.assets['thumbnail']['href']
+            del obj['assets']
+                    
+            result.append(obj)
+
+        return dict(
+            items=result,
+            page=page,
+            per_page=page,
+            total_items=paginator.total,
+            total_pages=paginator.pages
+        ), 200

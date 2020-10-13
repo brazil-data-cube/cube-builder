@@ -14,7 +14,8 @@ from flask import Blueprint, request, jsonify
 # Cube Builder
 from .version import __version__
 from .controller import CubeController
-from .forms import GridRefSysForm, DataCubeForm, DataCubeProcessForm, PeriodForm, CubeStatusForm
+from .forms import GridRefSysForm, DataCubeForm, DataCubeProcessForm, PeriodForm, \
+                    CubeStatusForm, CubeItemsForm
 
 
 bp = Blueprint('cubes', import_name=__name__)
@@ -65,6 +66,22 @@ def list_tiles(cube_id):
 @bp.route('/cubes/<cube_id>/tiles/geom', methods=['GET'])
 def list_tiles_as_features(cube_id):
     message, status_code = CubeController.list_tiles_cube(cube_id)
+
+    return jsonify(message), status_code
+
+
+@bp.route('/cubes/<cube_id>/items', methods=['GET'])
+def list_cube_items(cube_id):
+    form = CubeItemsForm()
+
+    args = request.args.to_dict()
+
+    errors = form.validate(args)
+
+    if errors:
+        return errors, 400
+
+    message, status_code = CubeController.list_cube_items(cube_id, **args)
 
     return jsonify(message), status_code
 
