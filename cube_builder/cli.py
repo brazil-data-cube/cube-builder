@@ -99,12 +99,13 @@ def worker(ctx: click.Context):
 @click.option('--start', type=click.STRING, required=True, help='Start date')
 @click.option('--end', type=click.STRING, required=True, help='End date')
 @click.option('--bands', type=click.STRING, help='Comma delimited bands to generate')
+@click.option('--stac-url', type=click.STRING, help='STAC to search')
 @click.option('--force', '-f', is_flag=True, help='Build data cube without cache')
 @click.option('--with-rgb', is_flag=True, help='Generate a file with RGB bands, based in quick look.')
 @click.option('--token', type=click.STRING, help='Token to access data from STAC.')
 @with_appcontext
 def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None,
-          force=False, with_rgb=False, **kwargs):
+          stac_url: str = None, force=False, with_rgb=False, **kwargs):
     """Build data cube through command line.
 
     Args:
@@ -127,6 +128,7 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
         tiles=tiles.split(','),
         force=force,
         with_rgb=with_rgb,
+        stac_url=stac_url,
         **kwargs
     )
 

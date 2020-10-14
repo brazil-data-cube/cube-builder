@@ -102,11 +102,14 @@ class Maestro:
         Returns:
             STAC client
         """
+        if self.properties.get('stac_url'):
+            return self._stac(collection, self.properties['stac_url'], **self.properties)
+
         try:
             return self._stac(collection, Config.STAC_URL, **self.properties)
         except RuntimeError:
             # Search in INPE STAC
-            return self._stac(collection, 'http://cdsr.dpi.inpe.br/inpe-stac')
+            return self._stac(collection, 'http://cdsr.dpi.inpe.br/inpe-stac/stac')
 
     @classmethod
     def _stac(cls, collection: str, url: str, **kwargs) -> STAC:
