@@ -78,13 +78,37 @@ def warp_merge(activity, band_map, force=False, **kwargs):
     record = create_execution(activity)
 
     record.warped_collection_id = activity['warped_collection_id']
-    merge_date = activity['date']
-    tile_id = activity['tile_id']
     data_set = activity['args'].get('dataset')
+    merge_date = activity['date'].replace(data_set, '')
+    tile_id = activity['tile_id']
     version = activity['args']['version']
 
-    merge_file_path = build_cube_path(record.warped_collection_id, merge_date.replace(data_set, ''),
-                                      tile_id, version=version, band=record.band)
+    merge_file_path = None
+
+    if activity['args'].get('reuse_datacube'):
+        collection = Collection.query().filter(Collection.id == activity['args']['reuse_datacube']).first()
+
+        if not force:
+            # TODO: Should we search in Activity instead?
+            merge_file_path = build_cube_path(collection.name, merge_date, tile_id,
+                                              version=collection.version, band=record.band)
+
+            if not merge_file_path.exists():
+                # TODO: Should we raise exception??
+                logging.warning(f'Cube {record.warped_collection_id} requires {collection.name}, but the file {str(merge_file_path)} not found. Skipping')
+                raise RuntimeError(
+                    f"""Cube {record.warped_collection_id} is derived from {collection.name}, 
+                    but the file {str(merge_file_path)} was not found."""
+                )
+
+        else:
+            raise RuntimeError(
+                f'Cannot use option "force" for derived data cube - {record.warped_collection_id} of {collection.name}'
+            )
+
+    if merge_file_path is None:
+        merge_file_path = build_cube_path(record.warped_collection_id, merge_date,
+                                          tile_id, version=version, band=record.band)
 
     reused = False
 
@@ -118,7 +142,7 @@ def warp_merge(activity, band_map, force=False, **kwargs):
 
             res = merge_processing(str(merge_file_path), band_map=band_map, band=record.band, **args, **kwargs)
 
-            merge_args = activity['args']
+            merge_args = deepcopy(activity['args'])
             merge_args.update(res)
 
             record.traceback = ''
@@ -137,8 +161,8 @@ def warp_merge(activity, band_map, force=False, **kwargs):
 
     logging.warning('Merge {} executed successfully. Efficacy={}, cloud_ratio={}'.format(
         str(merge_file_path),
-        record.args['efficacy'],
-        record.args['cloudratio']
+        activity['args']['efficacy'],
+        activity['args']['cloudratio']
     ))
 
     activity['args']['reused'] = reused
@@ -203,6 +227,9 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         efficacy, cloudratio, quality_file, _ = quality_date_stats[_merge['date']]
         activity['scenes'][_merge['args']['date']]['efficacy'] = efficacy
         activity['scenes'][_merge['args']['date']]['cloudratio'] = cloudratio
+
+        if _merge['args'].get('reuse_datacube'):
+            activity['reuse_datacube'] = _merge['args']['reuse_datacube']
 
         activity['scenes'][_merge['args']['date']]['ARDfiles'] = {
             band_map['quality']: quality_file,
@@ -277,6 +304,7 @@ def publish(blends, band_map, **kwargs):
     ).first()
     warped_datacube = blends[0]['warped_datacube']
     tile_id = blends[0]['tile_id']
+    reused_cube = blends[0].get('reuse_datacube')
 
     # Retrieve which bands to generate quick look
     bands = cube.bands
@@ -319,12 +347,13 @@ def publish(blends, band_map, **kwargs):
     # Generate quick looks of irregular cube
     wcube = Collection.query().filter(Collection.name == warped_datacube, Collection.version == version).first()
 
-    for merge_date, definition in merges.items():
-        date = merge_date.replace(definition['dataset'], '')
+    if not reused_cube:
+        for merge_date, definition in merges.items():
+            date = merge_date.replace(definition['dataset'], '')
 
-        publish_merge(quick_look_bands, wcube, tile_id, date, definition, band_map)
+            publish_merge(quick_look_bands, wcube, tile_id, date, definition, band_map)
 
-    try:
-        db.session.commit()
-    except:
-        db.session.rollback()
+        try:
+            db.session.commit()
+        except:
+            db.session.rollback()
