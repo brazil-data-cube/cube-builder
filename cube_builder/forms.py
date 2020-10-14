@@ -129,6 +129,7 @@ class DataCubeProcessForm(Schema):
     force = fields.Boolean(required=False, default=False)
     with_rgb = fields.Boolean(required=False, default=False)
     token = fields.String(required=False, allow_none=True)
+    stac_url = fields.String(required=False, allow_none=True)
 
 
 class PeriodForm(Schema):
