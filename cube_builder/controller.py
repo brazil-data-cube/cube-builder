@@ -8,13 +8,14 @@
 
 """Define Cube Builder business interface."""
 from copy import deepcopy
-from datetime import datetime, date
-from typing import Tuple
-import sqlalchemy
+from datetime import datetime
+from typing import Tuple, Union
 
 # 3rdparty
-from bdc_catalog.models import Band, Collection, GridRefSys, Quicklook, SpatialRefSys, Tile, db, CompositeFunction, \
-    ResolutionUnit, MimeType, BandSRC, Item
+import rasterio
+import sqlalchemy
+from bdc_catalog.models import Band, Collection, GridRefSys, Quicklook, Tile, db, CompositeFunction, \
+    ResolutionUnit, MimeType, BandSRC, Item, SpatialRefSys
 from geoalchemy2 import func
 from geoalchemy2.shape import from_shape
 from rasterio.crs import CRS
@@ -28,7 +29,7 @@ from .models import Activity
 from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
                         PROVENANCE_NAME, PROVENANCE_ATTRIBUTES, SRID_ALBERS_EQUAL_AREA,
                         TOTAL_OBSERVATION_NAME, TOTAL_OBSERVATION_ATTRIBUTES, COG_MIME_TYPE)
-from .forms import CollectionForm, GridRefSysForm
+from .forms import CollectionForm
 from .utils.image import validate_merges
 from .utils.processing import get_cube_parts, get_or_create_model
 from .utils.serializer import Serializer
@@ -39,7 +40,7 @@ class CubeController:
     """Define Cube Builder interface for data cube creation."""
 
     @staticmethod
-    def get_cube_or_404(cube_id: int = None, cube_full_name: str = '-'):
+    def get_cube_or_404(cube_id: Union[int, str] = None, cube_full_name: str = '-'):
         if cube_id:
             return Collection.query().filter(Collection.id == cube_id).first_or_404()
         else:
@@ -318,19 +319,19 @@ class CubeController:
 
         if count_tasks > 0:
             return dict(
-                finished = False,
-                done = count_acts_success,
-                not_done = count_tasks,
-                error = count_acts_errors
+                finished=False,
+                done=count_acts_success,
+                not_done=count_tasks,
+                error=count_acts_errors
             )
 
         return dict(
-            finished = True,
-            start_date = str(dates[0]),
-            last_date = str(dates[1]),
-            done = count_acts_success,
-            error = count_acts_errors,
-            collection_item = count_items
+            finished=True,
+            start_date=str(dates[0]),
+            last_date=str(dates[1]),
+            done=count_acts_success,
+            error=count_acts_errors,
+            collection_item=count_items
         )
 
     @classmethod
@@ -448,7 +449,7 @@ class CubeController:
         return dump_grs, 200
 
     @classmethod
-    def create_grs_schema(cls, name, description, projection, meridian, degreesx, degreesy, bbox):
+    def create_grs_schema(cls, name, description, projection, meridian, degreesx, degreesy, bbox, srid=100001):
         """Create a Brazil Data Cube Grid Schema."""
         bbox = bbox.split(',')
         bbox_obj = {
@@ -507,24 +508,16 @@ class CubeController:
         dst_crs = '+proj=longlat +ellps=GRS80 +datum=GRS80 +no_defs'
         src_crs = tile_srs_p4
 
-        for ix in range(hMin, hMax+1):
-            x1 = xMin + ix*dx
+        for ix in range(h_min, h_max+1):
+            x1 = x_min + ix*dx
             x2 = x1 + dx
-            for iy in range(vMin,vMax+1):
-                y1 = yMax - iy*dy
+            for iy in range(v_min, v_max+1):
+                y1 = y_max - iy*dy
                 y2 = y1 - dy
                 # Evaluate the bounding box of tile in longlat
-                xs = [x1,x2,x2,x1]
-                ys = [y1,y1,y2,y2]
+                xs = [x1, x2, x2, x1]
+                ys = [y1, y1, y2, y2]
                 out = rasterio.warp.transform(src_crs, dst_crs, xs, ys, zs=None)
-                UL_lon = out[0][0]
-                UL_lat = out[1][0]
-                UR_lon = out[0][1]
-                UR_lat = out[1][1]
-                LR_lon = out[0][2]
-                LR_lat = out[1][2]
-                LL_lon = out[0][3]
-                LL_lat = out[1][3]
 
                 polygon = from_shape(
                     Polygon(
@@ -550,7 +543,18 @@ class CubeController:
                 ))
         
         with db.session.begin_nested():
-            grs = GridRefSys.create_geometry_table(table_name=name.lower(), features=features, srid=SRID_ALBERS_EQUAL_AREA)
+            crs = CRS.from_proj4(tile_srs_p4)
+            data = dict(
+                auth_name='Albers Equal Area',
+                auth_srid=srid,
+                srid=srid,
+                srtext=crs.to_wkt(),
+                proj4text=tile_srs_p4
+            )
+
+            spatial_index, _ = get_or_create_model(SpatialRefSys, defaults=data, srid=srid)
+
+            grs = GridRefSys.create_geometry_table(table_name=name, features=features, srid=SRID_ALBERS_EQUAL_AREA)
             grs.description = description
             db.session.add(grs)
 

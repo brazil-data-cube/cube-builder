@@ -113,7 +113,7 @@ def create_cube():
 
     cubes, status = CubeController.create(data)
 
-    return cubes, status
+    return jsonify(cubes), status
 
 
 @bp.route('/start-cube', methods=['POST'])

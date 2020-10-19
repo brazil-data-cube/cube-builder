@@ -25,7 +25,7 @@ import shapely.geometry
 from bdc_catalog.models import Item, db, Tile
 from bdc_catalog.utils import multihash_checksum_sha256
 from flask import abort
-from geoalchemy2.shape import from_shape
+from geoalchemy2.shape import from_shape, to_shape
 from numpngw import write_png
 from rasterio import Affine, MemoryFile
 from rasterio.warp import Resampling, reproject
@@ -854,8 +854,8 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                 )
             )
 
-            extent = None
-            min_convex_hull = None
+            extent = to_shape(item.geom) if item.geom else None
+            min_convex_hull = to_shape(item.min_convex_hull) if item.min_convex_hull else None
 
             for band in scenes:
                 band_model = list(filter(lambda b: b.name == band, cube_bands))
@@ -937,8 +937,8 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
         item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=datacube.id)
         item.cloud_cover = scenes.get('cloudratio', 0)
 
-        extent = None
-        min_convex_hull = None
+        extent = to_shape(item.geom) if item.geom else None
+        min_convex_hull = to_shape(item.min_convex_hull) if item.min_convex_hull else None
 
         assets = item.assets or dict()
 
