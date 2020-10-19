@@ -48,7 +48,7 @@ class Timeline:
         self.start_date = start_date
         self.end_date = end_date
         self.unit = unit
-        self.step = step
+        self.step = int(step)
         self.cycle = cycle
         self.intervals = intervals
 
@@ -149,10 +149,10 @@ class Timeline:
     def mount(self):
         periods = []
 
-        if self.schema == 'cyclic':
+        if self.schema.lower() == 'cyclic':
             intervals = Intervals(self.cycle['intervals']) if self.cycle.get('intervals') else None
             periods = self._decode_period_cyclic(self.start_date, self.end_date, self.unit, self.step, 
-                                                 self.cycle['unit'], self.cycle['step'], intervals)
+                                                 self.cycle['unit'], int(self.cycle['step']), intervals)
 
         else:
             intervals = Intervals(self.intervals) if self.intervals else None
