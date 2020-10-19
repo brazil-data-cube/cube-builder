@@ -100,6 +100,7 @@ def worker(ctx: click.Context):
 @click.option('--end', type=click.STRING, required=True, help='End date')
 @click.option('--bands', type=click.STRING, help='Comma delimited bands to generate')
 @click.option('--stac-url', type=click.STRING, help='STAC to search')
+@click.option('--reuse-from', type=click.STRING, help='Reuse data cube from another data cube.')
 @click.option('--force', '-f', is_flag=True, help='Build data cube without cache')
 @click.option('--with-rgb', is_flag=True, help='Generate a file with RGB bands, based in quick look.')
 @click.option('--token', type=click.STRING, help='Token to access data from STAC.')

@@ -61,10 +61,16 @@ def timing(description: str) -> None:
     print(f'{description}: {ellapsed_time} seconds')
 
 
+def _common_bands():
+    """Return the BDC common bands."""
+    return TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, 'cnc'
+
+
 class Maestro:
     """Define class for handling data cube generation."""
 
     datacube: Collection = None
+    reused_datacube: Collection = None
     _warped = None
     bands = []
     tiles = []
@@ -165,6 +171,21 @@ class Maestro:
 
         self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
 
+        if self.properties.get('reuse_from'):
+            common_bands = _common_bands()
+            collection_bands = [b.name for b in self.datacube.bands if b.name not in common_bands]
+
+            reused_collection_bands = [b.name for b in self.bands]
+
+            # The input cube (STK/MED) must have all bands of reused. Otherwise raise Error.
+            if not set(collection_bands).issubset(set(reused_collection_bands)):
+                raise RuntimeError(
+                    f'Reused data cube {self.warped_datacube.name} must have all bands of {self.datacube.name}'
+                )
+
+            # Extra filter to only use bands of Input data cube.
+            self.bands = [b for b in self.bands if b.name in collection_bands]
+
         for tile in self.tiles:
             tile_name = tile.name
 
@@ -208,9 +229,32 @@ class Maestro:
     def warped_datacube(self) -> Collection:
         """Retrieve cached datacube defintion."""
         if not self._warped:
-            datacube_warped = get_cube_id(self.datacube.name)
+            if self.properties.get('reuse_from'):
+                reused_datacube: Collection = Collection.query().filter(
+                    Collection.name == self.properties['reuse_from']).first()
 
-            self._warped = Collection.query().filter(Collection.name == datacube_warped).first()
+                if reused_datacube is None:
+                    raise RuntimeError(f'Data cube {self.properties["reuse_from"]} not found.')
+
+                if reused_datacube.composite_function.alias != 'IDT':
+                    raise RuntimeError(f'Data cube {self.properties["reuse_from"]} must be IDT.')
+
+                if reused_datacube.grid_ref_sys_id != self.datacube.grid_ref_sys_id:
+                    raise RuntimeError(
+                        f'The grid of data cube {self.datacube.name} and {reused_datacube.name} mismatch.')
+
+                self.reused_datacube = reused_datacube
+                # set warped_collection to reused
+
+                if self.params['force']:
+                    raise RuntimeError(
+                        f'Cannot use flag --force to dispatch data cube derived from {reused_datacube.name}')
+
+                self._warped = reused_datacube
+            else:
+                datacube_warped = get_cube_id(self.datacube.name)
+
+                self._warped = Collection.query().filter(Collection.name == datacube_warped).first()
 
         return self._warped
 
@@ -245,8 +289,11 @@ class Maestro:
         """
         with timing('Time total to dispatch'):
             bands = self.datacube_bands
+            common_bands = _common_bands()
 
-            band_str_list = [band.name for band in bands if band.name not in [TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, 'cnc']]
+            band_str_list = [
+                band.name for band in bands if band.name not in common_bands
+            ]
 
             band_map = {b.common_name: b.name for b in bands}
 
@@ -314,6 +361,9 @@ class Maestro:
                                     bands=band_str_list,
                                     version=self.datacube.version
                                 )
+
+                                if self.reused_datacube:
+                                    properties['reuse_datacube'] = self.reused_datacube.id
 
                                 activity = get_or_create_activity(
                                     cube=self.datacube.name,
