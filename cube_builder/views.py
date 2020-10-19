@@ -151,7 +151,37 @@ def list_merges():
     return res
 
 
-@bp.route('/create-grs', methods=['POST'])
+@bp.route('/create-temporal-schema', methods=['POST'])
+def temporal_schema():
+    """Create the temporal composite schema using HTTP Post method.
+
+    Expects a JSON that matches with ``TemporalSchemaParser``.
+    """
+
+    args = request.get_json()
+
+    errors = form.validate(args)
+
+    if errors:
+        return errors, 400
+
+    cubes, status = CubeController.create_temporal_composition(args)
+
+    return cubes, status
+
+
+
+@bp.route('/grids', defaults=dict(grs_id=None), methods=['GET'])
+@bp.route('/grids/<grs_id>', methods=['GET'])
+def list_grs_schemas(grs_id):
+    if grs_id is not None:
+        result, status_code = CubeController.get_grs_schema(grs_id)
+    else:
+        result, status_code = CubeController.list_grs_schemas()
+
+    return jsonify(result), status_code
+
+@bp.route('/create-grids', methods=['POST'])
 def create_grs():
     """Create the grid reference system using HTTP Post method."""
     form = GridRefSysForm()
@@ -188,3 +218,10 @@ def list_periods():
         return errors, 400
 
     return CubeController.generate_periods(**args)
+
+
+@bp.route('/composite-functions', methods=['GET'])
+def list_composite_functions():
+    message, status_code = CubeController.list_composite_functions()
+
+    return jsonify(message), status_code
