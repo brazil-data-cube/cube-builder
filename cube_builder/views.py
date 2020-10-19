@@ -113,7 +113,7 @@ def create_cube():
 
     cubes, status = CubeController.create(data)
 
-    return cubes, status
+    return jsonify(cubes), status
 
 
 @bp.route('/start-cube', methods=['POST'])
@@ -149,25 +149,6 @@ def list_merges():
     res = CubeController.check_for_invalid_merges(**args)
 
     return res
-
-
-@bp.route('/create-temporal-schema', methods=['POST'])
-def temporal_schema():
-    """Create the temporal composite schema using HTTP Post method.
-
-    Expects a JSON that matches with ``TemporalSchemaParser``.
-    """
-
-    args = request.get_json()
-
-    errors = form.validate(args)
-
-    if errors:
-        return errors, 400
-
-    cubes, status = CubeController.create_temporal_composition(args)
-
-    return cubes, status
 
 
 @bp.route('/create-grs', methods=['POST'])
