@@ -170,7 +170,18 @@ def temporal_schema():
     return cubes, status
 
 
-@bp.route('/create-grs', methods=['POST'])
+
+@bp.route('/grids', defaults=dict(grs_id=None), methods=['GET'])
+@bp.route('/grids/<grs_id>', methods=['GET'])
+def list_grs_schemas(grs_id):
+    if grs_id is not None:
+        result, status_code = CubeController.get_grs_schema(grs_id)
+    else:
+        result, status_code = CubeController.list_grs_schemas()
+
+    return jsonify(result), status_code
+
+@bp.route('/create-grids', methods=['POST'])
 def create_grs():
     """Create the grid reference system using HTTP Post method."""
     form = GridRefSysForm()
@@ -207,3 +218,10 @@ def list_periods():
         return errors, 400
 
     return CubeController.generate_periods(**args)
+
+
+@bp.route('/composite-functions', methods=['GET'])
+def list_composite_functions():
+    message, status_code = CubeController.list_composite_functions()
+
+    return jsonify(message), status_code

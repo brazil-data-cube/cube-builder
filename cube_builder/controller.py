@@ -403,8 +403,8 @@ class CubeController:
         Returns:
             List of periods between start/last date
         """
-        start_date = datetime.strptime((start_date[:10] or '2016-01-01'), '%Y-%m-%d').date()
-        last_date = datetime.strptime((last_date[:10] or '2019-12-31'), '%Y-%m-%d').date()
+        start_date = datetime.strptime((start_date or '2016-01-01')[:10], '%Y-%m-%d').date()
+        last_date = datetime.strptime((last_date or '2019-12-31')[:10], '%Y-%m-%d').date()
 
         periods = Timeline(schema, start_date, last_date, unit, int(step), cycle, intervals).mount()
 
@@ -420,6 +420,32 @@ class CubeController:
         return dict(
             collections=activity.args['dataset']
         ), 200
+
+    @classmethod
+    def list_grs_schemas(self):
+        """Retrieve a list of available Grid Schema on Brazil Data Cube database."""
+        schemas = GridRefSys.query().all()
+
+        return [dict(**Serializer.serialize(schema), crs=schema.crs) for schema in schemas], 200
+
+    @classmethod
+    def get_grs_schema(self, grs_id):
+        """Retrieves a Grid Schema definition with tiles associated."""
+        schema = GridRefSys.query().filter(GridRefSys.id == grs_id).first()
+
+        if schema is None:
+            return 'GRS {} not found.'.format(grs_id), 404
+
+        geom_table = schema.geom_table
+        tiles = db.session.query(
+            geom_table.c.tile,
+            func.ST_AsGeoJSON(func.ST_Transform(geom_table.c.geom, 4326), 6, 3).cast(sqlalchemy.JSON).label('geom_wgs84')
+        ).all()
+
+        dump_grs = Serializer.serialize(schema)
+        dump_grs['tiles'] = [dict(id=t.tile, geom_wgs84=t.geom_wgs84) for t in tiles]
+
+        return dump_grs, 200
 
     @classmethod
     def create_grs_schema(cls, name, description, projection, meridian, degreesx, degreesy, bbox):
@@ -588,3 +614,10 @@ class CubeController:
             total_items=paginator.total,
             total_pages=paginator.pages
         ), 200
+
+    @classmethod
+    def list_composite_functions(self):
+        """Retrieve a list of available Composite Functions on Brazil Data Cube database."""
+        schemas = CompositeFunction.query().all()
+
+        return [Serializer.serialize(schema) for schema in schemas], 200
