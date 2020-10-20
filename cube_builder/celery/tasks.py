@@ -14,14 +14,13 @@ import traceback
 from copy import deepcopy
 
 # 3rdparty
-from bdc_catalog.models import Collection, db, Quicklook
+from bdc_catalog.models import Collection, db
 from celery import chain, group
 
 # Cube Builder
 from ..celery import celery_app
-from ..config import Config
 from ..models import Activity
-from ..constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME
+from ..constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME
 from ..utils.processing import DataCubeFragments, build_cube_path, post_processing_quality
 from ..utils.processing import compute_data_set_stats, get_or_create_model
 from ..utils.processing import blend as blend_processing, merge as merge_processing, publish_datacube, publish_merge
@@ -78,8 +77,8 @@ def warp_merge(activity, band_map, force=False, **kwargs):
     record = create_execution(activity)
 
     record.warped_collection_id = activity['warped_collection_id']
-    data_set = activity['args'].get('dataset')
-    merge_date = activity['date'].replace(data_set, '')
+    merge_date = activity['date']
+
     tile_id = activity['tile_id']
     version = activity['args']['version']
 
@@ -126,7 +125,11 @@ def warp_merge(activity, band_map, force=False, **kwargs):
         activity['args']['efficacy'] = efficacy
         activity['args']['cloudratio'] = cloudratio
         record.traceback = ''
-        record.args = activity['args']
+
+        args = deepcopy(record.args)
+        args.update(activity['args'])
+
+        record.args = args
         record.save()
     else:
         record.status = 'STARTED'
@@ -222,6 +225,8 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         activity['tile_id'] = _merge['tile_id']
         activity['nodata'] = _merge['args'].get('nodata')
         activity['version'] = version
+        # TODO: Check instance type for backward compatibility
+        activity['datasets'] = _merge['args']['datasets']
 
         # Map efficacy/cloud ratio to the respective merge date before pass to blend
         efficacy, cloudratio, quality_file, _ = quality_date_stats[_merge['date']]
@@ -235,6 +240,9 @@ def prepare_blend(merges, band_map: dict, **kwargs):
             band_map['quality']: quality_file,
             _merge['band']: _merge['args']['file']
         }
+
+        if _merge['args'].get('provenance'):
+            activity['scenes'][_merge['args']['date']]['ARDfiles'][DATASOURCE_NAME] = _merge['args']['provenance']
 
         activities[_merge['band']] = activity
 
@@ -332,6 +340,9 @@ def publish(blends, band_map, **kwargs):
         if blend_result.get('provenance'):
             blend_files[PROVENANCE_NAME] = {composite_function: blend_result['provenance']}
 
+        if blend_result.get('datasource'):
+            blend_files[DATASOURCE_NAME] = {composite_function: blend_result['datasource']}
+
         for merge_date, definition in blend_result['scenes'].items():
             merges.setdefault(merge_date, dict(dataset=definition['dataset'],
                                                cloudratio=definition['cloudratio'],
@@ -349,9 +360,7 @@ def publish(blends, band_map, **kwargs):
 
     if not reused_cube:
         for merge_date, definition in merges.items():
-            date = merge_date.replace(definition['dataset'], '')
-
-            publish_merge(quick_look_bands, wcube, tile_id, date, definition, band_map)
+            publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map)
 
         try:
             db.session.commit()
