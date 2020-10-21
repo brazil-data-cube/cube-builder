@@ -678,8 +678,10 @@ def blend(activity, band_map, build_clear_observation=False):
             datasets = activity['datasets']
             tags = {dataset: value for value, dataset in enumerate(datasets)}
 
-            data_set = SmartDataSet(str(dataset_file_path), 'w', tags=tags, **dataset_profile)
-            data_set.dataset.write(numpy.full((height, width), fill_value=-1, dtype=numpy.int8), indexes=1)
+            datasource = SmartDataSet(str(dataset_file_path), 'w', tags=tags, **dataset_profile)
+            datasource.dataset.write(numpy.full((height, width),
+                                              fill_value=DATASOURCE_ATTRIBUTES['nodata'],
+                                              dtype=DATASOURCE_ATTRIBUTES['data_type']), indexes=1)
 
     provenance_array = numpy.full((height, width), dtype=numpy.int16, fill_value=-1)
 
@@ -729,8 +731,8 @@ def blend(activity, band_map, build_clear_observation=False):
 
             # Get current observation file name
             file_name = Path(bandlist[order].name).stem
-            file_date = file_name.split('_')[4]
-            day_of_year = datetime.strptime(file_date, '%Y-%m-%d').timetuple().tm_yday
+            file_date = datetime.strptime(file_name.split('_')[4], '%Y-%m-%d')
+            day_of_year = file_date.timetuple().tm_yday
 
             # Find all no data in destination STACK image
             stack_raster_where_nodata = numpy.where(
@@ -743,9 +745,7 @@ def blend(activity, band_map, build_clear_observation=False):
                                                               window.col_off: col_offset].shape)
 
             if build_clear_observation and is_combined_collection:
-                element_date = mask_tuples[order][1]
-
-                provenance_block = provenance_merge_map[element_date].dataset.read(1, window=window)
+                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
 
             # Find all valid/cloud in destination STACK image
             raster_where_data = numpy.where(raster != nodata)
@@ -762,7 +762,7 @@ def blend(activity, band_map, build_clear_observation=False):
                 provenance_array[window.row_off: row_offset, window.col_off: col_offset][where_intersec] = day_of_year
 
                 if build_clear_observation and is_combined_collection:
-                    data_set_block[where_intersec] = provenance_block[where_intersec]
+                    data_set_block[where_intersec] = datasource_block[where_intersec]
 
             # Identify what is needed to stack, based in Array 2d bool
             todomask = notdonemask * numpy.invert(bmask)
@@ -779,7 +779,7 @@ def blend(activity, band_map, build_clear_observation=False):
                 clear_not_done_pixels] = day_of_year
 
             if build_clear_observation and is_combined_collection:
-                data_set_block[clear_not_done_pixels] = provenance_block[clear_not_done_pixels]
+                data_set_block[clear_not_done_pixels] = datasource_block[clear_not_done_pixels]
 
             # Update what was done.
             notdonemask = notdonemask * bmask
@@ -796,7 +796,7 @@ def blend(activity, band_map, build_clear_observation=False):
             clear_ob_data_set.dataset.write(count_raster.astype(clear_ob_profile['dtype']), window=window, indexes=1)
 
             if is_combined_collection:
-                data_set.dataset.write(data_set_block, window=window, indexes=1)
+                datasource.dataset.write(data_set_block, window=window, indexes=1)
 
     # Close all input dataset
     for order in range(numscenes):
@@ -848,7 +848,7 @@ def blend(activity, band_map, build_clear_observation=False):
             activity['provenance'] = str(provenance_file)
 
             if is_combined_collection:
-                data_set.close()
+                datasource.close()
                 generate_cogs(str(dataset_file_path), str(dataset_file_path))
                 activity['datasource'] = str(dataset_file_path)
 
