@@ -109,6 +109,9 @@ def warp_merge(activity, band_map, force=False, **kwargs):
         merge_file_path = build_cube_path(record.warped_collection_id, merge_date,
                                           tile_id, version=version, band=record.band)
 
+        if activity['band'] == band_map['quality'] and len(activity['args']['datasets']):
+            kwargs['build_provenance'] = True
+
     reused = False
 
     # Reuse merges already done. Rebuild only with flag ``--force``
@@ -128,6 +131,8 @@ def warp_merge(activity, band_map, force=False, **kwargs):
 
         args = deepcopy(record.args)
         args.update(activity['args'])
+
+        activity['args'] = args
 
         record.args = args
         record.save()
@@ -241,8 +246,8 @@ def prepare_blend(merges, band_map: dict, **kwargs):
             _merge['band']: _merge['args']['file']
         }
 
-        if _merge['args'].get('provenance'):
-            activity['scenes'][_merge['args']['date']]['ARDfiles'][DATASOURCE_NAME] = _merge['args']['provenance']
+        if _merge['args'].get(DATASOURCE_NAME):
+            activity['scenes'][_merge['args']['date']]['ARDfiles'][DATASOURCE_NAME] = _merge['args'][DATASOURCE_NAME]
 
         activities[_merge['band']] = activity
 

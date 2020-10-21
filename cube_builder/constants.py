@@ -54,10 +54,10 @@ DATASOURCE_NAME = 'DATASOURCE'
 DATASOURCE_ATTRIBUTES = dict(
     name=DATASOURCE_NAME,
     description='Data set value',
-    data_type='int8',
+    data_type='uint8',
     min_value=0,
-    max_value=127,
-    nodata=-1,
+    max_value=254,
+    nodata=255,
     scale=1,
     common_name='datasource',
 )

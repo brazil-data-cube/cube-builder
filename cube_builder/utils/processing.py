@@ -12,6 +12,7 @@
 import logging
 import warnings
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -40,7 +41,7 @@ from ..config import Config
 
 # Constant to define required bands to generate both NDVI and EVI
 from ..constants import CLEAR_OBSERVATION_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, \
-    PROVENANCE_ATTRIBUTES, COG_MIME_TYPE, PNG_MIME_TYPE, SRID_ALBERS_EQUAL_AREA, DATASOURCE_NAME
+    PROVENANCE_ATTRIBUTES, COG_MIME_TYPE, PNG_MIME_TYPE, SRID_ALBERS_EQUAL_AREA, DATASOURCE_NAME, DATASOURCE_ATTRIBUTES
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 
@@ -255,7 +256,9 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, build_proven
         raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint16)
 
         if build_provenance:
-            raster_provenance = numpy.full((rows, cols,), dtype=numpy.int8, fill_value=-1)
+            raster_provenance = numpy.full((rows, cols,),
+                                           dtype=DATASOURCE_ATTRIBUTES['data_type'],
+                                           fill_value=DATASOURCE_ATTRIBUTES['nodata'])
     else:
         resampling = Resampling.bilinear
         raster = numpy.zeros((rows, cols,), dtype=numpy.int16)
@@ -369,9 +372,6 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, build_proven
         "interleave": "pixel",
     })
 
-    # Persist on file as Cloud Optimized GeoTIFF
-    save_as_cog(str(merge_file), raster_merge, **template)
-
     options = dict(
         file=str(merge_file),
         efficacy=efficacy,
@@ -383,13 +383,18 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, build_proven
 
     if band == band_map['quality'] and len(datasets) > 1:
         provenance = merge_file.parent / merge_file.name.replace(band, DATASOURCE_NAME)
-        template['dtype'] = 'int8'
-        template['nodata'] = -1
+
+        profile = deepcopy(template)
+        profile['dtype'] = DATASOURCE_ATTRIBUTES['data_type']
+        profile['nodata'] = DATASOURCE_ATTRIBUTES['nodata']
 
         custom_tags = {dataset: value for value, dataset in enumerate(datasets)}
 
-        save_as_cog(str(provenance), raster_provenance, tags=custom_tags, **template)
+        save_as_cog(str(provenance), raster_provenance, tags=custom_tags, **profile)
         options[DATASOURCE_NAME] = str(provenance)
+
+    # Persist on file as Cloud Optimized GeoTIFF
+    save_as_cog(str(merge_file), raster_merge, **template)
 
     return options
 
@@ -666,8 +671,8 @@ def blend(activity, band_map, build_clear_observation=False):
         clear_ob_data_set = SmartDataSet(str(clear_ob_file_path), 'w', **clear_ob_profile)
 
         dataset_profile = profile.copy()
-        dataset_profile['dtype'] = numpy.int8
-        dataset_profile.pop('nodata', None)
+        dataset_profile['dtype'] = DATASOURCE_ATTRIBUTES['data_type']
+        dataset_profile['nodata'] = DATASOURCE_ATTRIBUTES['nodata']
 
         if is_combined_collection:
             datasets = activity['datasets']
@@ -685,7 +690,9 @@ def blend(activity, band_map, build_clear_observation=False):
         notdonemask = numpy.ones(shape=(window.height, window.width), dtype=numpy.bool_)
 
         if build_clear_observation and is_combined_collection:
-            data_set_block = numpy.full((window.height, window.width), fill_value=-1, dtype=numpy.int8)
+            data_set_block = numpy.full((window.height, window.width),
+                                        fill_value=DATASOURCE_ATTRIBUTES['nodata'],
+                                        dtype=DATASOURCE_ATTRIBUTES['data_type'])
 
         row_offset = window.row_off + window.height
         col_offset = window.col_off + window.width
@@ -735,11 +742,10 @@ def blend(activity, band_map, build_clear_observation=False):
                                                               stack_raster[window.row_off: row_offset,
                                                               window.col_off: col_offset].shape)
 
-            if build_clear_observation:
+            if build_clear_observation and is_combined_collection:
                 element_date = mask_tuples[order][1]
 
-                if provenance_merge_map[element_date] is not None:
-                    provenance_block = provenance_merge_map[element_date].dataset.read(1, window=window)
+                provenance_block = provenance_merge_map[element_date].dataset.read(1, window=window)
 
             # Find all valid/cloud in destination STACK image
             raster_where_data = numpy.where(raster != nodata)
@@ -843,7 +849,7 @@ def blend(activity, band_map, build_clear_observation=False):
 
             if is_combined_collection:
                 data_set.close()
-                generate_cogs(str(dataset_file_path))
+                generate_cogs(str(dataset_file_path), str(dataset_file_path))
                 activity['datasource'] = str(dataset_file_path)
 
     activity['blends'] = {
