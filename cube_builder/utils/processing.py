@@ -262,6 +262,7 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, build_proven
         raster_merge = numpy.full((rows, cols,), fill_value=nodata, dtype=numpy.int16)
 
     template = None
+    is_combined_collection = len(datasets) > 1
 
     with rasterio_access_token(kwargs.get('token')) as options:
         with rasterio.Env(CPL_CURL_VERBOSE=False, **get_rasterio_config(), **options):
@@ -308,8 +309,26 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, build_proven
                                 resampling=resampling)
 
                             if band != band_map['quality'] or is_sentinel_landsat_quality_fmask:
-                                valid_data_scene = raster[raster != nodata]
-                                raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
+                                # For combined collections, we must merge only valid data into final data set
+                                if is_combined_collection:
+                                    positions_todo = numpy.where(raster_merge == nodata)
+
+                                    if positions_todo:
+                                        valid_positions = numpy.where(raster != nodata)
+
+                                        raster_todo = numpy.ravel_multi_index(positions_todo, raster.shape)
+                                        raster_valid = numpy.ravel_multi_index(valid_positions, raster.shape)
+
+                                        # Match stack nodata values with observation
+                                        # stack_raster_where_nodata && raster_where_data
+                                        intersect_ravel = numpy.intersect1d(raster_todo, raster_valid)
+
+                                        if len(intersect_ravel):
+                                            where_intersec = numpy.unravel_index(intersect_ravel, raster.shape)
+                                            raster_merge[where_intersec] = raster[where_intersec]
+                                else:
+                                    valid_data_scene = raster[raster != nodata]
+                                    raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
                             else:
                                 factor = raster * raster_mask
                                 raster_merge = raster_merge + factor
@@ -332,6 +351,7 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, build_proven
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
     cloudratio = 100
+    raster = None
     if band == band_map['quality']:
         raster_merge, efficacy, cloudratio = getMask(raster_merge, datasets)
         template.update({'dtype': 'uint8'})

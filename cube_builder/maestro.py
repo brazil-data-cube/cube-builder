@@ -350,7 +350,7 @@ class Maestro:
 
                             properties = dict(
                                 date=merge_date,
-                                dataset=self.params['collections'],
+                                datasets=self.params['collections'],
                                 xmin=min_x,
                                 ymax=max_y,
                                 resx=float(band.resolution_x),
