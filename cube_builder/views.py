@@ -56,6 +56,28 @@ def list_cubes(cube_id):
     return jsonify(message), status_code
 
 
+@bp.route('/cubes', methods=['POST'])
+def create_cube():
+    """Define POST handler for datacube creation.
+
+    Expects a JSON that matches with ``DataCubeForm``.
+    """
+    form = DataCubeForm()
+
+    args = request.get_json()
+
+    errors = form.validate(args)
+
+    if errors:
+        return errors, 400
+
+    data = form.load(args)
+
+    cubes, status = CubeController.create(data)
+
+    return jsonify(cubes), status
+
+
 @bp.route('/cubes/<cube_id>/tiles', methods=['GET'])
 def list_tiles(cube_id):
     message, status_code = CubeController.list_tiles_cube(cube_id, only_ids=True)
@@ -94,29 +116,7 @@ def get_cube_meta(cube_id):
     return jsonify(message), status_code
 
 
-@bp.route('/create-cube', methods=['POST'])
-def create_cube():
-    """Define POST handler for datacube creation.
-
-    Expects a JSON that matches with ``DataCubeForm``.
-    """
-    form = DataCubeForm()
-
-    args = request.get_json()
-
-    errors = form.validate(args)
-
-    if errors:
-        return errors, 400
-
-    data = form.load(args)
-
-    cubes, status = CubeController.create(data)
-
-    return jsonify(cubes), status
-
-
-@bp.route('/start-cube', methods=['POST'])
+@bp.route('/start', methods=['POST'])
 def start_cube():
     """Define POST handler for datacube execution.
 
