@@ -224,6 +224,8 @@ class Maestro:
                 self.mosaics[tile_name]['periods'][period]['min_x'] = tile_stats.min_x
                 self.mosaics[tile_name]['periods'][period]['max_y'] = tile_stats.max_y
                 self.mosaics[tile_name]['periods'][period]['dirname'] = cube_relative_path
+                if self.properties.get('shape', None):
+                    self.mosaics[tile_name]['periods'][period]['shape'] = self.properties['shape']
 
     @property
     def warped_datacube(self) -> Collection:
