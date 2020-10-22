@@ -65,7 +65,7 @@ class DataCubeForm(Schema):
     resolution = fields.Integer(required=True, allow_none=False)
     temporal_composition = fields.Dict(required=True, allow_none=False)
     bands_quicklook = fields.List(fields.String, required=True, allow_none=False)
-    composite_functions_id = fields.String(required=True, allow_none=False)
+    composite_functions_id = fields.Integer(required=True, allow_none=False)
     bands = fields.Nested(BandDefinition, required=True, allow_none=False, many=True)
     quality_band = fields.String(required=True, allow_none=False)
     indexes = fields.Nested(BandDefinition, many=True)
