@@ -213,18 +213,22 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, **kwargs):
     dist_y = kwargs.get('dist_y')
     dataset = kwargs.get('dataset')
     resx, resy = kwargs['resx'], kwargs['resy']
+    
+    shape = kwargs.get('shape', None)
+    if shape:
+        cols = shape[0]
+        rows = shape[1]
 
-    num_pixel_x = round(dist_x / resx)
-    num_pixel_y = round(dist_y / resy)
-    new_res_x = dist_x / num_pixel_x
-    new_res_y = dist_y / num_pixel_y
+    else:
+        cols = round(dist_x / resx)
+        rows = round(dist_y / resy)
+        
+        new_res_x = dist_x / cols
+        new_res_y = dist_y / rows
 
-    cols = num_pixel_x
-    rows = num_pixel_y
+        transform = Affine(new_res_x, 0, xmin, 0, -new_res_y, ymax)
 
     srs = kwargs['srs']
-
-    transform = Affine(new_res_x, 0, xmin, 0, -new_res_y, ymax)
 
     is_sentinel_landsat_quality_fmask = ('LC8SR' in dataset or 'S2_MSI' in dataset) and band == band_map['quality']
     source_nodata = 0
@@ -260,11 +264,14 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, **kwargs):
                 with rasterio.open(link) as src:
                     meta = src.meta.copy()
                     meta.update({
-                        'crs': srs,
-                        'transform': transform,
                         'width': cols,
                         'height': rows
                     })
+                    if not shape:
+                        meta.update({
+                            'crs': srs,
+                            'transform': transform
+                        })
 
                     if src.profile['nodata'] is not None:
                         source_nodata = src.profile['nodata']
@@ -283,16 +290,19 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, **kwargs):
 
                     with MemoryFile() as mem_file:
                         with mem_file.open(**meta) as dst:
-                            reproject(
-                                source=rasterio.band(src, 1),
-                                destination=raster,
-                                src_transform=src.transform,
-                                src_crs=src.crs,
-                                dst_transform=transform,
-                                dst_crs=srs,
-                                src_nodata=source_nodata,
-                                dst_nodata=nodata,
-                                resampling=resampling)
+                            if shape:
+                                raster = src.read(1)
+                            else:
+                                reproject(
+                                    source=rasterio.band(src, 1),
+                                    destination=raster,
+                                    src_transform=src.transform,
+                                    src_crs=src.crs,
+                                    dst_transform=transform,
+                                    dst_crs=srs,
+                                    src_nodata=source_nodata,
+                                    dst_nodata=nodata,
+                                    resampling=resampling)
 
                             if band != 'quality' or is_sentinel_landsat_quality_fmask:
                                 valid_data_scene = raster[raster != nodata]

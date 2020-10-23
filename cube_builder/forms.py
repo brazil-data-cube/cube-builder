@@ -61,15 +61,16 @@ class DataCubeForm(Schema):
     """Define parser for datacube creation."""
 
     datacube = fields.String(required=True, allow_none=False, validate=Regexp('^[a-zA-Z0-9]*$', error=INVALID_CUBE_NAME))
-    grs = fields.Integer(required=True, allow_none=False)
+    grs = fields.String(required=True, allow_none=False)
     resolution = fields.Integer(required=True, allow_none=False)
     temporal_composition = fields.Dict(required=True, allow_none=False)
     bands_quicklook = fields.List(fields.String, required=True, allow_none=False)
-    composite_functions_id = fields.Integer(required=True, allow_none=False)
+    composite_function = fields.String(required=True, allow_none=False)
     bands = fields.Nested(BandDefinition, required=True, allow_none=False, many=True)
     quality_band = fields.String(required=True, allow_none=False)
     indexes = fields.Nested(BandDefinition, many=True)
     metadata = fields.Dict(required=True, allow_none=True)
+    description = fields.String(required=True, allow_none=False)
     version = fields.Integer(required=True, allow_none=False, default=1)
     title = fields.String(required=True, allow_none=False)
     # Set cubes as public by default.
@@ -129,6 +130,7 @@ class DataCubeProcessForm(Schema):
     with_rgb = fields.Boolean(required=False, default=False)
     token = fields.String(required=False, allow_none=True)
     stac_url = fields.String(required=False, allow_none=True)
+    shape = fields.List(fields.Integer(required=False))
     # Reuse data cube from another data cube
     reuse_from = fields.String(required=False, allow_none=True)
 
@@ -142,7 +144,7 @@ class PeriodForm(Schema):
     start_date = fields.String(required=False)
     last_date = fields.String(required=False)
     cycle = fields.Dict(required=False, allow_none=True)
-    intervals = fields.List(fields.String, required=False)
+    intervals = fields.List(fields.String, required=False, allow_none=True)
 
 
 class CubeStatusForm(Schema):

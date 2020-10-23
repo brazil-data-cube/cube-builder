@@ -139,11 +139,13 @@ class CubeController:
             cube = Collection(
                 name=cube_id,
                 title=params['title'],
-                temporal_composition_schema=params['temporal_schema'] if function != 'IDT' else None,
+                temporal_composition_schema=params['temporal_composition'] if function != 'IDT' else None,
                 composite_function_id=cube_function.id,
                 grs=grs,
+                _metadata=params['metadata'],
                 description=params['description'],
                 collection_type='cube',
+                is_public=params.get('public', True),
                 version=params['version']
             )
 
@@ -242,8 +244,8 @@ class CubeController:
             cube_serialized = [cube]
 
             if params['composite_function'] != 'IDT':
-                step = params['temporal_schema']['step']
-                unit = params['temporal_schema']['unit'][0].upper()
+                step = params['temporal_composition']['step']
+                unit = params['temporal_composition']['unit'][0].upper()
                 temporal_str = f'{step}{unit}'
 
                 cube_name_composite = f'{cube_name}_{temporal_str}_{params["composite_function"]}'
