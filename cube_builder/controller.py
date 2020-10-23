@@ -139,11 +139,13 @@ class CubeController:
             cube = Collection(
                 name=cube_id,
                 title=params['title'],
-                temporal_composition_schema=params['temporal_schema'] if function != 'IDT' else None,
+                temporal_composition_schema=params['temporal_composition'] if function != 'IDT' else None,
                 composite_function_id=cube_function.id,
                 grs=grs,
+                _metadata=params['metadata'],
                 description=params['description'],
                 collection_type='cube',
+                is_public=params.get('public', True),
                 version=params['version']
             )
 
@@ -242,8 +244,8 @@ class CubeController:
             cube_serialized = [cube]
 
             if params['composite_function'] != 'IDT':
-                step = params['temporal_schema']['step']
-                unit = params['temporal_schema']['unit'][0].upper()
+                step = params['temporal_composition']['step']
+                unit = params['temporal_composition']['unit'][0].upper()
                 temporal_str = f'{step}{unit}'
 
                 cube_name_composite = f'{cube_name}_{temporal_str}_{params["composite_function"]}'
@@ -285,8 +287,9 @@ class CubeController:
         for cube in cubes:
             cube_dict = serializer.dump(cube)
 
-            list_tasks = list_pending_tasks() + list_running_tasks()
-            count_tasks = len(list(filter(lambda t: t['collection_id'] == cube.name, list_tasks)))
+            # list_tasks = list_pending_tasks() + list_running_tasks()
+            # count_tasks = len(list(filter(lambda t: t['collection_id'] == cube.name, list_tasks)))
+            count_tasks = 0
 
             cube_dict['status'] = 'Finished' if count_tasks == 0 else 'Pending'
 
@@ -304,8 +307,9 @@ class CubeController:
 
         count_items = Item.query().filter(Item.collection_id == cube.id).count()
 
-        list_tasks = list_pending_tasks() + list_running_tasks()
-        count_tasks = len(list(filter(lambda t: t['collection_id'] == cube_name, list_tasks)))
+        # list_tasks = list_pending_tasks() + list_running_tasks()
+        # count_tasks = len(list(filter(lambda t: t['collection_id'] == cube_name, list_tasks)))
+        count_tasks = 0
 
         count_acts_errors = Activity.query().filter(
             Activity.collection_id == cube.name,
