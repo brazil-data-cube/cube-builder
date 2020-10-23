@@ -264,12 +264,12 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, **kwargs):
                 with rasterio.open(link) as src:
                     meta = src.meta.copy()
                     meta.update({
-                        'crs': srs,
                         'width': cols,
                         'height': rows
                     })
                     if not shape:
                         meta.update({
+                            'crs': srs,
                             'transform': transform
                         })
 
@@ -290,16 +290,19 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, **kwargs):
 
                     with MemoryFile() as mem_file:
                         with mem_file.open(**meta) as dst:
-                            reproject(
-                                source=rasterio.band(src, 1),
-                                destination=raster,
-                                src_transform=src.transform,
-                                src_crs=src.crs,
-                                dst_transform=src.transform if shape else transform,
-                                dst_crs=srs,
-                                src_nodata=source_nodata,
-                                dst_nodata=nodata,
-                                resampling=resampling)
+                            if shape:
+                                raster = src.read(1)
+                            else:
+                                reproject(
+                                    source=rasterio.band(src, 1),
+                                    destination=raster,
+                                    src_transform=src.transform,
+                                    src_crs=src.crs,
+                                    dst_transform=transform,
+                                    dst_crs=srs,
+                                    src_nodata=source_nodata,
+                                    dst_nodata=nodata,
+                                    resampling=resampling)
 
                             if band != 'quality' or is_sentinel_landsat_quality_fmask:
                                 valid_data_scene = raster[raster != nodata]
