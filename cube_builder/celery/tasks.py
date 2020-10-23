@@ -138,8 +138,9 @@ def warp_merge(activity, band_map, force=False, **kwargs):
         record.save()
     else:
         record.status = 'STARTED'
-        record.args = activity['args']
         record.save()
+
+        record.args = activity['args']
 
         try:
             args = deepcopy(activity.get('args'))
