@@ -70,6 +70,7 @@ class DataCubeForm(Schema):
     quality_band = fields.String(required=True, allow_none=False)
     indexes = fields.Nested(BandDefinition, many=True)
     metadata = fields.Dict(required=True, allow_none=True)
+    description = fields.String(required=True, allow_none=False)
     version = fields.Integer(required=True, allow_none=False, default=1)
     title = fields.String(required=True, allow_none=False)
     # Set cubes as public by default.
@@ -143,7 +144,7 @@ class PeriodForm(Schema):
     start_date = fields.String(required=False)
     last_date = fields.String(required=False)
     cycle = fields.Dict(required=False, allow_none=True)
-    intervals = fields.List(fields.String, required=False)
+    intervals = fields.List(fields.String, required=False, allow_none=True)
 
 
 class CubeStatusForm(Schema):

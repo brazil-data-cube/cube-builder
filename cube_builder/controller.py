@@ -143,6 +143,7 @@ class CubeController:
                 composite_function_id=cube_function.id,
                 grs=grs,
                 _metadata=params['metadata'],
+                description=params['description'],
                 collection_type='cube',
                 is_public=params.get('public', True),
                 version=params['version']
