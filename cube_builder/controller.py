@@ -44,7 +44,9 @@ class CubeController:
         if cube_id:
             return Collection.query().filter(Collection.id == cube_id).first_or_404()
         else:
-            cube_name, cube_version = cube_full_name.split('-')
+            cube_fragments = cube_full_name.split('-')
+            cube_name = '-'.join(cube_fragments[:-1])
+            cube_version = cube_fragments[-1]
             return Collection.query().filter(
                 Collection.name == cube_name,
                 Collection.version == cube_version
