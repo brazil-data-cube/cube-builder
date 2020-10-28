@@ -28,7 +28,7 @@ from .maestro import Maestro
 from .models import Activity
 from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
                         PROVENANCE_NAME, PROVENANCE_ATTRIBUTES, SRID_ALBERS_EQUAL_AREA,
-                        TOTAL_OBSERVATION_NAME, TOTAL_OBSERVATION_ATTRIBUTES, COG_MIME_TYPE)
+                        TOTAL_OBSERVATION_NAME, TOTAL_OBSERVATION_ATTRIBUTES, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES)
 from .forms import CollectionForm
 from .utils.image import validate_merges
 from .utils.processing import get_cube_parts, get_or_create_model
@@ -216,6 +216,10 @@ class CubeController:
             if function == 'STK':
                 _ = cls.get_or_create_band(cube.id, **PROVENANCE_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
                                            resolution_x=params['resolution'], resolution_y=params['resolution'])
+
+        if params.get('is_combined') and function != 'MED':
+            _ = cls.get_or_create_band(cube.id, **DATASOURCE_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
+                                       resolution_x=params['resolution'], resolution_y=params['resolution'])
 
         return CollectionForm().dump(cube)
 
