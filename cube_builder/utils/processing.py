@@ -1303,7 +1303,7 @@ def create_asset_definition(href: str, mime_type: str, role: List[str], absolute
     asset = {
         'href': str(href),
         'type': mime_type,
-        'size': Path(absolute_path).stat().st_size,
+        'bdc:size': Path(absolute_path).stat().st_size,
         'checksum:multihash': multihash_checksum_sha256(str(absolute_path)),
         'roles': role,
         'created': created,
