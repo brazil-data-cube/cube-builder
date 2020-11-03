@@ -104,9 +104,10 @@ def worker(ctx: click.Context):
 @click.option('--force', '-f', is_flag=True, help='Build data cube without cache')
 @click.option('--with-rgb', is_flag=True, help='Generate a file with RGB bands, based in quick look.')
 @click.option('--token', type=click.STRING, help='Token to access data from STAC.')
+@click.option('--shape', type=click.STRING, help='Use custom output shape. i.e `--shape=10980x10980`')
 @with_appcontext
 def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None,
-          stac_url: str = None, force=False, with_rgb=False, **kwargs):
+          stac_url: str = None, force=False, with_rgb=False, shape=None, **kwargs):
     """Build data cube through command line.
 
     Args:
@@ -117,6 +118,8 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
         end - Data cube end date
         bands - Comma separated bands to generate
         force - Flag to build data cube without cache. Default is False
+        with_rgb - Flag to RGB file using quicklook reference. Default is False.
+        shape - Use custom output raster shape. i.e 10980x10980
     """
     from .controller import CubeController
     from .forms import DataCubeProcessForm
@@ -135,6 +138,14 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
 
     if bands:
         data['bands'] = bands.split(',')
+
+    if shape is not None:
+        shape = shape.split('x')
+
+        if len(shape) != 2:
+            raise RuntimeError(f'Expected 2d shape, but got {shape}')
+
+        data['shape'] = shape
 
     parser = DataCubeProcessForm()
     parsed_data = parser.load(data)

@@ -12,20 +12,19 @@
 import datetime
 from contextlib import contextmanager
 from time import time
-from typing import List, Union, Optional
+from typing import List
 
 # 3rdparty
 import numpy
 from bdc_catalog.models import Band, Collection, Tile, db, GridRefSys
 from celery import group, chain
-from dateutil.relativedelta import relativedelta
 from geoalchemy2 import func
 from stac import STAC
 
 # Cube Builder
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
-from .constants import TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME
+from .constants import TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME
 from .utils.processing import get_cube_id, get_or_create_activity
 from .utils.timeline import Timeline
 
@@ -63,7 +62,7 @@ def timing(description: str) -> None:
 
 def _common_bands():
     """Return the BDC common bands."""
-    return TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, 'cnc'
+    return TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, 'cnc', DATASOURCE_NAME
 
 
 class Maestro:
@@ -265,7 +264,7 @@ class Maestro:
         """Retrieve data cube bands based int user input."""
         if self.params.get('bands'):
             return list(filter(lambda band: band.name in self.params['bands'], self.bands))
-        return self.bands
+        return [b for b in self.bands if b.name != DATASOURCE_NAME]
 
     @staticmethod
     def get_bbox(tile_id: str, grs: GridRefSys) -> str:
@@ -321,7 +320,7 @@ class Maestro:
                     assets_by_period = self.search_images(bbox, start, end, tileid)
 
                     if self.datacube.composite_function.alias == 'IDT':
-                        stats_bands = (TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME,)
+                        stats_bands = (TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME)
                         # Mount list of True/False values
                         is_any_empty = list(map(lambda k: k not in stats_bands and len(assets_by_period[k]) == 0, assets_by_period.keys()))
                         # When no asset found in this period, skip it.
@@ -343,43 +342,47 @@ class Maestro:
                         if band.common_name.lower() in ('ndvi', 'evi',):
                             continue
 
-                        collections = assets_by_period[band.name]
+                        merges = assets_by_period[band.name]
 
-                        for collection, merges in collections.items():
-                            for merge_date, assets in merges.items():
-                                properties = dict(
-                                    date=merge_date,
-                                    dataset=collection,
-                                    xmin=min_x,
-                                    ymax=max_y,
-                                    resx=float(band.resolution_x),
-                                    resy=float(band.resolution_y),
-                                    dist_x=dist_x,
-                                    dist_y=dist_y,
-                                    srs=grid_crs,
-                                    tile_id=tileid,
-                                    assets=assets,
-                                    nodata=float(band.nodata),
-                                    bands=band_str_list,
-                                    version=self.datacube.version
-                                )
+                        for merge_date, collections in merges.items():
+                            assets = []
+                            # Preserve collections order
+                            for values in collections.values():
+                                assets.extend(values)
 
-                                if self.reused_datacube:
-                                    properties['reuse_datacube'] = self.reused_datacube.id
+                            properties = dict(
+                                date=merge_date,
+                                datasets=self.params['collections'],
+                                xmin=min_x,
+                                ymax=max_y,
+                                resx=float(band.resolution_x),
+                                resy=float(band.resolution_y),
+                                dist_x=dist_x,
+                                dist_y=dist_y,
+                                srs=grid_crs,
+                                tile_id=tileid,
+                                assets=assets,
+                                nodata=float(band.nodata),
+                                bands=band_str_list,
+                                version=self.datacube.version
+                            )
 
-                                activity = get_or_create_activity(
-                                    cube=self.datacube.name,
-                                    warped=warped_datacube,
-                                    activity_type='MERGE',
-                                    scene_type='WARPED',
-                                    band=band.name,
-                                    period=period_start_end,
-                                    activity_date=merge_date,
-                                    **properties
-                                )
+                            if self.reused_datacube:
+                                properties['reuse_datacube'] = self.reused_datacube.id
 
-                                task = warp_merge.s(activity, band_map, **self.properties)
-                                merges_tasks.append(task)
+                            activity = get_or_create_activity(
+                                cube=self.datacube.name,
+                                warped=warped_datacube,
+                                activity_type='MERGE',
+                                scene_type='WARPED',
+                                band=band.name,
+                                period=period_start_end,
+                                activity_date=merge_date,
+                                **properties
+                            )
+
+                            task = warp_merge.s(activity, band_map, **self.properties)
+                            merges_tasks.append(task)
 
                     if len(merges_tasks) > 0:
                         task = chain(group(merges_tasks), prepare_blend.s(band_map, **self.properties))
@@ -414,7 +417,8 @@ class Maestro:
             )
 
         for band in bands:
-            scenes[band.name] = dict()
+            if band.name != PROVENANCE_NAME:
+                scenes[band.name] = dict()
 
         for dataset in self.params['collections']:
             if 'CBERS' in dataset:
@@ -453,13 +457,14 @@ class Maestro:
                                 else:
                                     band_name_href = f'sr_{band.name}'
 
-                            scenes[band.name].setdefault(dataset, dict())
+                            scenes[band.name].setdefault(date, dict())
 
                             link = feature['assets'][band_name_href]['href']
 
                             scene = dict(**collection_bands[band.name])
                             scene['sceneid'] = identifier
                             scene['band'] = band.name
+                            scene['dataset'] = dataset
 
                             link = link.replace('cdsr.dpi.inpe.br/api/download/TIFF', 'www.dpi.inpe.br/catalog/tmp')
 
@@ -471,7 +476,7 @@ class Maestro:
                             if dataset == 'MOD13Q1' and band.common_name == 'quality':
                                 scene['link'] = scene['link'].replace('quality', 'reliability')
 
-                            scenes[band.name][dataset].setdefault(date, [])
-                            scenes[band.name][dataset][date].append(scene)
+                            scenes[band.name][date].setdefault(dataset, [])
+                            scenes[band.name][date][dataset].append(scene)
 
         return scenes

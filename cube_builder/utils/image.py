@@ -90,6 +90,7 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
 
             output[row.date]['collections'].add(row.data_set)
 
+            output[row.date]['file'] = row.file
             output[row.date]['errors'].extend(errors)
 
             output[row.date]['bands'].setdefault(row.band, list())

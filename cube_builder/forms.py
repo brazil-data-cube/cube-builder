@@ -60,7 +60,7 @@ class BandDefinition(Schema):
 class DataCubeForm(Schema):
     """Define parser for datacube creation."""
 
-    datacube = fields.String(required=True, allow_none=False, validate=Regexp('^[a-zA-Z0-9]*$', error=INVALID_CUBE_NAME))
+    datacube = fields.String(required=True, allow_none=False, validate=Regexp('^[a-zA-Z0-9-]*$', error=INVALID_CUBE_NAME))
     grs = fields.String(required=True, allow_none=False)
     resolution = fields.Integer(required=True, allow_none=False)
     temporal_composition = fields.Dict(required=True, allow_none=False)
@@ -75,6 +75,8 @@ class DataCubeForm(Schema):
     title = fields.String(required=True, allow_none=False)
     # Set cubes as public by default.
     public = fields.Boolean(required=False, allow_none=False, default=True)
+    # Is Data cube generated from Combined Collections?
+    is_combined = fields.Boolean(required=False, allow_none=False, default=False)
 
     @pre_load
     def validate_indexes(self, data, **kwargs):
