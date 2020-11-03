@@ -1322,7 +1322,7 @@ def create_asset_definition(href: str, mime_type: str, role: List[str], absolute
             if chunk_x is None or chunk_x is None:
                 raise RuntimeError('Can\'t compute raster chunk size. Is it a tiled/ valid Cloud Optimized GeoTIFF?')
 
-            asset['chunk_size'] = dict(x=chunk_x, y=chunk_y)
+            asset['bdc:chunk_size'] = dict(x=chunk_x, y=chunk_y)
 
     return asset
 
