@@ -350,7 +350,7 @@ def publish(blends, band_map, **kwargs):
             blend_files[DATASOURCE_NAME] = {composite_function: blend_result['datasource']}
 
         for merge_date, definition in blend_result['scenes'].items():
-            merges.setdefault(merge_date, dict(dataset=definition['dataset'],
+            merges.setdefault(merge_date, dict(datasets=definition.get('datasets', definition.get('dataset')),
                                                cloudratio=definition['cloudratio'],
                                                ARDfiles=dict()))
             merges[merge_date]['ARDfiles'].update(definition['ARDfiles'])
