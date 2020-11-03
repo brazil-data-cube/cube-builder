@@ -1303,7 +1303,7 @@ def create_asset_definition(href: str, mime_type: str, role: List[str], absolute
     asset = {
         'href': str(href),
         'type': mime_type,
-        'size': Path(absolute_path).stat().st_size,
+        'bdc:size': Path(absolute_path).stat().st_size,
         'checksum:multihash': multihash_checksum_sha256(str(absolute_path)),
         'roles': role,
         'created': created,
@@ -1322,7 +1322,7 @@ def create_asset_definition(href: str, mime_type: str, role: List[str], absolute
             if chunk_x is None or chunk_x is None:
                 raise RuntimeError('Can\'t compute raster chunk size. Is it a tiled/ valid Cloud Optimized GeoTIFF?')
 
-            asset['chunk_size'] = dict(x=chunk_x, y=chunk_y)
+            asset['bdc:chunk_size'] = dict(x=chunk_x, y=chunk_y)
 
     return asset
 
