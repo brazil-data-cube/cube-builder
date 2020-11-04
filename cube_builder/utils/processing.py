@@ -1312,7 +1312,7 @@ def create_asset_definition(href: str, mime_type: str, role: List[str], absolute
 
     if is_raster:
         with rasterio.open(str(absolute_path)) as data_set:
-            asset['raster_size'] = dict(
+            asset['bdc:raster_size'] = dict(
                 x=data_set.shape[1],
                 y=data_set.shape[0],
             )
