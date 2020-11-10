@@ -92,7 +92,7 @@ class Timeline:
                 period = last_date + relativedelta(years=step)
                 return date(period.year, 1, 1)
 
-    def _decode_period_continuous(self, start_date, end_date, unit, step, cut_start=None, cut_end=None, intervals=None):
+    def _decode_period_continuous(self, start_date, end_date, unit, step, cut_start=None, cut_end=None, intervals=None, full_period=True):
         start_period = start_date
         end_period = self._get_last_day_period(start_period, step, unit, intervals)
 
@@ -106,7 +106,7 @@ class Timeline:
                 periods.append([start_period, end_period])
 
             elif start_date <= start_period and end_date < end_period and start_period <= end_date:
-                if not intervals:
+                if not intervals and not full_period:
                     periods.append([start_period, end_date])
                 else:
                     periods.append([start_period, end_period])
@@ -118,7 +118,7 @@ class Timeline:
         result = []
         if cut_start and cut_end:
             for period in periods:
-                if period[0] >= cut_start and period[1] <= cut_end:
+                if period[0] >= cut_start and period[0] <= cut_end:
                     result.append(period)
         else:
             result = periods
@@ -142,7 +142,7 @@ class Timeline:
                     cut_end = datetime.strptime(f'{period_cyclic[1].year}-{interval.split("_")[1]}', '%Y-%m-%d').date()
                     periods += self._decode_period_continuous(start_date, end_date, unit, step, cut_start, cut_end)
             else:
-                periods += self._decode_period_continuous(period_cyclic[0], period_cyclic[1], unit, step, start_date, end_date)
+                periods += self._decode_period_continuous(period_cyclic[0], period_cyclic[1], unit, step, start_date, end_date, full_period=False)
 
         return periods
 
