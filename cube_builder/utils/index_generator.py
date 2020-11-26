@@ -8,6 +8,7 @@
 
 """Simple data cube band generator."""
 
+import logging
 from typing import List, Dict
 
 import numpy
@@ -35,7 +36,7 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
     Returns:
         A dict values with generated bands.
     """
-    from .utils import SmartDataSet, build_cube_path
+    from .processing import SmartDataSet, build_cube_path, generate_cogs
 
     cube_band_indexes: List[Band] = []
 
@@ -57,6 +58,9 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
             profile = map_data_set_context[band_name].dataset.profile.copy()
             blocks = list(map_data_set_context[band_name].dataset.block_windows())
 
+    if not blocks or profile is None:
+        raise RuntimeError('Can\t generate band indexes since profile/blocks is None.')
+
     output = dict()
 
     for band_index in cube_band_indexes:
@@ -76,7 +80,7 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
         custom_band_path = build_cube_path(cube.name, period, tile_id, version=cube.version, band=band_name)
 
         output_dataset = SmartDataSet(str(custom_band_path), mode='w', **profile)
-        logging.info(f'Generating band {band_name} for cube {cube.name}...')
+        logging.info(f'Generating band {band_name} for cube {cube.name} -{custom_band_path.stem}...')
 
         for _, window in blocks:
             machine_context = {
@@ -89,13 +93,18 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
             result = execute(expr, context=machine_context)
             raster = result[band_name]
             raster[raster == numpy.ma.masked] = profile['nodata']
-            # Persist the expected band data type to cast value safelly.
+
+            # Persist the expected band data type to cast value safely.
+            # TODO: Should we use consider band min_value/max_value?
             raster[raster < data_type_min_value] = data_type_min_value
             raster[raster > data_type_max_value] = data_type_max_value
 
             output_dataset.dataset.write(raster.astype(band_data_type), window=window, indexes=1)
 
         output_dataset.close()
+
+        generate_cogs(str(custom_band_path), str(custom_band_path))
+
         output[band_name] = str(custom_band_path)
 
     return output

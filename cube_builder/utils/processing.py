@@ -31,10 +31,11 @@ from geoalchemy2.shape import from_shape, to_shape
 from numpngw import write_png
 from rasterio import Affine, MemoryFile
 from rasterio.warp import Resampling, reproject
-
-# Builder
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
+
+# Builder
+from .index_generator import generate_band_indexes
 
 from ..config import Config
 
@@ -497,15 +498,12 @@ class SmartDataSet:
     def close(self):
         """Close rasterio data set."""
         if not self.dataset.closed:
-            logging.warning('Closing dataset {}'.format(str(self.path)))
+            logging.debug('Closing dataset {}'.format(str(self.path)))
 
             if self.mode == 'w' and self.tags:
                 self.dataset.update_tags(**self.tags)
 
             self.dataset.close()
-
-            if self.mode == 'w':
-                generate_cogs(str(path), str(path))
 
 
 def compute_data_set_stats(file_path: str) -> Tuple[float, float]:
@@ -938,7 +936,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
             item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=cube.id)
             item.cloud_cover = cloudratio
 
-            assets = item.assets or dict()
+            assets = deepcopy(item.assets) or dict()
             assets.update(
                 thumbnail=create_asset_definition(
                     href=quick_look_file.replace(Config.DATA_DIR, ''),
@@ -1024,7 +1022,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
         extent = to_shape(item.geom) if item.geom else None
         min_convex_hull = to_shape(item.min_convex_hull) if item.min_convex_hull else None
 
-        assets = item.assets or dict()
+        assets = deepcopy(item.assets) or dict()
 
         assets.update(
             thumbnail=create_asset_definition(
@@ -1239,7 +1237,7 @@ def create_asset_definition(href: str, mime_type: str, role: List[str], absolute
             chunk_x, chunk_y = data_set.profile.get('blockxsize'), data_set.profile.get('blockxsize')
 
             if chunk_x is None or chunk_x is None:
-                raise RuntimeError('Can\'t compute raster chunk size. Is it a tiled/ valid Cloud Optimized GeoTIFF?')
+                return asset
 
             asset['bdc:chunk_size'] = dict(x=chunk_x, y=chunk_y)
 
