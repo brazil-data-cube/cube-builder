@@ -119,6 +119,14 @@ class DataCubeForm(Schema):
         return data
 
 
+class DataCubeMetadataForm(Schema):
+    """Define parser for datacube updation."""
+
+    metadata = fields.Dict(required=False, allow_none=True)
+    description = fields.String(required=False, allow_none=False)
+    title = fields.String(required=False, allow_none=False)
+    public = fields.Boolean(required=False, allow_none=False, default=True)
+
 class DataCubeProcessForm(Schema):
     """Define parser for datacube generation."""
 

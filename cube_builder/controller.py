@@ -265,6 +265,25 @@ class CubeController:
         return cube_serialized, 201
 
     @classmethod
+    def update(cls, cube_id: int, params):
+        """Update data cube definition.
+
+        Returns:
+             Tuple with serialized cube and HTTP Status code, respectively.
+        """
+        with db.session.begin_nested():
+            cube = cls.get_cube_or_404(cube_id=cube_id)
+
+            cube.title = params['title']
+            cube._metadata=params['metadata']
+            cube.description=params['description']
+            cube.is_public=params['public']
+            
+        db.session.commit()
+
+        return {'message': 'Updated cube!'}, 200
+
+    @classmethod
     def get_cube(cls, cube_id: int):
         cube = cls.get_cube_or_404(cube_id=cube_id)
 
