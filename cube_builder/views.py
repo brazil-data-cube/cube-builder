@@ -15,7 +15,7 @@ from flask import Blueprint, request, jsonify
 from .version import __version__
 from .controller import CubeController
 from .forms import GridRefSysForm, DataCubeForm, DataCubeProcessForm, PeriodForm, \
-                    CubeStatusForm, CubeItemsForm
+                    CubeStatusForm, CubeItemsForm, DataCubeMetadataForm
 
 
 bp = Blueprint('cubes', import_name=__name__)
@@ -76,6 +76,27 @@ def create_cube():
     cubes, status = CubeController.create(data)
 
     return jsonify(cubes), status
+
+@bp.route('/cubes/<cube_id>', methods=['PUT'])
+def update_cube_matadata(cube_id):
+    """Define PUT handler for datacube Updation.
+
+    Expects a JSON that matches with ``DataCubeMetadataForm``.
+    """
+    form = DataCubeMetadataForm()
+
+    args = request.get_json()
+
+    errors = form.validate(args)
+
+    if errors:
+        return errors, 400
+
+    data = form.load(args)
+
+    message, status = CubeController.update(cube_id, data)
+
+    return jsonify(message), status
 
 
 @bp.route('/cubes/<cube_id>/tiles', methods=['GET'])
