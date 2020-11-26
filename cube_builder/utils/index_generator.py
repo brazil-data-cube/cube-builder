@@ -84,7 +84,7 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
 
         for _, window in blocks:
             machine_context = {
-                k: ds.dataset.read(1, masked=True, window=window)
+                k: ds.dataset.read(1, masked=True, window=window).astype(numpy.float32)
                 for k, ds in map_data_set_context.items()
             }
 
