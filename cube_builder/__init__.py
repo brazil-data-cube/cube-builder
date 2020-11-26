@@ -10,7 +10,8 @@
 
 from bdc_catalog.ext import BDCCatalog
 from flask import Flask
-from flask_cors import CORS
+from json import JSONEncoder
+from werkzeug.exceptions import HTTPException, InternalServerError
 
 from . import celery, config
 
@@ -24,7 +25,9 @@ def create_app(config_name=None):
         Flask Application with config instance scope
     """
     app = Flask(__name__)
+
     conf = config.get_settings(config_name)
+
     app.config.from_object(conf)
 
     with app.app_context():
@@ -35,10 +38,49 @@ def create_app(config_name=None):
         celery_app = celery.create_celery_app(app)
         celery.celery_app = celery_app
 
-        # Setup blueprint
-        from .blueprint import bp
-        app.register_blueprint(bp)
-
-        CORS(app)
+        setup_app(app)
 
     return app
+
+
+def setup_error_handlers(app: Flask):
+    """Configure Cube Builder Error Handlers on Flask Application."""
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        """Handle exceptions."""
+        if isinstance(e, HTTPException):
+            return {'code': e.code, 'description': e.description}, e.code
+
+        app.logger.exception(e)
+
+        return {'code': InternalServerError.code,
+                'description': InternalServerError.description}, InternalServerError.code
+
+
+def setup_app(app):
+    """Configure internal middleware for Flask app."""
+
+    @app.after_request
+    def after_request(response):
+        """Enable CORS."""
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Methods', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization')
+        return response
+
+    class ImprovedJSONEncoder(JSONEncoder):
+        def default(self, o):
+            from datetime import datetime
+            
+            if isinstance(o, set):
+                return list(o)
+            if isinstance(o, datetime):
+                return o.isoformat()
+            return super(ImprovedJSONEncoder, self).default(o)
+
+    app.json_encoder = ImprovedJSONEncoder
+
+    setup_error_handlers(app)
+
+    from .views import bp
+    app.register_blueprint(bp)

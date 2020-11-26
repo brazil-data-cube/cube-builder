@@ -25,7 +25,7 @@ A Data Cube must have an associated grid. The example showed below will create a
 .. code-block:: shell
 
     curl --location \
-         --request POST '127.0.0.1:5000/api/cubes/create-grs-schema' \
+         --request POST '127.0.0.1:5000/create-grs' \
          --header 'Content-Type: application/json' \
          --data-raw '{
             "name": "BRAZIL",
@@ -44,9 +44,7 @@ The response will have status code ``201`` and the body:
 .. code-block:: shell
 
     {
-        "description": "albers equal area - 250k by tiles Brazil",
-        "crs": "+proj=aea +lat_1=-1 +lat_2=-29 +lat_0=0 +lon_0=-54 +x_0=0 +y_0=0 +ellps=GRS80 +datum=GRS80 +units=m +no_defs",
-        "id": "BRAZIL"
+        "Grid BRAZIL created with successfully"
     }
 
 
@@ -54,114 +52,6 @@ The response will have status code ``201`` and the body:
 
     Remember that the bounding box ``bbox`` order is defined by: ``west,north,east,south``.
 
-
-Registering a new Spatial Dimension for Data Cubes
---------------------------------------------------
-
-
-.. note::
-
-    If you already have the raster size schema *BRAZIL-10*, *BRAZIL-30* and *BRAZIL-64* in your database, you can skip this step.
-
-
-The following sections describe how to create Raster Size Schemas for different resolutions.
-
-
-Resolution 10 meters (Sentinel 2)
-*********************************
-
-
-.. code-block:: shell
-
-    curl --location \
-         --request POST 'http://127.0.0.1:5000/api/cubes/create-raster-schema' \
-         --header 'Content-Type: application/json' \
-         --data-raw '{
-            "grs_schema": "BRAZIL",
-            "resolution": "10",
-            "chunk_size_x": 256,
-            "chunk_size_y": 256
-         }'
-
-
-It will create a raster size schema ``BRAZIL-10``. The response will have status code ``201`` and the body:
-
-.. code-block:: json
-
-    {
-        "raster_size_y": 11727,
-        "raster_size_x": 15744,
-        "chunk_size_t": 1.0,
-        "id": "BRAZIL-10",
-        "raster_size_t": 1.0
-    }
-
-
-Resolution 30 meters (Landsat-8)
-********************************
-
-
-.. code-block:: shell
-
-    curl --location \
-         --request POST 'http://127.0.0.1:5000/api/cubes/create-raster-schema' \
-         --header 'Content-Type: application/json' \
-         --data-raw '{
-            "grs_schema": "BRAZIL",
-            "resolution": "30",
-            "chunk_size_x": 256,
-            "chunk_size_y": 256
-         }'
-
-
-It will create a raster size schema ``BRAZIL-30``. The response will have status code ``201`` and the body:
-
-
-.. code-block:: json
-
-    {
-        "raster_size_y": 3909,
-        "raster_size_x": 5248,
-        "chunk_size_t": 1.0,
-        "id": "BRAZIL-30",
-        "raster_size_t": 1.0
-    }
-
-
-Resolution 64 meters (CBERS4)
-*****************************
-
-.. code-block:: shell
-
-    curl --location \
-         --request POST 'http://127.0.0.1:5000/api/cubes/create-raster-schema' \
-         --header 'Content-Type: application/json' \
-         --data-raw '{
-            "grs_schema": "BRAZIL",
-            "resolution": "64",
-            "chunk_size_x": 256,
-            "chunk_size_y": 256
-         }'
-
-
-It will create a raster size schema ``BRAZIL-64``. The response will have status code ``201`` and the body:
-
-
-.. code-block:: json
-
-    {
-        "raster_size_y": 1832,
-        "raster_size_x": 2460,
-        "chunk_size_t": 1.0,
-        "id": "BRAZIL-64",
-        "raster_size_t": 1.0
-    }
-
-
-.. warning::
-
-    If you try to insert a already registered raster size schema, the response will have status code ``409`` representing
-    duplicated.
 
 
 Creating a Temporal Composition Schema
@@ -180,7 +70,7 @@ Use the following command to create a temporal composition schema ``Monthly``:
 
 .. code-block:: shell
 
-    curl --location --request POST '127.0.0.1:5000/api/cubes/create-temporal-schema' \
+    curl --location --request POST '127.0.0.1:5000/create-temporal-schema' \
          --header 'Content-Type: application/json' \
         --data-raw '{
             "temporal_composite_unit": "month",
@@ -210,7 +100,7 @@ Use the following command to create a temporal composition schema ``A16day``:
 
 .. code-block:: shell
 
-    curl --location --request POST '127.0.0.1:5000/api/cubes/create-temporal-schema' \
+    curl --location --request POST '127.0.0.1:5000/create-temporal-schema' \
          --header 'Content-Type: application/json' \
         --data-raw '{
             "temporal_composite_unit": "day",
@@ -245,7 +135,7 @@ In order to create data cube Landsat-8, use the following command to create data
 
 .. code-block:: shell
 
-    curl --location --request POST '127.0.0.1:5000/api/cubes/create' \
+    curl --location --request POST '127.0.0.1:5000/create-cube' \
          --header 'Content-Type: application/json' \
          --data-raw '{
              "datacube": "LC8_30_1M",
@@ -272,7 +162,7 @@ Trigger data cube generation with following command:
 
     # Using curl (Make sure to execute cube-builder run)
     curl --location \
-         --request POST '127.0.0.1:5000/api/cubes/process' \
+         --request POST '127.0.0.1:5000/start-cube' \
          --header 'Content-Type: application/json' \
          --data-raw '{
             "datacube": "LC8_30_1M_MED",
@@ -297,7 +187,7 @@ In order to create data cube Sentinel 2, use the following command to create dat
 .. code-block:: shell
 
     # Using curl (Make sure to execute cube-builder run)
-    curl --location --request POST '127.0.0.1:5000/api/cubes/create' \
+    curl --location --request POST '127.0.0.1:5000/create-cube' \
             --header 'Content-Type: application/json' \
             --data-raw '{
                 "datacube": "S2_10_1M",
@@ -347,7 +237,7 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
 .. code-block:: shell
 
     # Using curl (Make sure to execute cube-builder run)
-    curl --location --request POST '127.0.0.1:5000/api/cubes/create' \
+    curl --location --request POST '127.0.0.1:5000/create-cube' \
             --header 'Content-Type: application/json' \
             --data-raw '{
                 "datacube": "C4_64_1M",
@@ -366,7 +256,7 @@ Trigger data cube generation with following command:
 
     # Using cube-builder command line
     cube-builder build C4_64_1M_MED \
-        --collections=CBERS4_AWFI_L4_SR \
+        --collections=CBERS4_AWFI_L4_SR-1 \
         --tiles=089098 \
         --start=2019-01-01 \
         --end=2019-01-31

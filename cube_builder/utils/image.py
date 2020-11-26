@@ -15,7 +15,7 @@ from pathlib import Path
 import rasterio
 from sqlalchemy.engine.result import ResultProxy, RowProxy
 
-from cube_builder.config import Config
+from ..config import Config
 
 LANDSAT_BANDS = dict(
     int16=['band1', 'band2', 'band3', 'band4', 'band5', 'band6', 'band7', 'evi', 'ndvi'],
@@ -90,6 +90,7 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
 
             output[row.date]['collections'].add(row.data_set)
 
+            output[row.date]['file'] = row.file
             output[row.date]['errors'].extend(errors)
 
             output[row.date]['bands'].setdefault(row.band, list())

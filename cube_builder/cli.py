@@ -16,7 +16,7 @@ from . import create_app
 
 
 # Create cube-builder cli from bdc-db
-from .package import package_info
+from .utils.package import package_info
 
 
 @click.group(cls=FlaskGroup, create_app=create_app)
@@ -28,7 +28,7 @@ def cli():
 @with_appcontext
 def load_data():
     """Create Cube Builder composite functions supported."""
-    from .utils import get_or_create_model
+    from .utils.processing import get_or_create_model
 
     with db.session.begin_nested():
         _, _ = get_or_create_model(
@@ -99,12 +99,15 @@ def worker(ctx: click.Context):
 @click.option('--start', type=click.STRING, required=True, help='Start date')
 @click.option('--end', type=click.STRING, required=True, help='End date')
 @click.option('--bands', type=click.STRING, help='Comma delimited bands to generate')
+@click.option('--stac-url', type=click.STRING, help='STAC to search')
+@click.option('--reuse-from', type=click.STRING, help='Reuse data cube from another data cube.')
 @click.option('--force', '-f', is_flag=True, help='Build data cube without cache')
 @click.option('--with-rgb', is_flag=True, help='Generate a file with RGB bands, based in quick look.')
 @click.option('--token', type=click.STRING, help='Token to access data from STAC.')
+@click.option('--shape', type=click.STRING, help='Use custom output shape. i.e `--shape=10980x10980`')
 @with_appcontext
 def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None,
-          force=False, with_rgb=False, **kwargs):
+          stac_url: str = None, force=False, with_rgb=False, shape=None, **kwargs):
     """Build data cube through command line.
 
     Args:
@@ -115,9 +118,11 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
         end - Data cube end date
         bands - Comma separated bands to generate
         force - Flag to build data cube without cache. Default is False
+        with_rgb - Flag to RGB file using quicklook reference. Default is False.
+        shape - Use custom output raster shape. i.e 10980x10980
     """
-    from .business import CubeBusiness
-    from .parsers import DataCubeProcessParser
+    from .controller import CubeController
+    from .forms import DataCubeProcessForm
 
     data = dict(
         datacube=datacube,
@@ -127,17 +132,26 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
         tiles=tiles.split(','),
         force=force,
         with_rgb=with_rgb,
+        stac_url=stac_url,
         **kwargs
     )
 
     if bands:
         data['bands'] = bands.split(',')
 
-    parser = DataCubeProcessParser()
+    if shape is not None:
+        shape = shape.split('x')
+
+        if len(shape) != 2:
+            raise RuntimeError(f'Expected 2d shape, but got {shape}')
+
+        data['shape'] = shape
+
+    parser = DataCubeProcessForm()
     parsed_data = parser.load(data)
 
     click.secho('Triggering data cube generation...', fg='green')
-    res = CubeBusiness.maestro(**parsed_data)
+    res = CubeController.maestro(**parsed_data)
 
     assert res['ok']
 

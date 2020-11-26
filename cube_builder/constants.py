@@ -48,4 +48,22 @@ PROVENANCE_ATTRIBUTES = dict(
     common_name='Provenance',
 )
 
+# Band for Combined Collections
+DATASOURCE_NAME = 'DATASOURCE'
+
+DATASOURCE_ATTRIBUTES = dict(
+    name=DATASOURCE_NAME,
+    description='Data set value',
+    data_type='uint8',
+    min_value=0,
+    max_value=254,
+    nodata=255,
+    scale=1,
+    common_name='datasource',
+)
+
 COG_MIME_TYPE = 'image/tiff; application=geotiff; profile=cloud-optimized'
+
+PNG_MIME_TYPE = 'image/png'
+
+SRID_ALBERS_EQUAL_AREA = 100001
