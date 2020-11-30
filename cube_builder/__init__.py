@@ -14,6 +14,7 @@ from json import JSONEncoder
 from werkzeug.exceptions import HTTPException, InternalServerError
 
 from . import celery, config
+from .version import __version__
 
 
 def create_app(config_name=None):

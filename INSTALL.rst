@@ -73,28 +73,22 @@ Launch the RabbitMQ Container
 You will need an instance of RabbitMQ up and running in order to launch the ``cube-builder`` celery workers.
 
 
-We have prepared in the ``Cube Builder`` repository a configuration for ``RabbitMQ`` container with ``docker-compose``. Please, follow the steps below:
+We have prepared in the ``Cube Builder`` repository a configuration for ``RabbitMQ`` container with ``docker-compose``. Please, follow the steps below::
+
+    docker-compose up -d mq
 
 
-.. code-block:: shell
+After that command, check which port was binded from the host to the container::
 
-        docker-compose up -d mq
+    $ docker container ls
 
-
-After that command, check which port was binded from the host to the container:
-
-
-.. code-block:: shell
-
-        $ docker container ls
-
-        CONTAINER ID   IMAGE                  COMMAND                  CREATED         STATUS         PORTS                    NAMES
-        a3bb86d2df56   rabbitmq:3-management  "docker-entrypoint.s…"   3 minutes ago   Up 3 minutes   4369/tcp, 5671/tcp, 0.0.0.0:5672->5672/tcp, 15671/tcp, 25672/tcp, 0.0.0.0:15672->15672/tcp   cube-builder-rabbitmq
+    CONTAINER ID   IMAGE                  COMMAND                  CREATED         STATUS         PORTS                    NAMES
+    a3bb86d2df56   rabbitmq:3-management  "docker-entrypoint.s…"   3 minutes ago   Up 3 minutes   4369/tcp, 5671/tcp, 0.0.0.0:5672->5672/tcp, 15671/tcp, 25672/tcp, 0.0.0.0:15672->15672/tcp   cube-builder-rabbitmq
 
 
 .. note::
 
-        In the above output the ``RabbitMQ`` service is attached to the ports ``5672`` for socket client and ``15672`` for the RabbitMQ User Interface. You can check `<http://127.0.0.1:15672>`_. The default credentials are ``guest`` and ``guest`` for ``user`` and ``password`` respectively.
+    In the above output the ``RabbitMQ`` service is attached to the ports ``5672`` for socket client and ``15672`` for the RabbitMQ User Interface. You can check `<http://127.0.0.1:15672>`_. The default credentials are ``guest`` and ``guest`` for ``user`` and ``password`` respectively.
 
 
 Prepare the Database System
@@ -109,9 +103,7 @@ The ``Cube Builder`` uses `BDC-DB <https://github.com/brazil-data-cube/bdc-db/>`
     If you already have a database instance with the Brazil Data Cube data model, you can skip this section.
 
 
-In order to prepare a Brazil Data Cube database model, you must clone the ``BDC-DB`` and run the migrations:
-
-.. code-block:: shell
+In order to prepare a Brazil Data Cube database model, you must clone the ``BDC-DB`` and run the migrations::
 
     git clone https://github.com/brazil-data-cube/bdc-db.git /tmp/bdc-db
     (
@@ -123,10 +115,7 @@ In order to prepare a Brazil Data Cube database model, you must clone the ``BDC-
     )
 
 
-After that, you can initialize ``Cube Builder`` migrations with the following commands:
-
-
-.. code-block:: shell
+After that, you can initialize ``Cube Builder`` migrations with the following commands::
 
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
     cube-builder db create-db # Create database and schema
@@ -143,15 +132,12 @@ Launch the ``Cube Builder`` service
 ***********************************
 
 
-In the source code folder, enter the following command:
+In the source code folder, enter the following command::
 
-
-.. code-block:: shell
-
-        $ FLASK_ENV="development" \
-          DATA_DIR="/data" \
-          SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
-          cube-builder run
+    $ FLASK_ENV="development" \
+      DATA_DIR="/data" \
+      SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
+      cube-builder run
 
 
 You may need to replace the definition of some environment variables:
@@ -163,10 +149,7 @@ You may need to replace the definition of some environment variables:
 - ``SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc"``: set the database URI connection for PostgreSQL.
 
 
-The above command should output some messages in the console as showed below:
-
-
-.. code-block:: shell
+The above command should output some messages in the console as showed below::
 
     * Environment: development
     * Debug mode: on
@@ -180,14 +163,11 @@ Launch the ``Cube Builder`` worker
 **********************************
 
 
-Enter the following command to start ``Cube Builder`` worker:
+Enter the following command to start ``Cube Builder`` worker::
 
-
-.. code-block:: shell
-
-        DATA_DIR="/data" \
-        SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
-        cube-builder worker -l INFO --concurrency 8
+    DATA_DIR="/data" \
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
+    cube-builder worker -l INFO --concurrency 8
 
 
 You may need to replace the definition of some parameters:
@@ -227,10 +207,11 @@ Please, refer to the document `USING.rst <./USING.rst>`_ for more information on
         Running setup.py install for bdc-db ... done
         Running setup.py install for librabbitmq ... error
         ERROR: Command errored out with exit status 1:
-         command: /home/gribeiro/Devel/github/brazil-data-cube/bdc-collection-builder/venv/bin/python3.7 -u -c 'import sys, setuptools, tokenize; sys.argv[0] = '"'"'/tmp/pip-install-1i7mp5js/librabbitmq/setup.py'"'"'; __file__='"'"'/tmp/pip-install-1i7mp5js/librabbitmq/setup.py'"'"';f=getattr(tokenize, '"'"'open'"'"', open)(__file__);code=f.read().replace('"'"'\r\n'"'"', '"'"'\n'"'"');f.close();exec(compile(code, __file__, '"'"'exec'"'"'))' install --record /tmp/pip-record-m9lm5kjn/install-record.txt --single-version-externally-managed --compile --install-headers /home/gribeiro/Devel/github/brazil-data-cube/bdc-collection-builder/venv/include/site/python3.7/librabbitmq
+         command: /home/gribeiro/Devel/github/brazil-data-cube/bdc-collection-builder/venv/..
              cwd: /tmp/pip-install-1i7mp5js/librabbitmq/
         Complete output (107 lines):
-        /tmp/pip-install-1i7mp5js/librabbitmq/setup.py:167: DeprecationWarning: 'U' mode is deprecated
+        /tmp/pip-install-1i7mp5js/librabbitmq/setup.py:167:
+        DeprecationWarning: 'U' mode is deprecated
           long_description = open(os.path.join(BASE_PATH, 'README.rst'), 'U').read()
         running build
         - pull submodule rabbitmq-c...

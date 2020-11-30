@@ -9,23 +9,23 @@
    :end-before: Installation
 
 
-Documentation
-=============
+.. toctree::
+    :hidden:
+
+    self
+
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Contents:
+    :maxdepth: 2
+    :caption: Documentation:
 
-   installation
-   deploy
-   using
-   license
-
+    installation
+    usage
+    history
 
 
-Indices and tables
-==================
+.. toctree::
+    :maxdepth: 1
+    :caption: Additional Notes
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+    license

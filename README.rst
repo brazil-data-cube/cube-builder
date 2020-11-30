@@ -26,9 +26,10 @@ Cube Builder
         :target: https://github.com/brazil-data-cube/cube-builder/releases
         :alt: Release
 
-.. image:: https://badges.gitter.im/brazil-data-cube/community.png
-        :target: https://gitter.im/brazil-data-cube/community#
-        :alt: Join the chat
+.. image:: https://img.shields.io/discord/689541907621085198?logo=discord&logoColor=ffffff&color=7389D8
+        :target: https://discord.com/channels/689541907621085198#
+        :alt: Join us at Discord
+
 
 
 
@@ -50,7 +51,7 @@ See `DEPLOY.rst <./DEPLOY.rst>`_.
 Developer Documentation
 =======================
 
-TODO
+See https://cube-builder.readthedocs.io/en/latest/
 
 
 License
