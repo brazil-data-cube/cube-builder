@@ -134,6 +134,7 @@ class DataCubeFragments(list):
 
     @staticmethod
     def parse(datacube: str) -> List[str]:
+        """Parse a data cube name."""
         cube_fragments = datacube.split('_')
 
         if len(cube_fragments) > 4 or len(cube_fragments) < 2:
@@ -160,7 +161,7 @@ class DataCubeFragments(list):
 
 
 def get_cube_parts(datacube: str) -> DataCubeFragments:
-    """Builds a `DataCubeFragments` and validate data cube name policy."""
+    """Build a `DataCubeFragments` and validate data cube name policy."""
     return DataCubeFragments(datacube)
 
 
@@ -184,12 +185,17 @@ def get_cube_id(datacube: str, func=None):
 
 
 def get_item_id(datacube: str, version: int, tile: str, date: str) -> str:
+    """Prepare a data cube item structure."""
     version_str = '{0:03d}'.format(version)
 
     return f'{datacube}_v{version_str}_{tile}_{date}'
 
 
 def prepare_asset_url(url: str) -> str:
+    """Define a simple function to change CBERS url to local INPE provider.
+
+    TODO: Remove it
+    """
     from urllib.parse import urljoin, urlparse
 
     parsed_url = urlparse(url)
@@ -875,6 +881,7 @@ def blend(activity, band_map, build_clear_observation=False):
 
 
 def generate_rgb(rgb_file: Path, qlfiles: List[str]):
+    """Generate a raster file that stack the quick look files into RGB channel."""
     # TODO: Save RGB definition on Database
     with rasterio.open(str(qlfiles[0])) as dataset:
         profile = dataset.profile
@@ -1309,6 +1316,7 @@ def generate_cogs(input_data_set_path, file_path, profile='lzw', profile_options
 
 @contextmanager
 def rasterio_access_token(access_token=None):
+    """Retrieve a context manager that wraps a temporary file containing the access token to be passed to STAC."""
     with TemporaryDirectory() as tmp:
         options = dict()
 
@@ -1322,7 +1330,7 @@ def rasterio_access_token(access_token=None):
 
 
 def raster_convexhull(imagepath: str, epsg='EPSG:4326') -> dict:
-    """get image footprint
+    """Get a raster image footprint.
 
     Args:
         imagepath (str): image file
@@ -1354,7 +1362,7 @@ def raster_convexhull(imagepath: str, epsg='EPSG:4326') -> dict:
 
 
 def raster_extent(imagepath: str, epsg = 'EPSG:4326') -> shapely.geometry.Polygon:
-    """Get raster extent in arbitrary CRS
+    """Get raster extent in arbitrary CRS.
 
     Args:
         imagepath (str): Path to image
@@ -1362,7 +1370,6 @@ def raster_extent(imagepath: str, epsg = 'EPSG:4326') -> shapely.geometry.Polygo
     Returns:
         dict: geojson-like geometry
     """
-
     with rasterio.open(imagepath) as dataset:
         _geom = shapely.geometry.mapping(shapely.geometry.box(*dataset.bounds))
         return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom, precision=6))

@@ -20,5 +20,7 @@ recursive-include doc *.css
 recursive-include doc *.py
 recursive-include doc *.rst
 recursive-include doc Makefile
+recursive-include doc *.ico
+recursive-include doc *.png
 recursive-include examples *.py
 recursive-include tests *.py

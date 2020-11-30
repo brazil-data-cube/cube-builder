@@ -16,15 +16,16 @@ from typing import List
 
 # 3rdparty
 import numpy
-from bdc_catalog.models import Band, Collection, Tile, db, GridRefSys
-from celery import group, chain
+from bdc_catalog.models import Band, Collection, GridRefSys, Tile, db
+from celery import chain, group
 from geoalchemy2 import func
 from stac import STAC
 
 # Cube Builder
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
-from .constants import TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME
+from .constants import (CLEAR_OBSERVATION_NAME, DATASOURCE_NAME,
+                        PROVENANCE_NAME, TOTAL_OBSERVATION_NAME)
 from .utils.processing import get_cube_id, get_or_create_activity
 from .utils.timeline import Timeline
 

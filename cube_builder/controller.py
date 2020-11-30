@@ -14,8 +14,9 @@ from typing import Tuple, Union
 # 3rdparty
 import rasterio
 import sqlalchemy
-from bdc_catalog.models import Band, Collection, GridRefSys, Quicklook, Tile, db, CompositeFunction, \
-    ResolutionUnit, MimeType, BandSRC, Item, SpatialRefSys
+from bdc_catalog.models import (Band, BandSRC, Collection, CompositeFunction,
+                                GridRefSys, Item, MimeType, Quicklook,
+                                ResolutionUnit, SpatialRefSys, Tile, db)
 from geoalchemy2 import func
 from geoalchemy2.shape import from_shape
 from rasterio.crs import CRS
@@ -24,12 +25,14 @@ from shapely.geometry import Polygon
 from werkzeug.exceptions import NotFound, abort
 
 from .celery.utils import list_pending_tasks, list_running_tasks
+from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME,
+                        COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
+                        PROVENANCE_ATTRIBUTES, PROVENANCE_NAME,
+                        SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_ATTRIBUTES,
+                        TOTAL_OBSERVATION_NAME)
+from .forms import CollectionForm
 from .maestro import Maestro
 from .models import Activity
-from .constants import (CLEAR_OBSERVATION_NAME, CLEAR_OBSERVATION_ATTRIBUTES,
-                        PROVENANCE_NAME, PROVENANCE_ATTRIBUTES, SRID_ALBERS_EQUAL_AREA,
-                        TOTAL_OBSERVATION_NAME, TOTAL_OBSERVATION_ATTRIBUTES, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES)
-from .forms import CollectionForm
 from .utils.image import validate_merges
 from .utils.processing import get_cube_parts, get_or_create_model
 from .utils.serializer import Serializer
@@ -41,6 +44,7 @@ class CubeController:
 
     @staticmethod
     def get_cube_or_404(cube_id: Union[int, str] = None, cube_full_name: str = '-'):
+        """Try to retrieve a data cube on database and raise 404 when not found."""
         if cube_id:
             return Collection.query().filter(Collection.id == cube_id).first_or_404()
         else:
@@ -285,6 +289,7 @@ class CubeController:
 
     @classmethod
     def get_cube(cls, cube_id: int):
+        """Retrieve a data cube definition metadata."""
         cube = cls.get_cube_or_404(cube_id=cube_id)
 
         dump_cube = Serializer.serialize(cube)
@@ -324,6 +329,7 @@ class CubeController:
     
     @classmethod
     def get_cube_status(cls, cube_name: str) -> Tuple[dict, int]:
+        """Retrieve a data cube status, which includes total items, tiles, etc."""
         cube = cls.get_cube_or_404(cube_full_name=cube_name)
 
         dates = db.session.query(
@@ -365,6 +371,7 @@ class CubeController:
 
     @classmethod
     def list_tiles_cube(cls, cube_id: int, only_ids=False):
+        """Retrieve all tiles (as GeoJSON) that belongs to a data cube."""
         features = db.session.query(
             Item.tile_id, 
             Tile,
@@ -444,6 +451,7 @@ class CubeController:
 
     @classmethod
     def cube_meta(cls, cube_id: int):
+        """Retrieve the data sets (collections) used to build the given data cube."""
         cube = cls.get_cube_or_404(cube_id=cube_id)
 
         activity = Activity.query().filter(Activity.collection_id == cube.name).first()
@@ -460,7 +468,7 @@ class CubeController:
 
     @classmethod
     def get_grs_schema(self, grs_id):
-        """Retrieves a Grid Schema definition with tiles associated."""
+        """Retrieve a Grid Schema definition with tiles associated."""
         schema = GridRefSys.query().filter(GridRefSys.id == grs_id).first()
 
         if schema is None:
@@ -595,6 +603,7 @@ class CubeController:
     @classmethod
     def list_cube_items(cls, cube_id: str, bbox: str = None, start: str = None,
                         end: str = None, tiles: str = None, page: int = 1, per_page: int = 10):
+        """Retrieve all data cube items done."""
         cube = cls.get_cube_or_404(cube_id=cube_id)
 
         where = [
