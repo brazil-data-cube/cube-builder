@@ -20,6 +20,7 @@
     :caption: Documentation:
 
     installation
+    deploy
     usage
     history
 

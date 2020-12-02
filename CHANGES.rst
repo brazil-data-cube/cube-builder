@@ -10,8 +10,8 @@
 Changes
 =======
 
-Version 0.4.0
--------------
+Version 0.4.0 (2020-12-03)
+--------------------------
 
 - Generate data cube vegetation index bands dynamically using `BDC-Catalog`. `#77 <https://github.com/brazil-data-cube/cube-builder/issues/77>`_.
 - Prevent cube generation without quality band set. `#72 <https://github.com/brazil-data-cube/cube-builder/issues/72>`_.
@@ -27,10 +27,8 @@ Version 0.4.0
 - Fix mime type for thumbnails in assets. `#88 <https://github.com/brazil-data-cube/cube-builder/issues/88>`_.
 
 
-Version 0.2.0
--------------
-
-Released 2020-08-26
+Version 0.2.0 (2020-08-26)
+--------------------------
 
 - First experimental version.
 - Create own Grid for the Data Cubes.
