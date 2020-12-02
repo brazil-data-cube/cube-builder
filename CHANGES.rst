@@ -10,6 +10,23 @@
 Changes
 =======
 
+Version 0.4.0
+-------------
+
+- Generate data cube vegetation index bands dynamically using `BDC-Catalog`. `#77 <https://github.com/brazil-data-cube/cube-builder/issues/77>`_.
+- Prevent cube generation without quality band set. `#72 <https://github.com/brazil-data-cube/cube-builder/issues/72>`_.
+- Add route to edit data cube metadata. `#113 <https://github.com/brazil-data-cube/cube-builder/issues/113>`_.
+- Add support to generate data cube for only given composite function. `#12 <https://github.com/brazil-data-cube/cube-builder/issues/12>`_.
+- Add support to generate data cubes from multiple sensors combined. `#9 <https://github.com/brazil-data-cube/cube-builder/issues/9>`_.
+- Add option to specify any STAC URL. `#28 <https://github.com/brazil-data-cube/cube-builder/issues/28>`_.
+- Add support to generate data cube using native collection grid (MGRS, WRS2, etc). `#104 <https://github.com/brazil-data-cube/cube-builder/pull/104>`_.
+- Add support to reuse data cube Identity from another data cube. `#98 <https://github.com/brazil-data-cube/cube-builder/issues/98>`_.
+- Integrate with BDC-Catalog `0.6.4 <https://github.com/brazil-data-cube/bdc-catalog/releases/tag/v0.6.4>`_.
+- Fix bug in timeline for data cubes with cycle period. `#108 <https://github.com/brazil-data-cube/cube-builder/issues/108>`_.
+- Fix dependency celery version. `#95 <https://github.com/brazil-data-cube/cube-builder/issues/95>`_.
+- Fix mime type for thumbnails in assets. `#88 <https://github.com/brazil-data-cube/cube-builder/issues/88>`_.
+
+
 Version 0.2.0
 -------------
 

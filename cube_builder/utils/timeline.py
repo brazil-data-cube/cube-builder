@@ -1,3 +1,13 @@
+#
+# This file is part of Python Module for Cube Builder.
+# Copyright (C) 2019-2020 INPE.
+#
+# Cube Builder is free software; you can redistribute it and/or modify it
+# under the terms of the MIT License; see LICENSE file for more details.
+#
+
+"""Define Data Cube Timeline utilities."""
+
 from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from typing import Union
@@ -5,13 +15,20 @@ from typing import Union
 
 SchemaType = Union['cyclic', 'continuous']
 
+
 class Intervals:
-    """ intervals = ['mm-dd_mm-dd', 'mm-dd_mm-dd'] """
+    """Define a simple abstraction for Data Cube Timeline Intervals.
+
+    A interval can be represented as following::
+        intervals = ['mm-dd_mm-dd', 'mm-dd_mm-dd']
+    """
 
     def __init__(self, intervals):
+        """Build a timeline interval."""
         self.intervals = intervals
 
     def get_indice(self, ref_date) -> int:
+        """Try to get an indice for interval."""
         indice_interval = 0
         for i in self.intervals:
             if f'{ref_date.month:02d}-{ref_date.day:02d}' == i.split('_')[0]:
@@ -21,6 +38,7 @@ class Intervals:
         return indice_interval if indice_interval < len(self.intervals) else 0
 
     def get_element(self, indice) -> dict:
+        """Get an time line interval."""
         interval = self.intervals[indice if indice< len(self.intervals) else 0]
         return dict(
             start=interval.split('_')[0],
@@ -28,6 +46,7 @@ class Intervals:
         )
 
     def get_date(self, ref_date, element, sum_year=True) -> date:
+        """Get a date object from given timeline reference."""
         interval_month = int(element.split('-')[0])
         interval_day = int(element.split('-')[1])
 
@@ -42,8 +61,10 @@ class Intervals:
 
 
 class Timeline:
+    """Define a simple abstraction to generate Data Cube timelines."""
 
     def __init__(self, schema: SchemaType, start_date, end_date, unit, step, cycle=None, intervals=None):
+        """Build the timeline object."""
         self.schema = schema
         self.start_date = start_date
         self.end_date = end_date
@@ -147,6 +168,7 @@ class Timeline:
         return periods
 
     def mount(self):
+        """Mount a time line using the Timeline constructor parameters."""
         periods = []
 
         if self.schema.lower() == 'cyclic':

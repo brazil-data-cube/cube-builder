@@ -12,7 +12,6 @@ from bdc_catalog.models import Collection, GridRefSys, db
 from marshmallow import Schema, fields, pre_load
 from marshmallow.validate import OneOf, Regexp, ValidationError
 from marshmallow_sqlalchemy.schema import ModelSchema
-
 from rasterio.dtypes import dtype_ranges
 
 
@@ -51,6 +50,8 @@ SUPPORTED_DATA_TYPES = list(dtype_ranges.keys())
 
 
 class BandDefinition(Schema):
+    """Define a simple marshmallow structure for data cube bands on creation."""
+
     name = fields.String(required=True, allow_none=False)
     common_name = fields.String(required=True, allow_none=False)
     data_type = fields.String(required=True, allow_none=False, validate=OneOf(SUPPORTED_DATA_TYPES))
@@ -103,10 +104,11 @@ class DataCubeForm(Schema):
             band['common_name'] = 'quality'
 
         if 'temporal_schema' in data:
-            import pkgutil
-            import bdc_catalog
-            from jsonschema import validate, draft7_format_checker
             import json
+            import pkgutil
+
+            import bdc_catalog
+            from jsonschema import draft7_format_checker, validate
             content = pkgutil.get_data(bdc_catalog.__name__, 'jsonschemas/collection-temporal-composition-schema.json')
             schema = json.loads(content)
             try:

@@ -6,13 +6,4 @@
     under the terms of the MIT License; see LICENSE file for more details.
 
 
-License
-=======
-
-.. include:: ../../LICENSE
-
-
-Contact
-=======
-
-`Brazil Data Cube Team <mailto: brazildatacube@inpe.br>`_
+.. include:: ../../CHANGES.rst

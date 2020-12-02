@@ -10,11 +10,9 @@
 
 import click
 from bdc_catalog.models import Application, CompositeFunction, db
-from flask.cli import with_appcontext, FlaskGroup
+from flask.cli import FlaskGroup, with_appcontext
 
 from . import create_app
-
-
 # Create cube-builder cli from bdc-db
 from .utils.package import package_info
 
@@ -81,6 +79,7 @@ def worker(ctx: click.Context):
     Uses celery default variables
     """
     from celery.bin.celery import main as _main
+
     from .celery import worker
 
     # TODO: Retrieve dynamically

@@ -6,7 +6,7 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
-"""Package information for Cube-Builder"""
+"""Package information for Cube-Builder."""
 
 import io
 import distutils.dist

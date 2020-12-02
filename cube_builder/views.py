@@ -9,29 +9,31 @@
 """Define Brazil Data Cube Cube Builder routes."""
 
 # 3rdparty
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, jsonify, request
 
 # Cube Builder
-from .version import __version__
 from .controller import CubeController
-from .forms import GridRefSysForm, DataCubeForm, DataCubeProcessForm, PeriodForm, \
-                    CubeStatusForm, CubeItemsForm, DataCubeMetadataForm
-
+from .forms import (CubeItemsForm, CubeStatusForm, DataCubeForm,
+                    DataCubeMetadataForm, DataCubeProcessForm, GridRefSysForm,
+                    PeriodForm)
+from .version import __version__
 
 bp = Blueprint('cubes', import_name=__name__)
 
+
 @bp.route('/', methods=['GET'])
 def status():
+    """Define a simple route to retrieve Cube-Builder API status."""
     return dict(
-        message = 'Running',
-        description = 'Cube Builder',
-        version = __version__
+        message='Running',
+        description='Cube Builder',
+        version=__version__
     ), 200
-
 
 
 @bp.route('/cube-status', methods=('GET', ))
 def cube_status():
+    """Retrieve the cube processing state, which refers to total items and total to be done."""
     form = CubeStatusForm()
 
     args = request.args.to_dict()
@@ -47,6 +49,7 @@ def cube_status():
 @bp.route('/cubes', defaults=dict(cube_id=None), methods=['GET'])
 @bp.route('/cubes/<cube_id>', methods=['GET'])
 def list_cubes(cube_id):
+    """List all data cubes available."""
     if cube_id is not None:
         message, status_code = CubeController.get_cube(cube_id)
 
@@ -101,6 +104,7 @@ def update_cube_matadata(cube_id):
 
 @bp.route('/cubes/<cube_id>/tiles', methods=['GET'])
 def list_tiles(cube_id):
+    """List all data cube tiles already done."""
     message, status_code = CubeController.list_tiles_cube(cube_id, only_ids=True)
 
     return jsonify(message), status_code
@@ -108,6 +112,7 @@ def list_tiles(cube_id):
 
 @bp.route('/cubes/<cube_id>/tiles/geom', methods=['GET'])
 def list_tiles_as_features(cube_id):
+    """List all tiles as GeoJSON feature."""
     message, status_code = CubeController.list_tiles_cube(cube_id)
 
     return jsonify(message), status_code
@@ -115,6 +120,7 @@ def list_tiles_as_features(cube_id):
 
 @bp.route('/cubes/<cube_id>/items', methods=['GET'])
 def list_cube_items(cube_id):
+    """List all data cube items."""
     form = CubeItemsForm()
 
     args = request.args.to_dict()
@@ -172,35 +178,17 @@ def list_merges():
     return res
 
 
-@bp.route('/create-temporal-schema', methods=['POST'])
-def temporal_schema():
-    """Create the temporal composite schema using HTTP Post method.
-
-    Expects a JSON that matches with ``TemporalSchemaParser``.
-    """
-
-    args = request.get_json()
-
-    errors = form.validate(args)
-
-    if errors:
-        return errors, 400
-
-    cubes, status = CubeController.create_temporal_composition(args)
-
-    return cubes, status
-
-
-
 @bp.route('/grids', defaults=dict(grs_id=None), methods=['GET'])
 @bp.route('/grids/<grs_id>', methods=['GET'])
 def list_grs_schemas(grs_id):
+    """List all data cube Grids."""
     if grs_id is not None:
         result, status_code = CubeController.get_grs_schema(grs_id)
     else:
         result, status_code = CubeController.list_grs_schemas()
 
     return jsonify(result), status_code
+
 
 @bp.route('/create-grids', methods=['POST'])
 def create_grs():
@@ -243,6 +231,7 @@ def list_periods():
 
 @bp.route('/composite-functions', methods=['GET'])
 def list_composite_functions():
+    """List all data cube supported composite functions."""
     message, status_code = CubeController.list_composite_functions()
 
     return jsonify(message), status_code
