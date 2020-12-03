@@ -9,6 +9,6 @@
 
 pydocstyle cube_builder && \
 isort --check-only --diff --recursive cube_builder/*.py && \
-check-manifest --ignore ".readthedocs.*" #&& \
+check-manifest --ignore ".readthedocs.*" && \
+sphinx-build -qnW --color -b doctest docs/sphinx/ docs/sphinx/_build/doctest # && \
 #pytest &&
-#sphinx-build -qnW --color -b doctest doc/sphinx/ doc/sphinx/_build/doctest

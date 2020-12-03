@@ -1,4 +1,4 @@
-exclude doc/sphinx/_build
+exclude docs/sphinx/_build
 exclude migrations
 exclude docker
 exclude .dockerignore
@@ -11,16 +11,17 @@ include *.txt
 include LICENSE
 include pytest.ini
 include alembic.ini
-recursive-exclude doc/sphinx/_build *
+
+recursive-exclude docs/sphinx/_build *
 recursive-exclude migrations *
 recursive-exclude docker *
 recursive-include cube_builder *.py
-recursive-include doc *.bat
-recursive-include doc *.css
-recursive-include doc *.py
-recursive-include doc *.rst
-recursive-include doc Makefile
-recursive-include doc *.ico
-recursive-include doc *.png
+recursive-include docs *.bat
+recursive-include docs *.css
+recursive-include docs *.py
+recursive-include docs *.rst
+recursive-include docs Makefile
+recursive-include docs *.ico
+recursive-include docs *.png
 recursive-include examples *.py
 recursive-include tests *.py
