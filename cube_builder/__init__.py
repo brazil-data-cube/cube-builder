@@ -74,9 +74,10 @@ def setup_app(app):
     @app.before_request
     def middleware():
         """Intercept requests, validating access token if it configured."""
-        if app.config.get('FLASK_ACCESS_TOKEN') is not None:
-            if request.headers.get('X-Api-Key') != app.config.get('FLASK_ACCESS_TOKEN'):
-                abort(403, 'Forbidden')
+        if request.method != 'OPTIONS':
+            if app.config.get('FLASK_ACCESS_TOKEN') is not None:
+                if request.headers.get('X-Api-Key') != app.config.get('FLASK_ACCESS_TOKEN'):
+                    abort(403, 'Forbidden')
 
     class ImprovedJSONEncoder(JSONEncoder):
         def default(self, o):
