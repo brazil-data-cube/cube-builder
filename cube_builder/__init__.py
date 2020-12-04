@@ -67,7 +67,8 @@ def setup_app(app):
         """Enable CORS."""
         response.headers.add('Access-Control-Allow-Origin', '*')
         response.headers.add('Access-Control-Allow-Methods', '*')
-        response.headers.add('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization')
+        response.headers.add('Access-Control-Allow-Headers',
+                             'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Api-Key')
         return response
 
     @app.before_request
