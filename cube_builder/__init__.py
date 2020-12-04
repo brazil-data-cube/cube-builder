@@ -11,7 +11,7 @@
 from json import JSONEncoder
 
 from bdc_catalog.ext import BDCCatalog
-from flask import Flask
+from flask import Flask, abort, request
 from werkzeug.exceptions import HTTPException, InternalServerError
 
 from . import celery, config
@@ -69,6 +69,13 @@ def setup_app(app):
         response.headers.add('Access-Control-Allow-Methods', '*')
         response.headers.add('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization')
         return response
+
+    @app.before_request
+    def middleware():
+        """Intercept requests, validating access token if it configured."""
+        if app.config.get('FLASK_ACCESS_TOKEN') is not None:
+            if request.headers.get('X-Api-Key') != app.config.get('FLASK_ACCESS_TOKEN'):
+                abort(403, 'Forbidden')
 
     class ImprovedJSONEncoder(JSONEncoder):
         def default(self, o):
