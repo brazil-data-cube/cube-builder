@@ -48,6 +48,8 @@ class Config:
         GDAL_DISABLE_READDIR_ON_OPEN=True,
         CPL_VSIL_CURL_ALLOWED_EXTENSIONS='.tif'
     )
+    # Access Token
+    FLASK_ACCESS_TOKEN = os.getenv('FLASK_ACCESS_TOKEN', None)
 
 
 class ProductionConfig(Config):

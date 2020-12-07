@@ -10,6 +10,12 @@
 Changes
 =======
 
+Version 0.4.1 (2020-12-04)
+--------------------------
+
+- Add minimal way to secure cube-builder routes `#123 <https://github.com/brazil-data-cube/cube-builder/issues/123>`_.
+
+
 Version 0.4.0 (2020-12-03)
 --------------------------
 
