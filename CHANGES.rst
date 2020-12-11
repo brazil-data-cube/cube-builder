@@ -10,10 +10,11 @@
 Changes
 =======
 
-Version 0.4.1 (2020-12-04)
+Version 0.4.1 (2020-12-16)
 --------------------------
 
 - Add minimal way to secure cube-builder routes `#123 <https://github.com/brazil-data-cube/cube-builder/issues/123>`_.
+- Fix bug in reprocess tile cube through API  `#125 <https://github.com/brazil-data-cube/cube-builder/issues/125>`_.
 
 
 Version 0.4.0 (2020-12-03)
