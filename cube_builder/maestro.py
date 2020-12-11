@@ -72,10 +72,10 @@ class Maestro:
     datacube: Collection = None
     reused_datacube: Collection = None
     _warped = None
-    bands = []
-    tiles = []
-    mosaics = dict()
-    cached_stacs = dict()
+    bands = None
+    tiles = None
+    mosaics = None
+    cached_stacs = None
 
     def __init__(self, datacube: str, collections: List[str], tiles: List[str], start_date: str, end_date: str, **properties):
         """Build Maestro interface."""
@@ -95,6 +95,10 @@ class Maestro:
         force = properties.get('force', False)
         self.properties = properties
         self.params['force'] = force
+        self.mosaics = dict()
+        self.cached_stacs = dict()
+        self.bands = []
+        self.tiles = []
 
     def get_stac(self, collection: str) -> STAC:
         """Retrieve STAC client which provides the given collection.
@@ -117,8 +121,7 @@ class Maestro:
             # Search in INPE STAC
             return self._stac(collection, 'http://cdsr.dpi.inpe.br/inpe-stac/stac')
 
-    @classmethod
-    def _stac(cls, collection: str, url: str, **kwargs) -> STAC:
+    def _stac(self, collection: str, url: str, **kwargs) -> STAC:
         """Check if collection is provided by given STAC url.
 
         The provided STAC must follow the `SpatioTemporal Asset Catalogs spec <https://stacspec.org/>`_.
@@ -138,13 +141,13 @@ class Maestro:
             if kwargs.get('token'):
                 options['access_token'] = kwargs.get('token')
 
-            stac = cls.cached_stacs.get(url) or STAC(url, **options)
+            stac = self.cached_stacs.get(url) or STAC(url, **options)
 
             _ = stac.catalog
 
             _ = stac.collection(collection)
 
-            cls.cached_stacs.setdefault(url, stac)
+            self.cached_stacs.setdefault(url, stac)
 
             return stac
         except Exception as e:
