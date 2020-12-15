@@ -907,7 +907,6 @@ def concat_path(*entries) -> Path:
 
 def _item_prefix(absolute_path: Path) -> Path:
     relative_path = Path(absolute_path).relative_to(Config.DATA_DIR)
-    print(str(relative_path))
     relative_path = relative_path.relative_to('Repository')
 
     return concat_path(Config.ITEM_PREFIX, relative_path)
