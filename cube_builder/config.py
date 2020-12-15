@@ -51,6 +51,10 @@ class Config:
     # Access Token
     FLASK_ACCESS_TOKEN = os.getenv('FLASK_ACCESS_TOKEN', None)
 
+    # Add prefix path to the items. Base path is /Repository
+    # So the asset will be /Repository/Mosaic/collectionName/version/tile/period/scene.tif
+    ITEM_PREFIX = os.getenv('ITEM_PREFIX', '/Repository')
+
 
 class ProductionConfig(Config):
     """Production Mode."""
