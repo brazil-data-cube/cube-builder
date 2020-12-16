@@ -896,6 +896,22 @@ def generate_rgb(rgb_file: Path, qlfiles: List[str]):
     logging.info(f'Done RGB {str(rgb_file)}')
 
 
+def concat_path(*entries) -> Path:
+    base = Path('/')
+
+    for entry in entries:
+        base /= entry if not str(entry).startswith('/') else str(entry)[1:]
+
+    return base
+
+
+def _item_prefix(absolute_path: Path) -> Path:
+    relative_path = Path(absolute_path).relative_to(Config.DATA_DIR)
+    relative_path = relative_path.relative_to('Repository')
+
+    return concat_path(Config.ITEM_PREFIX, relative_path)
+
+
 def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
@@ -946,12 +962,14 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
             assets = deepcopy(item.assets) or dict()
             assets.update(
                 thumbnail=create_asset_definition(
-                    href=quick_look_file.replace(Config.DATA_DIR, ''),
+                    href=str(_item_prefix(Path(quick_look_file))),
                     mime_type=PNG_MIME_TYPE,
                     role=['thumbnail'],
                     absolute_path=str(quick_look_file)
                 )
             )
+            item.start_date = start_date
+            item.end_date = end_date
 
             extent = to_shape(item.geom) if item.geom else None
             min_convex_hull = to_shape(item.min_convex_hull) if item.min_convex_hull else None
@@ -964,8 +982,6 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                     logging.warning('Band {} of {} does not exist on database. Skipping'.format(band, cube.id))
                     continue
 
-                asset_relative_path = scenes[band][composite_function].replace(Config.DATA_DIR, '')
-
                 if extent is None:
                     extent = raster_extent(str(scenes[band][composite_function]))
 
@@ -973,7 +989,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                     min_convex_hull = raster_convexhull(str(scenes[band][composite_function]))
 
                 assets[band_model[0].name] = create_asset_definition(
-                    href=str(asset_relative_path),
+                    href=str(_item_prefix(scenes[band][composite_function])),
                     mime_type=COG_MIME_TYPE,
                     role=['data'],
                     absolute_path=str(scenes[band][composite_function]),
@@ -1033,12 +1049,14 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
 
         assets.update(
             thumbnail=create_asset_definition(
-                href=quick_look_file.replace(Config.DATA_DIR, ''),
+                href=str(_item_prefix(Path(quick_look_file))),
                 mime_type=PNG_MIME_TYPE,
                 role=['thumbnail'],
                 absolute_path=str(quick_look_file)
             )
         )
+        item.start_date = date
+        item.end_date = date
 
         for band in scenes['ARDfiles']:
             band_model = list(filter(lambda b: b.name == band, cube_bands))
@@ -1048,8 +1066,6 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
                 logging.warning('Band {} of {} does not exist on database'.format(band, datacube.id))
                 continue
 
-            asset_relative_path = scenes['ARDfiles'][band].replace(Config.DATA_DIR, '')
-
             if extent is None:
                 extent = raster_extent(str(scenes['ARDfiles'][band]))
 
@@ -1057,7 +1073,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
                 min_convex_hull = raster_convexhull(str(scenes['ARDfiles'][band]))
 
             assets[band_model[0].name] = create_asset_definition(
-                href=str(asset_relative_path),
+                href=str(_item_prefix(scenes['ARDfiles'][band])),
                 mime_type=COG_MIME_TYPE,
                 role=['data'],
                 absolute_path=str(scenes['ARDfiles'][band]),
