@@ -333,6 +333,8 @@ def publish(blends, band_map, **kwargs):
 
     composite_function = DataCubeFragments(cube.name).composite_function
 
+    quality_blend = None
+
     for blend_result in blends:
         if composite_function != 'IDENTITY':
             blend_files[blend_result['band']] = blend_result['blends']
@@ -355,8 +357,11 @@ def publish(blends, band_map, **kwargs):
                                                ARDfiles=dict()))
             merges[merge_date]['ARDfiles'].update(definition['ARDfiles'])
 
+        if blend_result['band'] == band_map['quality']:
+            quality_blend = blend_result
+
     if composite_function != 'IDT':
-        cloudratio = blends[0]['cloudratio']
+        cloudratio = quality_blend['cloudratio']
 
         # Generate quick looks for cube scenes
         publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, **kwargs)

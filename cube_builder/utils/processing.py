@@ -1176,21 +1176,28 @@ def getMask(raster, dataset):
 
 
 def _qa_statistics(raster) -> Tuple[float, float]:
-    """Retrieve raster statistics efficacy and cloud ratio, based in Fmask values.
+    """Retrieve raster statistics efficacy and not clear ratio, based in Fmask values.
 
     Notes:
         Values 0 and 1 are considered `clear data`.
+        Values 2 and 4 are considered as `not clear data`
+        The values for snow `3` and nodata `255` is not used to count efficacy and not clear ratio
     """
-    totpix = raster.size
-    clearpix = numpy.count_nonzero(raster < 2)
-    cloudpix = numpy.count_nonzero(raster > 1)
-    imagearea = clearpix+cloudpix
-    cloudratio = 100
-    if imagearea != 0:
-        cloudratio = round(100.*cloudpix/imagearea, 1)
-    efficacy = round(100.*clearpix/totpix, 2)
+    total_pixels = raster.size
+    clear_pixel = numpy.count_nonzero(raster < 2)
+    # TODO: Custom values mappings
+    cloud_pixels = raster[raster == 4].size
+    cloud_shadow = raster[raster == 2].size
+    not_clear_pixel = cloud_pixels + cloud_shadow
+    image_area = clear_pixel + not_clear_pixel
+    not_clear_ratio = 100
 
-    return efficacy, cloudratio
+    if image_area != 0:
+        not_clear_ratio = 100. * not_clear_pixel / image_area
+
+    efficacy = round(100. * clear_pixel / total_pixels, 2)
+
+    return efficacy, not_clear_ratio
 
 
 def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band: str = None, suffix: Union[str, None] = '.tif') -> Path:
