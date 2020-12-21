@@ -1188,8 +1188,9 @@ def _qa_statistics(raster) -> Tuple[float, float]:
     # TODO: Custom values mappings
     cloud_pixels = raster[raster == 4].size
     cloud_shadow = raster[raster == 2].size
+    snow_pixels = raster[raster == 3].size
     not_clear_pixel = cloud_pixels + cloud_shadow
-    image_area = clear_pixel + not_clear_pixel
+    image_area = clear_pixel + not_clear_pixel + snow_pixels
     not_clear_ratio = 100
 
     if image_area != 0:
