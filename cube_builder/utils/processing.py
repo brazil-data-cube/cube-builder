@@ -1193,7 +1193,7 @@ def _qa_statistics(raster) -> Tuple[float, float]:
     not_clear_ratio = 100
 
     if image_area != 0:
-        not_clear_ratio = 100. * not_clear_pixel / image_area
+        not_clear_ratio = round(100. * not_clear_pixel / image_area, 2)
 
     efficacy = round(100. * clear_pixel / total_pixels, 2)
 
