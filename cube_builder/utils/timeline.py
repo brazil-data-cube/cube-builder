@@ -113,12 +113,17 @@ class Timeline:
                 period = last_date + relativedelta(years=step)
                 return date(period.year, 1, 1)
 
-    def _decode_period_continuous(self, start_date, end_date, unit, step, cut_start=None, cut_end=None, intervals=None, full_period=True):
+    def _decode_period_continuous(self, start_date, end_date, unit, step, cut_start=None, cut_end=None,
+                                  intervals=None, full_period=True, relative=False):
         start_period = start_date
         end_period = self._get_last_day_period(start_period, step, unit, intervals)
 
         # mount all periods
-        periods = [ [start_period, end_period] ]
+        if relative and intervals:
+            periods = []
+        else:
+            periods = [[start_period, end_period]]
+
         while True:
             start_period = self._next_step(start_period, step, unit, intervals)
             end_period = self._get_last_day_period(start_period, step, unit, intervals)
@@ -134,6 +139,16 @@ class Timeline:
 
             if end_period > end_date:
                 break
+
+            if relative and intervals:
+                stop = False
+                for _, _end_period in periods:
+                    if _end_period == end_period:
+                        stop = True
+                        break
+
+                if stop:
+                    break
 
         # cut periods
         result = []
@@ -154,14 +169,16 @@ class Timeline:
         periods = []
 
         periods_cyclic = self._decode_period_continuous(self._get_first_day_period(start_date, unit=cyclic_unit), 
-                                                        end_date, cyclic_unit, cyclic_step)
-     
+                                                        end_date, cyclic_unit, cyclic_step, intervals=cyclic_interval,
+                                                        relative=True)
+
         for period_cyclic in periods_cyclic:
             if cyclic_interval:
                 for interval in cyclic_interval.intervals:
                     cut_start = datetime.strptime(f'{period_cyclic[0].year}-{interval.split("_")[0]}', '%Y-%m-%d').date()
                     cut_end = datetime.strptime(f'{period_cyclic[1].year}-{interval.split("_")[1]}', '%Y-%m-%d').date()
-                    periods += self._decode_period_continuous(start_date, end_date, unit, step, cut_start, cut_end)
+                    periods += self._decode_period_continuous(start_date, end_date, unit, step, cut_start, cut_end,
+                                                              intervals=cyclic_interval, relative=True)
             else:
                 periods += self._decode_period_continuous(period_cyclic[0], period_cyclic[1], unit, step, start_date, end_date, full_period=False)
 
@@ -169,13 +186,10 @@ class Timeline:
 
     def mount(self):
         """Mount a time line using the Timeline constructor parameters."""
-        periods = []
-
         if self.schema.lower() == 'cyclic':
             intervals = Intervals(self.cycle['intervals']) if self.cycle.get('intervals') else None
             periods = self._decode_period_cyclic(self.start_date, self.end_date, self.unit, self.step, 
                                                  self.cycle['unit'], int(self.cycle['step']), intervals)
-
         else:
             intervals = Intervals(self.intervals) if self.intervals else None
             start_date = self._get_first_day_period(self.start_date, intervals=intervals)
