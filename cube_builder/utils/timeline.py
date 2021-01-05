@@ -45,7 +45,7 @@ class Intervals:
             end=interval.split('_')[1]
         )
 
-    def get_date(self, ref_date, element, sum_year=True) -> date:
+    def get_date(self, ref_date, element, sum_year=True, next=False) -> date:
         """Get a date object from given timeline reference."""
         interval_month = int(element.split('-')[0])
         interval_day = int(element.split('-')[1])
@@ -57,6 +57,9 @@ class Intervals:
             return date(ref_date.year - 1, interval_month, interval_day)
 
         else:
+            if next:
+                return date(ref_date.year + 1, interval_month, interval_day)
+
             return date(ref_date.year, interval_month, interval_day)
 
 
@@ -85,20 +88,20 @@ class Timeline:
         else:
             return ref_date
 
-    def _get_last_day_period(self, ref_date, step, unit, intervals=None):
+    def _get_last_day_period(self, ref_date, step, unit, intervals=None, next=False):
         if not intervals:
             return self._next_step(ref_date, step, unit) - timedelta(days=1)
 
         else:
             indice = intervals.get_indice(ref_date)
             end_element = intervals.get_element(indice)['end']
-            return intervals.get_date(ref_date, end_element)
+            return intervals.get_date(ref_date, end_element, next=next)
 
-    def _next_step(self, last_date, step=None, unit=None, intervals=None):
+    def _next_step(self, last_date, step=None, unit=None, intervals=None, next=False):
         if intervals:
             indice = intervals.get_indice(last_date)
             start_element = intervals.get_element(indice + 1)['start']
-            return intervals.get_date(last_date, start_element)
+            return intervals.get_date(last_date, start_element, next=next)
 
         else:
             if unit == 'day':
@@ -119,13 +122,10 @@ class Timeline:
         end_period = self._get_last_day_period(start_period, step, unit, intervals)
 
         # mount all periods
-        if relative and intervals:
-            periods = []
-        else:
-            periods = [[start_period, end_period]]
+        periods = [[start_period, end_period]]
 
         while True:
-            start_period = self._next_step(start_period, step, unit, intervals)
+            start_period = self._next_step(start_period, step, unit, intervals, next=relative)
             end_period = self._get_last_day_period(start_period, step, unit, intervals)
 
             if start_date <= start_period and end_date >= end_period:
@@ -139,16 +139,6 @@ class Timeline:
 
             if end_period > end_date:
                 break
-
-            if relative and intervals:
-                stop = False
-                for _, _end_period in periods:
-                    if _end_period == end_period:
-                        stop = True
-                        break
-
-                if stop:
-                    break
 
         # cut periods
         result = []

@@ -109,15 +109,20 @@ class TestTimeline:
                 intervals=[
                     '08-01_10-31',
                 ]
-            )
+            ),
+            start_date=datetime.date(year=2000, month=1, day=1),
+            end_date=datetime.date(year=2002, month=12, day=31),
         )
-        assert timeline
-        current_date = datetime.date(year=self.start_date.year, month=8, day=1)
+        assert len(timeline) == 3
+        expected_begin = datetime.date(year=2000, month=8, day=1)
         for time_group in timeline:
             start, end = time_group
-            assert start == current_date
-            current_date += relativedelta(months=3) - relativedelta(days=1)
-            assert end == current_date
+
+            expected_begin = expected_begin.replace(year=start.year)
+
+            assert start == expected_begin
+            expected_end = expected_begin + (relativedelta(months=3) - relativedelta(days=1))
+            assert end == expected_end
 
     def test_continuous_with_interval_season(self):
         timeline = self._build_timeline(
