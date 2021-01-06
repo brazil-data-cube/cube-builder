@@ -19,6 +19,14 @@ class TestTimeline:
             intervals=intervals
         ).mount()
 
+    @staticmethod
+    def _assert_interval(ref, delta, timeline):
+        for begin, end in timeline:
+            assert ref == begin
+            ref += delta - relativedelta(days=1)
+            assert end == ref
+            ref += relativedelta(days=1)
+
     def test_continuous_step_month(self):
         timeline = self._build_timeline(schema='Continuous', unit='month', step=1)
 
@@ -48,11 +56,35 @@ class TestTimeline:
 
         assert timeline[-1][-1].year == 2021
 
+    def test_continuous_step_day_start06(self):
+        expected = datetime.date(year=2020, month=6, day=12)
+        timeline = self._build_timeline(
+            schema='Continuous',
+            unit='day',
+            step=16,
+            start_date=expected,
+            end_date=self.end_date
+        )
+
+        assert len(timeline) == 13
+        assert timeline[0][0] == expected  # Continuous should start same day of start_date
+        assert timeline[-1][-1].year == 2021
+
+        delta = relativedelta(days=16)
+
+        self._assert_interval(expected, delta, timeline)
+
     def test_cycle_year_16days(self):
         timeline = self._build_timeline(schema='Cyclic', unit='day', step=16, cycle=dict(unit='year', step=1))
 
         assert len(timeline) == 23
         assert timeline[-1][-1] == datetime.date(year=2020, month=12, day=31)
+
+        delta = relativedelta(days=16)
+        expected = datetime.date(year=self.start_date.year, month=self.start_date.month, day=self.start_date.day)
+
+        self._assert_interval(expected, delta, timeline[:-1])
+
         assert (timeline[-1][-1] - timeline[-1][0]).days < 16  # Last period should be less than 16 days
 
     def test_cycle_year_16days_starting_half(self):
@@ -92,11 +124,7 @@ class TestTimeline:
 
         current_date = self.start_date
 
-        for time_group in timeline:
-            start, end = time_group
-            assert start == current_date
-            current_date += relativedelta(months=3)
-            assert end == current_date - relativedelta(days=1)
+        self._assert_interval(current_date, relativedelta(months=3), timeline)
 
     def test_cycle_with_interval(self):
         timeline = self._build_timeline(
@@ -142,19 +170,3 @@ class TestTimeline:
         assert timeline[0][0] == datetime.date(year=2019, month=12, day=21)
         # Should match last time instant with next year
         assert timeline[-1][-1] == datetime.date(year=2021, month=3, day=20)
-
-    # def test_continuous_with_interval_16d(self):
-    #     timeline = self._build_timeline(
-    #         schema='Continuous',
-    #         unit='day',
-    #         step=16,
-    #         intervals=[
-    #             '01-01_06-30'  # 01
-    #         ],
-    #         # start_date=datetime.date(year=2020, month=1, day=1),
-    #         # end_date=datetime.date(year=2021, month=12, day=31),
-    #     )
-    #     # 2020-12-01 -> 2020-12-16
-    #     # 2020-12-17 -> 2021-01-01
-    #
-    #     assert len(timeline) == 5
