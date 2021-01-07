@@ -18,8 +18,8 @@ Cube Builder
         :target: https://cube-builder.readthedocs.io/en/latest/
         :alt: Documentation Status
 
-.. image:: https://img.shields.io/badge/lifecycle-experimental-orange.svg
-        :target: https://www.tidyverse.org/lifecycle/#experimental
+.. image:: https://img.shields.io/badge/lifecycle-maturing-blue.svg
+        :target: https://www.tidyverse.org/lifecycle/#maturing
         :alt: Software Life Cycle
 
 .. image:: https://img.shields.io/github/tag/brazil-data-cube/cube-builder.svg

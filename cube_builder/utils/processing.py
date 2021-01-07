@@ -897,6 +897,16 @@ def generate_rgb(rgb_file: Path, qlfiles: List[str]):
 
 
 def concat_path(*entries) -> Path:
+    """Concat any path and retrieves a pathlib.Path.
+
+    Notes:
+        This method resolves the path concatenation when right argument starts with slash /.
+        The default python join does not merge any right path when starts with slash.
+
+    Examples:
+        >>> print(str(concat_path('/path', '/any/path/')))
+        ... '/path/any/path/'
+    """
     base = Path('/')
 
     for entry in entries:

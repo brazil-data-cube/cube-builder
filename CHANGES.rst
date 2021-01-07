@@ -10,11 +10,15 @@
 Changes
 =======
 
-Version 0.4.1 (2020-12-16)
+Version 0.4.1 (2021-01-07)
 --------------------------
 
 - Add minimal way to secure cube-builder routes `#123 <https://github.com/brazil-data-cube/cube-builder/issues/123>`_.
+- Allow to use custom prefix for each data cube item `#126 <https://github.com/brazil-data-cube/cube-builder/issues/126>`_
 - Fix bug in reprocess tile cube through API  `#125 <https://github.com/brazil-data-cube/cube-builder/issues/125>`_.
+- Fix bug in timeline period when creating a data cube - cyclic `#128 <https://github.com/brazil-data-cube/cube-builder/issues/128>`_.
+- Fix bug when get cube metadata from a data cube that has not been executed `#130 <https://github.com/brazil-data-cube/cube-builder/issues/130>`_.
+- Fix wrong cloud cover in data cubes `#131 <https://github.com/brazil-data-cube/cube-builder/issues/131>`_.
 
 
 Version 0.4.0 (2020-12-03)
