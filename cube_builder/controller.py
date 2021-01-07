@@ -455,9 +455,13 @@ class CubeController:
         cube = cls.get_cube_or_404(cube_id=cube_id)
 
         activity = Activity.query().filter(Activity.collection_id == cube.name).first()
-        return dict(
-            collections=activity.args['dataset']
-        ), 200
+
+        response = dict()
+
+        if activity is not None:
+            response['collections'] = activity.args['dataset']
+
+        return response, 200
 
     @classmethod
     def list_grs_schemas(self):
