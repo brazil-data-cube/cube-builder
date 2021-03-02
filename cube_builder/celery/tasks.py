@@ -21,6 +21,7 @@ from celery import chain, group
 from ..celery import celery_app
 from ..models import Activity
 from ..constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME
+from ..utils.image import create_empty_raster
 from ..utils.processing import DataCubeFragments, build_cube_path, post_processing_quality
 from ..utils.processing import compute_data_set_stats, get_or_create_model
 from ..utils.processing import blend as blend_processing, merge as merge_processing, publish_datacube, publish_merge
@@ -149,7 +150,31 @@ def warp_merge(activity, band_map, force=False, **kwargs):
             args['date'] = record.date.strftime('%Y-%m-%d')
             args['cube'] = record.warped_collection_id
 
-            res = merge_processing(str(merge_file_path), band_map=band_map, band=record.band, **args, **kwargs)
+            empty = args.get('empty', False)
+
+            # Create base directory
+            merge_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if empty:
+                # create empty raster
+                file_path = create_empty_raster(str(merge_file_path),
+                                                proj4=args['srs'],
+                                                cog=True,
+                                                nodata=args['nodata'],
+                                                dtype='int16',  # TODO: Pass through args
+                                                dist=[args['dist_x'], args['dist_y']],
+                                                resolution=[args['resx'], args['resy']],
+                                                xmin=args['xmin'],
+                                                ymax=args['ymax'])
+                res = dict(
+                    file=str(file_path),
+                    efficacy=100,
+                    cloudratio=0,
+                    resolution=args['resx'],
+                    nodata=args['nodata']
+                )
+            else:
+                res = merge_processing(str(merge_file_path), band_map=band_map, band=record.band, **args, **kwargs)
 
             merge_args = deepcopy(activity['args'])
             merge_args.update(res)

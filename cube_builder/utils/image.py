@@ -11,9 +11,12 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import List
 
 import rasterio
+from rasterio._warp import Affine
 from sqlalchemy.engine.result import ResultProxy, RowProxy
+from .processing import SmartDataSet, generate_cogs
 
 from ..config import Config
 
@@ -100,3 +103,51 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
             element['collections'] = list(element['collections'])
 
         return output
+
+
+def create_empty_raster(location: str, proj4: str, dtype: str, xmin: float, ymax: float,
+                        resolution: List[float], dist: List[float], nodata: float, cog=True):
+    """Create an data set filled out with nodata.
+
+    This method aims to solve the problem to generate an empty scene to make sure in order to
+    follow the data cube timeline.
+
+    Args:
+        location (str): Path where file will be generated.
+        proj4 (str): Proj4 with Coordinate Reference System.
+        dtype (str): Data type
+        xmin (float): Image minx (Related to geotransform)
+        ymax (float): Image ymax
+        resolution (List[float]): Pixel resolution (X, Y)
+        dist (List[float]): The distance of X, Y  (Scene offset)
+        nodata (float): Scene nodata.
+        cog (bool): Flag to generate datacube. Default is `True`.
+    """
+    resx, resy = resolution
+    distx, disty = dist
+
+    cols = round(distx / resx)
+    rows = round(disty / resy)
+
+    new_res_x = distx / cols
+    new_res_y = disty / rows
+
+    transform = Affine(new_res_x, 0, xmin, 0, -new_res_y, ymax)
+
+    options = dict(
+        width=cols,
+        height=rows,
+        nodata=nodata,
+        crs=proj4,
+        transform=transform,
+        count=1
+    )
+
+    ds = SmartDataSet(str(location), mode='w', dtype=dtype, driver='GTiff', **options)
+
+    ds.close()
+
+    if cog:
+        generate_cogs(str(location), str(location))
+
+    return str(location)
