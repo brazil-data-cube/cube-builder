@@ -42,7 +42,7 @@ extras_require['all'] = [ req for exts, reqs in extras_require.items() for req i
 setup_requires = []
 
 install_requires = [
-    'bdc-catalog @ git+git://github.com/brazil-data-cube/bdc-catalog.git@v0.6.4#egg=bdc-catalog',
+    'bdc-catalog @ git+git://github.com/brazil-data-cube/bdc-catalog.git@v0.8.0#egg=bdc-catalog',
     'celery[librabbitmq]>=4.3.0,<5',
     'Flask>=1.1.1,<2',
     'marshmallow-sqlalchemy>=0.19.0,<1',
@@ -83,6 +83,9 @@ setup(
         ],
         'bdc_db.models': [
             'cube_builder = cube_builder.models'
+        ],
+        'bdc_db.namespaces': [
+            'cube_builder = cube_builder.config:Config.ACTIVITIES_SCHEMA'
         ],
         'console_scripts': [
             'cube-builder = cube_builder.cli:cli'
