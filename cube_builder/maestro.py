@@ -348,6 +348,13 @@ class Maestro:
 
                         merges = assets_by_period[band.name]
 
+                        merge_opts = dict()
+
+                        if not merges:
+                            # Adapt to make the merge function to generate empty raster
+                            merges[start_date] = dict()
+                            merge_opts['empty'] = True
+
                         for merge_date, collections in merges.items():
                             assets = []
                             # Preserve collections order
@@ -368,7 +375,8 @@ class Maestro:
                                 assets=assets,
                                 nodata=float(band.nodata),
                                 bands=band_str_list,
-                                version=self.datacube.version
+                                version=self.datacube.version,
+                                **merge_opts
                             )
 
                             if self.reused_datacube:
