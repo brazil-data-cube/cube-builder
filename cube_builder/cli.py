@@ -15,6 +15,7 @@ from flask.cli import FlaskGroup, with_appcontext
 from . import create_app
 # Create cube-builder cli from bdc-db
 from .utils.package import package_info
+from .version import __version__
 
 
 @click.group(cls=FlaskGroup, create_app=create_app)
@@ -47,20 +48,15 @@ def load_data():
             alias='IDT'
         )
 
-        info = package_info()
-
         where = dict(
-            name=info.name,
-            version=info.version
+            name=__package__,
+            version=__version__
         )
 
         # Cube-Builder application
         application, _ = get_or_create_model(
             Application,
-            defaults=dict(
-                name=info.name,
-                uri=info.url
-            ),
+            defaults=dict(),
             **where
         )
 
