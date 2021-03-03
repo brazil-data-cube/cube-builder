@@ -129,6 +129,7 @@ class DataCubeMetadataForm(Schema):
     title = fields.String(required=False, allow_none=False)
     public = fields.Boolean(required=False, allow_none=False, default=True)
 
+
 class DataCubeProcessForm(Schema):
     """Define parser for datacube generation."""
 
@@ -145,6 +146,7 @@ class DataCubeProcessForm(Schema):
     shape = fields.List(fields.Integer(required=False))
     # Reuse data cube from another data cube
     reuse_from = fields.String(required=False, allow_none=True)
+    histogram_matching = fields.Boolean(required=False, default=False)
 
 
 class PeriodForm(Schema):

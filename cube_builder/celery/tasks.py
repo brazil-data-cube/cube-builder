@@ -21,7 +21,7 @@ from celery import chain, group
 from ..celery import celery_app
 from ..models import Activity
 from ..constants import CLEAR_OBSERVATION_NAME, TOTAL_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME
-from ..utils.image import create_empty_raster
+from ..utils.image import create_empty_raster, match_histogram_with_merges
 from ..utils.processing import DataCubeFragments, build_cube_path, post_processing_quality
 from ..utils.processing import compute_data_set_stats, get_or_create_model
 from ..utils.processing import blend as blend_processing, merge as merge_processing, publish_datacube, publish_merge
@@ -276,6 +276,25 @@ def prepare_blend(merges, band_map: dict, **kwargs):
             activity['scenes'][_merge['args']['date']]['ARDfiles'][DATASOURCE_NAME] = _merge['args'][DATASOURCE_NAME]
 
         activities[_merge['band']] = activity
+
+    # TODO: Add option to skip histogram.
+    if kwargs.get('histogram_matching'):
+        ordered_best_efficacy = sorted(quality_date_stats.items(), key=lambda item: item[1][0], reverse=True)
+
+        best_date, (_, _, best_mask_file, _) = ordered_best_efficacy[0]
+        dates = map(lambda entry: entry[0], ordered_best_efficacy[1:])
+
+        for date in dates:
+            logging.info(f'Applying Histogram Matching: Reference date {best_date}, current {date}...')
+            for band, activity in activities.items():
+                reference = activities[band]['scenes'][best_date]['ARDfiles'][band]
+
+                if band == band_map['quality']:
+                    continue
+
+                source = activity['scenes'][date]['ARDfiles'][band]
+                source_mask = activity['scenes'][date]['ARDfiles'][band_map['quality']]
+                match_histogram_with_merges(source, source_mask, reference, best_mask_file)
 
     # Prepare list of activities to dispatch
     activity_list = list(activities.values())

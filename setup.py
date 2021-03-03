@@ -32,9 +32,14 @@ tests_require = [
     'check-manifest>=0.40',
 ]
 
+histogram_require = [
+    'scikit-image>=0.18,<1'
+]
+
 extras_require = {
     'docs': docs_require,
     'tests': tests_require,
+    'histogram': histogram_require
 }
 
 extras_require['all'] = [ req for exts, reqs in extras_require.items() for req in reqs ]

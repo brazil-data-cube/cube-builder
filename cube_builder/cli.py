@@ -99,6 +99,7 @@ def worker(ctx: click.Context):
 @click.option('--with-rgb', is_flag=True, help='Generate a file with RGB bands, based in quick look.')
 @click.option('--token', type=click.STRING, help='Token to access data from STAC.')
 @click.option('--shape', type=click.STRING, help='Use custom output shape. i.e `--shape=10980x10980`')
+@click.option('--histogram-matching', is_flag=True, help='Match the histogram in the temporal composition function.')
 @with_appcontext
 def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None,
           stac_url: str = None, force=False, with_rgb=False, shape=None, **kwargs):

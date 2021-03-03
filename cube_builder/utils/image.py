@@ -13,10 +13,11 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List
 
+import numpy
 import rasterio
 from rasterio._warp import Affine
 from sqlalchemy.engine.result import ResultProxy, RowProxy
-from .processing import SmartDataSet, generate_cogs
+from .processing import SmartDataSet, generate_cogs, save_as_cog
 
 from ..config import Config
 
@@ -151,3 +152,53 @@ def create_empty_raster(location: str, proj4: str, dtype: str, xmin: float, ymax
         generate_cogs(str(location), str(location))
 
     return str(location)
+
+
+def match_histogram_with_merges(source: str, source_mask: str, reference: str, reference_mask: str):
+    """Normalize the source image histogram with reference image.
+
+    This functions implements the `skimage.exposure.match_histograms`, which consists in the manipulate the pixels of an
+    input image and match the histogram with the reference image.
+
+    See more in `Histogram Matching <https://scikit-image.org/docs/dev/auto_examples/color_exposure/plot_histogram_matching.html>`_.
+
+    Notes:
+        It overwrites the source file.
+
+    Args:
+        source (str): Path to the rasterio data set file
+        source_mask (str): Path to the rasterio data set file
+        reference (str): Path to the rasterio data set file
+        reference_mask (str): Path to the rasterio data set file
+    """
+    from skimage.exposure import match_histograms as _match_histograms
+
+    with rasterio.open(source) as source_data_set, rasterio.open(source_mask) as source_mask_data_set:
+        source_arr = source_data_set.read(1, masked=True)
+        source_mask_arr = source_mask_data_set.read(1)
+        source_options = source_data_set.profile.copy()
+
+    with rasterio.open(reference) as reference_data_set, rasterio.open(reference_mask) as reference_mask_data_set:
+        reference_arr = reference_data_set.read(1, masked=True)
+        reference_mask_arr = reference_mask_data_set.read(1)
+
+    intersect_mask = numpy.logical_and(
+        source_mask_arr < 255,  # CHECK: Use only valid data? numpy.isin(source_mask_arr, [0, 1, 3]),
+        reference_mask_arr < 255,   # CHECK: Use only valid data? numpy.isin(reference_mask_arr, [0, 1, 3]),
+    )
+
+    valid_positions = numpy.where(intersect_mask)
+
+    if valid_positions and len(valid_positions[0]) == 0:
+        return
+
+    intersected_source_arr = source_arr[valid_positions]
+    intersected_reference_arr = reference_arr[valid_positions]
+
+    histogram = _match_histograms(intersected_source_arr, intersected_reference_arr)
+
+    histogram = numpy.round(histogram).astype(source_options['dtype'])
+
+    source_arr[valid_positions] = histogram
+
+    save_as_cog(str(source), source_arr, mode='w', **source_options)
