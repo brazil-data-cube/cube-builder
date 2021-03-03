@@ -54,6 +54,7 @@ install_requires = [
     'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
     'stac.py==0.9.0.post5',
+    'bdc-auth-client @ git+git://github.com/brazil-data-cube/bdc-auth-client.git@v0.2.1#egg=bdc-auth-client'
 ]
 
 packages = find_packages()

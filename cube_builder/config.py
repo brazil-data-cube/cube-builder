@@ -52,6 +52,11 @@ class Config:
     # So the asset will be /Repository/Mosaic/collectionName/version/tile/period/scene.tif
     ITEM_PREFIX = os.getenv('ITEM_PREFIX', '/Repository/Archive')
 
+    # BDC-Auth OAuth2
+    BDC_AUTH_CLIENT_ID = os.getenv('BDC_AUTH_CLIENT_ID', None)
+    BDC_AUTH_CLIENT_SECRET = os.getenv('BDC_AUTH_CLIENT_SECRET', None)
+    BDC_AUTH_ACCESS_TOKEN_URL = os.getenv('BDC_AUTH_ACCESS_TOKEN_URL', None)
+
 
 class ProductionConfig(Config):
     """Production Mode."""
