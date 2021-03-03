@@ -14,7 +14,6 @@ from flask.cli import FlaskGroup, with_appcontext
 
 from . import create_app
 # Create cube-builder cli from bdc-db
-from .utils.package import package_info
 from .version import __version__
 
 
