@@ -56,7 +56,7 @@ def create_execution(activity: dict) -> Activity:
     return model
 
 
-@celery_app.task()
+@celery_app.task(queue='merge-cube')
 def warp_merge(activity, band_map, force=False, **kwargs):
     """Execute datacube merge task.
 
@@ -204,7 +204,7 @@ def warp_merge(activity, band_map, force=False, **kwargs):
     return activity
 
 
-@celery_app.task()
+@celery_app.task(queue='prepare-cube')
 def prepare_blend(merges, band_map: dict, **kwargs):
     """Receive merges by period and prepare task blend.
 
@@ -308,7 +308,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
     task.apply_async()
 
 
-@celery_app.task()
+@celery_app.task(queue='blend-cube')
 def blend(activity, band_map, build_clear_observation=False):
     """Execute datacube blend task.
 
@@ -325,7 +325,7 @@ def blend(activity, band_map, build_clear_observation=False):
     return blend_processing(activity, band_map, build_clear_observation)
 
 
-@celery_app.task()
+@celery_app.task(queue='publish-cube')
 def publish(blends, band_map, **kwargs):
     """Execute publish task and catalog datacube result.
 

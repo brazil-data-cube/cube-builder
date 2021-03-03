@@ -68,6 +68,6 @@ services:
       - "LANG=C.UTF-8"
       - "FLASK_ENV=production"
     command: >
-      cube-builder worker -l INFO --concurrency 8 --max-tasks-per-child=30
+      cube-builder worker -l INFO --concurrency 8 --max-tasks-per-child=16 -Q default,merge-cube,prepare-cube,blend-cube,publish-cube
     networks:
       - cube_builder_net

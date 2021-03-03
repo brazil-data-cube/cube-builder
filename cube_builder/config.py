@@ -38,10 +38,7 @@ class Config:
         'SQLALCHEMY_DATABASE_URI',
         'postgresql://postgres:postgres@localhost:5432/bdc_catalog'
     )
-    STAC_URL = os.environ.get(
-        'STAC_URL',
-        'http://brazildatacube.dpi.inpe.br/stac/'
-    )
+    STAC_URL = os.environ.get('STAC_URL', 'https://brazildatacube.dpi.inpe.br/stac/')
     MAX_THREADS_IMAGE_VALIDATOR = int(os.environ.get('MAX_THREADS_IMAGE_VALIDATOR', os.cpu_count()))
     # rasterio
     RASTERIO_ENV = dict(
@@ -53,7 +50,7 @@ class Config:
 
     # Add prefix path to the items. Base path is /Repository
     # So the asset will be /Repository/Mosaic/collectionName/version/tile/period/scene.tif
-    ITEM_PREFIX = os.getenv('ITEM_PREFIX', '/Repository')
+    ITEM_PREFIX = os.getenv('ITEM_PREFIX', '/Repository/Archive')
 
 
 class ProductionConfig(Config):
