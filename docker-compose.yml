@@ -26,11 +26,8 @@ services:
       - cube_builder_net
 
   cube-builder:
-    build:
-      context: .
-      dockerfile: ./docker/Dockerfile
     container_name: cube-builder-api
-    image: registry.dpi.inpe.br/brazildatacube/cube-builder:latest
+    image: registry.dpi.inpe.br/brazil-data-cube/cube-builder:latest
     restart: "always"
     environment:
       - "RABBIT_MQ_URL=pyamqp://guest@cube-builder-rabbitmq"
