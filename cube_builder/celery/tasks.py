@@ -97,7 +97,7 @@ def warp_merge(activity, band_map, force=False, **kwargs):
                 # TODO: Should we raise exception??
                 logging.warning(f'Cube {record.warped_collection_id} requires {collection.name}, but the file {str(merge_file_path)} not found. Skipping')
                 raise RuntimeError(
-                    f"""Cube {record.warped_collection_id} is derived from {collection.name}, 
+                    f"""Cube {record.warped_collection_id} is derived from {collection.name},
                     but the file {str(merge_file_path)} was not found."""
                 )
 
@@ -212,6 +212,8 @@ def prepare_blend(merges, band_map: dict, **kwargs):
     A blend requires both data set quality band and others bands. In this way, we must group
     these values by temporal resolution and then schedule blend tasks.
     """
+    block_size = kwargs.get('block_size')
+
     activities = dict()
 
     # Prepare map of efficacy/cloud_ratio based in quality merge result
@@ -229,7 +231,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         if not was_reused:
             logging.info(f'Applying post-processing in {str(quality_file)}')
             post_processing_quality(quality_file, list(band_map.values()), merges[0]['warped_collection_id'],
-                                    period, merges[0]['tile_id'], band_map['quality'], version=version)
+                                    period, merges[0]['tile_id'], band_map['quality'], version=version, block_size=block_size)
         else:
             logging.info(f'Skipping post-processing {str(quality_file)}')
 
@@ -294,7 +296,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
 
                 source = activity['scenes'][date]['ARDfiles'][band]
                 source_mask = activity['scenes'][date]['ARDfiles'][band_map['quality']]
-                match_histogram_with_merges(source, source_mask, reference, best_mask_file)
+                match_histogram_with_merges(source, source_mask, reference, best_mask_file, block_size=block_size)
 
     # Prepare list of activities to dispatch
     activity_list = list(activities.values())
@@ -328,7 +330,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
 
 
 @celery_app.task(queue='blend-cube')
-def blend(activity, band_map, build_clear_observation=False):
+def blend(activity, band_map, build_clear_observation=False, **kwargs):
     """Execute datacube blend task.
 
     Args:
@@ -339,9 +341,11 @@ def blend(activity, band_map, build_clear_observation=False):
     Returns:
         Validated activity
     """
+    block_size = kwargs.get('block_size')
+
     logging.warning('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
 
-    return blend_processing(activity, band_map, build_clear_observation)
+    return blend_processing(activity, band_map, build_clear_observation, block_size=block_size)
 
 
 @celery_app.task(queue='publish-cube')

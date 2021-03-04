@@ -144,6 +144,7 @@ class DataCubeProcessForm(Schema):
     token = fields.String(required=False, allow_none=True)
     stac_url = fields.String(required=False, allow_none=True)
     shape = fields.List(fields.Integer(required=False))
+    block_size = fields.Integer(required=False, default=512)
     # Reuse data cube from another data cube
     reuse_from = fields.String(required=False, allow_none=True)
     histogram_matching = fields.Boolean(required=False, default=False)
