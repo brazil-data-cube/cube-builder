@@ -1,0 +1,52 @@
+---
+kind: pipeline
+type: docker
+name: default
+
+platform:
+  os: linux
+  arch: amd64
+
+steps:
+- name: test
+  image: python:3.7
+  commands:
+  - pip install --upgrade pip
+  - pip install --upgrade setuptools
+  - pip install -e.[all]
+  - ./run-tests.sh
+
+- name: discord-notify
+  image: brazildatacube/bdc-drone-discord
+  settings:
+    webhook:
+      from_secret: discord_webhook
+  when:
+    status:
+    - failure
+    - success
+
+- name: coverage
+  image: plugins/codecov
+  settings:
+    files:
+    - coverage.xml
+    - .coverage
+    token:
+      from_secret: codecov_token
+  when:
+    event:
+    - push
+
+- name: docker-registry
+  image: plugins/docker
+  settings:
+    auto_tag: true
+    username:
+      from_secret: registry_user
+    password:
+      from_secret: registry_pass
+    registry: registry.dpi.inpe.br
+    repo: registry.dpi.inpe.br/${DRONE_REPO}
+
+...
