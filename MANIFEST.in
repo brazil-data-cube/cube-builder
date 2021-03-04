@@ -1,6 +1,7 @@
 exclude docs/sphinx/_build
 exclude migrations
 exclude docker
+exclude Dockerfile
 exclude .dockerignore
 
 include *.rst
@@ -14,8 +15,8 @@ include alembic.ini
 
 recursive-exclude docs/sphinx/_build *
 recursive-exclude migrations *
-recursive-exclude docker *
 recursive-include cube_builder *.py
+recursive-include deploy *.sh
 recursive-include docs *.bat
 recursive-include docs *.css
 recursive-include docs *.py
