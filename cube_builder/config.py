@@ -57,7 +57,7 @@ class Config:
     BDC_AUTH_CLIENT_ID = os.getenv('BDC_AUTH_CLIENT_ID', None)
     BDC_AUTH_CLIENT_SECRET = os.getenv('BDC_AUTH_CLIENT_SECRET', None)
     BDC_AUTH_ACCESS_TOKEN_URL = os.getenv('BDC_AUTH_ACCESS_TOKEN_URL', None)
-    BDC_AUTH_REQUIRED = strtobool(os.getenv('BDC_AUTH_REQUIRED', 0))
+    BDC_AUTH_REQUIRED = strtobool(os.getenv('BDC_AUTH_REQUIRED', '0'))
 
 class ProductionConfig(Config):
     """Production Mode."""
