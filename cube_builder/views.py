@@ -14,6 +14,7 @@ from bdc_auth_client.decorators import oauth2
 
 
 # Cube Builder
+from .celery.utils import list_queues
 from .config import Config
 from .controller import CubeController
 from .forms import (CubeItemsForm, CubeStatusForm, DataCubeForm,
@@ -252,3 +253,11 @@ def list_composite_functions(**kwargs):
     message, status_code = CubeController.list_composite_functions()
 
     return jsonify(message), status_code
+
+
+@bp.route('/tasks', methods=['GET'])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def list_tasks(**kwargs):
+    """List all pending and running tasks on celery."""
+    queues = list_queues()
+    return queues
