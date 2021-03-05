@@ -8,18 +8,16 @@
 
 """Define Brazil Data Cube Cube Builder routes."""
 
+from bdc_auth_client.decorators import oauth2
 # 3rdparty
 from flask import Blueprint, jsonify, request
-from bdc_auth_client.decorators import oauth2
-
 
 # Cube Builder
 from .celery.utils import list_queues
 from .config import Config
 from .controller import CubeController
-from .forms import (CubeItemsForm, CubeStatusForm, DataCubeForm,
-                    DataCubeMetadataForm, DataCubeProcessForm, GridRefSysForm,
-                    PeriodForm)
+from .forms import (CubeItemsForm, CubeStatusForm, DataCubeForm, DataCubeMetadataForm, DataCubeProcessForm,
+                    GridRefSysForm, PeriodForm)
 from .version import __version__
 
 bp = Blueprint('cubes', import_name=__name__)

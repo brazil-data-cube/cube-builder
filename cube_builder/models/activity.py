@@ -11,12 +11,12 @@
 from datetime import datetime
 from typing import Union
 
-# 3rdparty
-from sqlalchemy import Column, Date, String, ARRAY, Integer, JSON, Text
-from sqlalchemy.engine.result import ResultProxy
 from bdc_catalog.models.base_sql import BaseModel, db
-from ..config import Config
+# 3rdparty
+from sqlalchemy import ARRAY, JSON, Column, Date, Integer, String, Text
+from sqlalchemy.engine.result import ResultProxy
 
+from ..config import Config
 
 db.metadata.schema = Config.ACTIVITIES_SCHEMA
 

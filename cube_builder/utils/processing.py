@@ -24,7 +24,7 @@ import rasterio
 import rasterio.features
 import shapely
 import shapely.geometry
-from bdc_catalog.models import Item, db, Tile
+from bdc_catalog.models import Item, Tile, db
 from bdc_catalog.utils import multihash_checksum_sha256
 from flask import abort
 from geoalchemy2.shape import from_shape, to_shape
@@ -34,15 +34,13 @@ from rasterio.warp import Resampling, reproject
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 
+from ..config import Config
+# Constant to define required bands to generate both NDVI and EVI
+from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
+                         DATASOURCE_NAME, PNG_MIME_TYPE, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA,
+                         TOTAL_OBSERVATION_NAME)
 # Builder
 from .index_generator import generate_band_indexes
-
-from ..config import Config
-
-
-# Constant to define required bands to generate both NDVI and EVI
-from ..constants import CLEAR_OBSERVATION_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, \
-    PROVENANCE_ATTRIBUTES, COG_MIME_TYPE, PNG_MIME_TYPE, SRID_ALBERS_EQUAL_AREA, DATASOURCE_NAME, DATASOURCE_ATTRIBUTES
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 

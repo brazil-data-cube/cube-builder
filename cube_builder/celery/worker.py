@@ -14,7 +14,6 @@ from celery.signals import celeryd_after_setup
 from cube_builder import create_app
 from cube_builder.celery import create_celery_app
 
-
 app = create_app()
 celery = create_celery_app(app)
 

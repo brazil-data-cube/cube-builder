@@ -48,5 +48,6 @@ steps:
       from_secret: registry_pass
     registry: registry.dpi.inpe.br
     repo: registry.dpi.inpe.br/${DRONE_REPO}
+    custom_dns: 8.8.8.8
 
 ...

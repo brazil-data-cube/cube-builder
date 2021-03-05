@@ -17,9 +17,9 @@ import numpy
 import rasterio
 from rasterio._warp import Affine
 from sqlalchemy.engine.result import ResultProxy, RowProxy
-from .processing import SmartDataSet, generate_cogs, save_as_cog
 
 from ..config import Config
+from .processing import SmartDataSet, generate_cogs, save_as_cog
 
 LANDSAT_BANDS = dict(
     int16=['band1', 'band2', 'band3', 'band4', 'band5', 'band6', 'band7', 'evi', 'ndvi'],

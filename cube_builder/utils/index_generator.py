@@ -9,13 +9,12 @@
 """Simple data cube band generator."""
 
 import logging
-from typing import List, Dict
+from typing import Dict, List
 
 import numpy
 from bdc_catalog.models import Band, Collection
 
 from .interpreter import execute
-
 
 BandMapFile = Dict[str, str]
 """Type which a key (represented as data cube band name) points to generated file in disk."""
