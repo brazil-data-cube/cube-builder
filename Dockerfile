@@ -13,5 +13,5 @@ ADD . /app
 WORKDIR /app
 
 RUN pip3 install pip --upgrade && \
-    pip install wheel && \
-    pip install -e .
+    pip3 install wheel && \
+    pip3 install -e .

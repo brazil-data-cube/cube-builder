@@ -223,7 +223,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
     dist_y = kwargs.get('dist_y')
     datasets = kwargs.get('datasets')
     resx, resy = kwargs['resx'], kwargs['resy']
-    
+    block_size = kwargs.get('block_size')
     shape = kwargs.get('shape', None)
     if shape:
         cols = shape[0]
@@ -232,7 +232,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
     else:
         cols = round(dist_x / resx)
         rows = round(dist_y / resy)
-        
+
         new_res_x = dist_x / cols
         new_res_y = dist_y / rows
 
@@ -387,17 +387,17 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
 
         custom_tags = {dataset: value for value, dataset in enumerate(datasets)}
 
-        save_as_cog(str(provenance), raster_provenance, tags=custom_tags, **profile)
+        save_as_cog(str(provenance), raster_provenance, tags=custom_tags, block_size=block_size, **profile)
         options[DATASOURCE_NAME] = str(provenance)
 
     # Persist on file as Cloud Optimized GeoTIFF
-    save_as_cog(str(merge_file), raster_merge, **template)
+    save_as_cog(str(merge_file), raster_merge, block_size=block_size, **template)
 
     return options
 
 
 def post_processing_quality(quality_file: str, bands: List[str], cube: str,
-                            date: str, tile_id, quality_band: str, version: int):
+                            date: str, tile_id, quality_band: str, version: int, block_size:int=None):
     """Stack the merge bands in order to apply a filter on the quality band.
 
     We have faced some issues regarding `nodata` value in spectral bands, which was resulting
@@ -452,7 +452,7 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
             raster_merge[block.row_off: row_offset, block.col_off: col_offset][
                 numpy.unravel_index(nodata_positions.astype(numpy.int64), raster.shape)] = nodata
 
-    save_as_cog(str(quality_file), raster_merge, **profile)
+    save_as_cog(str(quality_file), raster_merge, block_size=block_size, **profile)
 
 
 class SmartDataSet:
@@ -512,7 +512,7 @@ def compute_data_set_stats(file_path: str, mask: dict, compute: bool = True) -> 
     return efficacy, cloud_ratio
 
 
-def blend(activity, band_map, build_clear_observation=False):
+def blend(activity, band_map, build_clear_observation=False, block_size=None):
     """Apply blend and generate raster from activity.
 
     Basically, the blend operation consists in stack all the images (merges) in period. The stack is based in
@@ -833,8 +833,8 @@ def blend(activity, band_map, build_clear_observation=False):
         total_observation_profile.pop('nodata', None)
         total_observation_profile['dtype'] = 'uint8'
 
-        save_as_cog(str(total_observation_file), stack_total_observation, **total_observation_profile)
-        generate_cogs(str(clear_ob_file_path), str(clear_ob_file_path))
+        save_as_cog(str(total_observation_file), stack_total_observation, block_size=block_size, **total_observation_profile)
+        generate_cogs(str(clear_ob_file_path), str(clear_ob_file_path), block_size=block_size)
 
         activity['clear_observation_file'] = str(clear_ob_data_set.path)
         activity['total_observation'] = str(total_observation_file)
@@ -843,9 +843,9 @@ def blend(activity, band_map, build_clear_observation=False):
 
     if cube_function == 'MED':
         # Close and upload the MEDIAN dataset
-        save_as_cog(str(cube_file), median_raster, mode='w', **profile)
+        save_as_cog(str(cube_file), median_raster, block_size=block_size, mode='w', **profile)
     else:
-        save_as_cog(str(cube_file), stack_raster, mode='w', **profile)
+        save_as_cog(str(cube_file), stack_raster, block_size=block_size, mode='w', **profile)
 
         if build_clear_observation:
             provenance_file = build_cube_path(datacube, period, tile_id, version=version, band=PROVENANCE_NAME)
@@ -853,12 +853,12 @@ def blend(activity, band_map, build_clear_observation=False):
             provenance_profile.pop('nodata', -1)
             provenance_profile['dtype'] = PROVENANCE_ATTRIBUTES['data_type']
 
-            save_as_cog(str(provenance_file), provenance_array, **provenance_profile)
+            save_as_cog(str(provenance_file), provenance_array, block_size=block_size, **provenance_profile)
             activity['provenance'] = str(provenance_file)
 
             if is_combined_collection:
                 datasource.close()
-                generate_cogs(str(dataset_file_path), str(dataset_file_path))
+                generate_cogs(str(dataset_file_path), str(dataset_file_path), block_size=block_size)
                 activity['datasource'] = str(dataset_file_path)
 
     activity['blends'] = {
@@ -996,7 +996,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                     absolute_path=str(scenes[band][composite_function]),
                     is_raster=True
                 )
-        
+
             item.assets = assets
             item.srid = SRID_ALBERS_EQUAL_AREA
             if min_convex_hull.area > 0.0:
@@ -1332,7 +1332,7 @@ def create_asset_definition(href: str, mime_type: str, role: List[str], absolute
     return asset
 
 
-def save_as_cog(destination: str, raster, mode='w', tags=None, **profile):
+def save_as_cog(destination: str, raster, mode='w', tags=None, block_size=None, **profile):
     """Save the raster file as Cloud Optimized GeoTIFF.
 
     See Also:
@@ -1354,10 +1354,10 @@ def save_as_cog(destination: str, raster, mode='w', tags=None, **profile):
         if tags:
             dataset.update_tags(**tags)
 
-    generate_cogs(str(destination), str(destination))
+    generate_cogs(str(destination), str(destination), block_size=block_size)
 
 
-def generate_cogs(input_data_set_path, file_path, profile='lzw', profile_options=None, **options):
+def generate_cogs(input_data_set_path, file_path, profile='lzw', block_size=None, profile_options=None, **options):
     """Generate Cloud Optimized GeoTIFF files (COG).
 
     Args:
@@ -1365,6 +1365,7 @@ def generate_cogs(input_data_set_path, file_path, profile='lzw', profile_options
         file_path (str) - Target data set filename
         profile (str) - A COG profile based in `rio_cogeo.profiles`.
         profile_options (dict) - Custom options to the profile.
+        block_size (int) - Custom block size.
 
     Returns:
         Path to COG.
@@ -1375,6 +1376,10 @@ def generate_cogs(input_data_set_path, file_path, profile='lzw', profile_options
     output_profile = cog_profiles.get(profile)
     output_profile.update(dict(BIGTIFF="IF_SAFER"))
     output_profile.update(profile_options)
+
+    if block_size:
+        output_profile["blockxsize"] = block_size
+        output_profile["blockysize"] = block_size
 
     # Dataset Open option (see gdalwarp `-oo` option)
     config = dict(

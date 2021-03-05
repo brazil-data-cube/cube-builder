@@ -154,7 +154,7 @@ def create_empty_raster(location: str, proj4: str, dtype: str, xmin: float, ymax
     return str(location)
 
 
-def match_histogram_with_merges(source: str, source_mask: str, reference: str, reference_mask: str):
+def match_histogram_with_merges(source: str, source_mask: str, reference: str, reference_mask: str, block_size: int = None):
     """Normalize the source image histogram with reference image.
 
     This functions implements the `skimage.exposure.match_histograms`, which consists in the manipulate the pixels of an
@@ -201,4 +201,4 @@ def match_histogram_with_merges(source: str, source_mask: str, reference: str, r
 
     source_arr[valid_positions] = histogram
 
-    save_as_cog(str(source), source_arr, mode='w', **source_options)
+    save_as_cog(str(source), source_arr, block_size=block_size, mode='w', **source_options)

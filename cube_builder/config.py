@@ -33,7 +33,7 @@ class Config:
     # Path to store data
     ACTIVITIES_SCHEMA = 'cube_builder'
     DATA_DIR = os.environ.get('DATA_DIR', '/data')
-    RABBIT_MQ_URL = os.environ.get('RABBIT_MQ_URL', 'pyamqp://guest@localhost')
+    RABBIT_MQ_URL = os.environ.get('RABBIT_MQ_URL', 'pyamqp://guest:guest@localhost')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         'SQLALCHEMY_DATABASE_URI',

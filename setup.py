@@ -55,6 +55,7 @@ install_requires = [
     'numpngw>=0.0.8',
     'python-dateutil>=2.8,<3',
     'rasterio[s3]>=1.1.2,<2',
+    'requests>=2.25.1',
     'rio_cogeo>=1.1,<2',
     'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
