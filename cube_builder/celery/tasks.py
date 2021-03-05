@@ -57,7 +57,7 @@ def create_execution(activity: dict) -> Activity:
 
 
 @celery_app.task(queue='merge-cube')
-def warp_merge(activity, band_map, force=False, **kwargs):
+def warp_merge(activity, band_map, mask, force=False, **kwargs):
     """Execute datacube merge task.
 
     This task consists in the following steps:
@@ -121,7 +121,7 @@ def warp_merge(activity, band_map, force=False, **kwargs):
 
         if activity['band'] == band_map['quality']:
             # When file exists, compute the file statistics
-            efficacy, cloudratio = compute_data_set_stats(str(merge_file_path))
+            efficacy, cloudratio = compute_data_set_stats(str(merge_file_path), mask=mask, compute=True)
 
         reused = True
 
@@ -174,7 +174,7 @@ def warp_merge(activity, band_map, force=False, **kwargs):
                     nodata=args['nodata']
                 )
             else:
-                res = merge_processing(str(merge_file_path), band_map=band_map, band=record.band, **args, **kwargs)
+                res = merge_processing(str(merge_file_path), mask, band_map=band_map, band=record.band, compute=True, **args, **kwargs)
 
             merge_args = deepcopy(activity['args'])
             merge_args.update(res)
@@ -256,6 +256,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         activity['tile_id'] = _merge['tile_id']
         activity['nodata'] = _merge['args'].get('nodata')
         activity['version'] = version
+        activity['mask'] = kwargs.get('mask')
         # TODO: Check instance type for backward compatibility
         activity['datasets'] = _merge['args']['datasets']
 
@@ -328,7 +329,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
 
 
 @celery_app.task(queue='blend-cube')
-def blend(activity, band_map, build_clear_observation=False):
+def blend(activity, band_map, build_clear_observation=False, **kwargs):
     """Execute datacube blend task.
 
     Args:

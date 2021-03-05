@@ -25,7 +25,7 @@ from stac import STAC
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
 from .constants import (CLEAR_OBSERVATION_NAME, DATASOURCE_NAME,
-                        PROVENANCE_NAME, TOTAL_OBSERVATION_NAME)
+                        PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, FMASK_CLEAR_DATA, FMASK_NOT_CLEAR_DATA)
 from .utils.processing import get_cube_id, get_or_create_activity
 from .utils.timeline import Timeline
 
@@ -94,6 +94,7 @@ class Maestro:
 
         force = properties.get('force', False)
         self.properties = properties
+        self.properties.setdefault('mask', dict(clear_data=FMASK_CLEAR_DATA, not_clear_data=FMASK_NOT_CLEAR_DATA))
         self.params['force'] = force
         self.mosaics = dict()
         self.cached_stacs = dict()
@@ -200,7 +201,8 @@ class Maestro:
                 (func.ST_XMin(grid_geom.c.geom)).label('min_x'),
                 (func.ST_YMax(grid_geom.c.geom)).label('max_y'),
                 (func.ST_XMax(grid_geom.c.geom) - func.ST_XMin(grid_geom.c.geom)).label('dist_x'),
-                (func.ST_YMax(grid_geom.c.geom) - func.ST_YMin(grid_geom.c.geom)).label('dist_y')
+                (func.ST_YMax(grid_geom.c.geom) - func.ST_YMin(grid_geom.c.geom)).label('dist_y'),
+                (func.ST_AsGeoJSON(func.ST_Transform(grid_geom.c.geom, 4326))).label('feature')
             ).filter(grid_geom.c.tile == tile_name).first()
 
             self.mosaics[tile_name] = dict(
@@ -227,6 +229,7 @@ class Maestro:
                 self.mosaics[tile_name]['periods'][period]['min_x'] = tile_stats.min_x
                 self.mosaics[tile_name]['periods'][period]['max_y'] = tile_stats.max_y
                 self.mosaics[tile_name]['periods'][period]['dirname'] = cube_relative_path
+                self.mosaics[tile_name]['periods'][period]['feature'] = eval(tile_stats.feature)
                 if self.properties.get('shape', None):
                     self.mosaics[tile_name]['periods'][period]['shape'] = self.properties['shape']
 
@@ -307,10 +310,11 @@ class Maestro:
 
             warped_datacube = self.warped_datacube.name
 
+            quality = next(filter(lambda b: b.name == band_map['quality'], bands))
+            self.properties['mask']['nodata'] = float(quality.nodata)
+
             for tileid in self.mosaics:
                 blends = []
-
-                bbox = self.get_bbox(tileid, self.datacube.grs)
 
                 tile = next(filter(lambda t: t.name == tileid, self.tiles))
 
@@ -321,7 +325,9 @@ class Maestro:
                     start = self.mosaics[tileid]['periods'][period]['start']
                     end = self.mosaics[tileid]['periods'][period]['end']
 
-                    assets_by_period = self.search_images(bbox, start, end, tileid)
+                    feature = self.mosaics[tileid]['periods'][period]['feature']
+
+                    assets_by_period = self.search_images(feature, start, end, tileid)
 
                     if self.datacube.composite_function.alias == 'IDT':
                         stats_bands = (TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME)
@@ -343,7 +349,7 @@ class Maestro:
 
                     for band in bands:
                         # Skip trigger/search for Vegetation Index
-                        if band.common_name.lower() in ('ndvi', 'evi',):
+                        if band.common_name.lower() in ('ndvi', 'evi',) or (band._metadata and band._metadata.get('expression')):
                             continue
 
                         merges = assets_by_period[band.name]
@@ -406,11 +412,11 @@ class Maestro:
 
         return self.mosaics
 
-    def search_images(self, bbox: str, start: str, end: str, tile_id: str):
+    def search_images(self, feature: str, start: str, end: str, tile_id: str):
         """Search and prepare images on STAC."""
         scenes = {}
         options = dict(
-            bbox=bbox,
+            intersects=feature,
             datetime='{}/{}'.format(start, end),
             limit=100000
         )
@@ -437,8 +443,9 @@ class Maestro:
                 options = dict(
                     bbox=bbox,
                     time='{}/{}'.format(start, end),
-                    limit=100000
+                    limit=1000
                 )
+            options['collections'] = [dataset]
             stac = self.get_stac(dataset)
 
             token = ''
@@ -447,11 +454,10 @@ class Maestro:
                                                                       end, stac.url), end='', flush=True)
 
             with timing(' total'):
-
                 if 'CBERS' in dataset and Config.CBERS_AUTH_TOKEN:
                     token = '?key={}'.format(Config.CBERS_AUTH_TOKEN)
 
-                items = stac.collection(dataset).get_items(filter=options)
+                items = stac.search(filter=options)
 
                 for feature in items['features']:
                     if feature['type'] == 'Feature':

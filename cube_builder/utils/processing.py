@@ -203,7 +203,7 @@ def prepare_asset_url(url: str) -> str:
     return urljoin(url, parsed_url.path)
 
 
-def merge(merge_file: str, assets: List[dict], band: str, band_map, build_provenance=False, **kwargs):
+def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, build_provenance=False, compute=False, **kwargs):
     """Apply datacube merge scenes.
 
     TODO: Describe how it works.
@@ -246,25 +246,16 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, build_proven
         )
         datasets = [datasets]
 
-    is_sentinel_landsat_quality_fmask = 'fmask4' in band.lower() and band == band_map['quality']
     source_nodata = 0
 
     if band == band_map['quality']:
         resampling = Resampling.nearest
 
-        nodata = 0
-
-        # TODO: Remove it when a custom mask feature is done
-        # Identifies when the collection is Sentinel or Landsat
-        # In this way, we must keep in mind that fmask 4.2 uses 0 as valid value and 255 for nodata. So, we need
-        # to track the dummy data in re-project step in order to prevent store "nodata" as "valid" data (0).
-        if is_sentinel_landsat_quality_fmask:
-            nodata = 255  # temporally set nodata to 255 in order to reproject without losing valid 0 values
-            source_nodata = nodata
+        nodata = float(mask['nodata'])
+        source_nodata = nodata
 
         raster = numpy.zeros((rows, cols,), dtype=numpy.uint16)
         raster_merge = numpy.full((rows, cols,), dtype=numpy.uint16, fill_value=source_nodata)
-        raster_mask = numpy.ones((rows, cols,), dtype=numpy.uint16)
 
         if build_provenance:
             raster_provenance = numpy.full((rows, cols,),
@@ -328,37 +319,26 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, build_proven
                                     dst_nodata=nodata,
                                     resampling=resampling)
 
-                            if band != band_map['quality'] or is_sentinel_landsat_quality_fmask:
-                                # For combined collections, we must merge only valid data into final data set
-                                if is_combined_collection:
-                                    positions_todo = numpy.where(raster_merge == nodata)
+                            # For combined collections, we must merge only valid data into final data set
+                            if is_combined_collection:
+                                positions_todo = numpy.where(raster_merge == nodata)
 
-                                    if positions_todo:
-                                        valid_positions = numpy.where(raster != nodata)
+                                if positions_todo:
+                                    valid_positions = numpy.where(raster != nodata)
 
-                                        raster_todo = numpy.ravel_multi_index(positions_todo, raster.shape)
-                                        raster_valid = numpy.ravel_multi_index(valid_positions, raster.shape)
+                                    raster_todo = numpy.ravel_multi_index(positions_todo, raster.shape)
+                                    raster_valid = numpy.ravel_multi_index(valid_positions, raster.shape)
 
-                                        # Match stack nodata values with observation
-                                        # stack_raster_where_nodata && raster_where_data
-                                        intersect_ravel = numpy.intersect1d(raster_todo, raster_valid)
+                                    # Match stack nodata values with observation
+                                    # stack_raster_where_nodata && raster_where_data
+                                    intersect_ravel = numpy.intersect1d(raster_todo, raster_valid)
 
-                                        if len(intersect_ravel):
-                                            where_intersec = numpy.unravel_index(intersect_ravel, raster.shape)
-                                            raster_merge[where_intersec] = raster[where_intersec]
-                                else:
-                                    valid_data_scene = raster[raster != nodata]
-                                    raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
+                                    if len(intersect_ravel):
+                                        where_intersec = numpy.unravel_index(intersect_ravel, raster.shape)
+                                        raster_merge[where_intersec] = raster[where_intersec]
                             else:
-                                factor = raster * raster_mask
-                                raster_merge = raster_merge + factor
-
-                                if build_provenance:
-                                    where_valid = numpy.where(factor > 0)
-                                    raster_provenance[where_valid] = datasets.index(dataset) * factor[where_valid].astype(numpy.bool_)
-                                    where_valid = None
-
-                                raster_mask[raster != nodata] = 0
+                                valid_data_scene = raster[raster != nodata]
+                                raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
 
                             if template is None:
                                 template = dst.profile
@@ -373,7 +353,7 @@ def merge(merge_file: str, assets: List[dict], band: str, band_map, build_proven
     cloudratio = 100
     raster = None
     if band == band_map['quality']:
-        raster_merge, efficacy, cloudratio = getMask(raster_merge, datasets)
+        raster_merge, efficacy, cloudratio = getMask(raster_merge, datasets, mask=mask, compute=compute)
         template.update({'dtype': 'uint8'})
         nodata = 255
 
@@ -512,7 +492,7 @@ class SmartDataSet:
             self.dataset.close()
 
 
-def compute_data_set_stats(file_path: str) -> Tuple[float, float]:
+def compute_data_set_stats(file_path: str, mask: dict, compute: bool = True) -> Tuple[float, float]:
     """Compute data set efficacy and cloud ratio.
 
     It opens the given ``file_path`` and calculate the mask statistics, such efficacy and cloud ratio.
@@ -527,7 +507,7 @@ def compute_data_set_stats(file_path: str) -> Tuple[float, float]:
     with rasterio.open(file_path, 'r') as data_set:
         raster = data_set.read(1)
 
-        efficacy, cloud_ratio = _qa_statistics(raster)
+        efficacy, cloud_ratio = _qa_statistics(raster, mask=mask, compute=compute)
 
     return efficacy, cloud_ratio
 
@@ -596,12 +576,16 @@ def blend(activity, band_map, build_clear_observation=False):
     numscenes = len(activity['scenes'])
 
     band = activity['band']
+    activity_mask = activity['mask']
+    mask_values = None
 
     version = activity['version']
 
-    nodata = activity.get('nodata', -9999)
-    if band == 'quality':
-        nodata = 255
+    # TODO: It must be changed since sen2cor values use 0 as nodata.
+    #       The activity_mask may store only nodata for cloud file.
+    nodata = int(activity.get('nodata', -9999))
+    if band == band_map['quality']:
+        nodata = activity_mask['nodata']
 
     # Get basic information (profile) of input files
     keys = list(activity['scenes'].keys())
@@ -637,9 +621,13 @@ def blend(activity, band_map, build_clear_observation=False):
         scene = activity['scenes'][key]
 
         filename = scene['ARDfiles'][band_map['quality']]
+        quality_ref = rasterio.open(filename)
+
+        if mask_values is None:
+            mask_values = parse_mask(quality_ref.read(1), activity_mask)
 
         try:
-            masklist.append(rasterio.open(filename))
+            masklist.append(quality_ref)
         except BaseException as e:
             raise IOError('FileError while opening {} - {}'.format(filename, e))
 
@@ -658,6 +646,10 @@ def blend(activity, band_map, build_clear_observation=False):
     # Build the raster to store the output images.
     width = profile['width']
     height = profile['height']
+
+    # Get the map values
+    clear_values = mask_values['clear_data']
+    not_clear_values = mask_values['not_clear_data']
 
     # STACK will be generated in memory
     stack_raster = numpy.full((height, width), dtype=profile['dtype'], fill_value=nodata)
@@ -727,10 +719,9 @@ def blend(activity, band_map, build_clear_observation=False):
             copy_mask = numpy.array(mask, copy=True)
 
             # Mask valid data (0 and 1) as True
-            mask[mask < 2] = 1
-            mask[mask == 3] = 1
+            mask[numpy.where(numpy.isin(mask, clear_values))] = 1
             # Mask cloud/snow/shadow/no-data as False
-            mask[mask >= 2] = 0
+            mask[numpy.where(numpy.isin(mask, not_clear_values))] = 0
             # Ensure that Raster noda value (-9999 maybe) is set to False
             mask[raster == nodata] = 0
 
@@ -742,8 +733,8 @@ def blend(activity, band_map, build_clear_observation=False):
             stackMA[order] = numpy.ma.masked_where(bmask, raster)
 
             # Copy Masked values in order to stack total observation
-            copy_mask[copy_mask <= 4] = 1
-            copy_mask[copy_mask >= 5] = 0
+            copy_mask[copy_mask != nodata] = 1
+            copy_mask[copy_mask == nodata] = 0
 
             stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask.astype(numpy.uint8)
 
@@ -822,7 +813,7 @@ def blend(activity, band_map, build_clear_observation=False):
         masklist[order].close()
 
     # Evaluate cloud cover
-    efficacy, cloudcover = _qa_statistics(stack_raster)
+    efficacy, cloudcover = _qa_statistics(stack_raster, mask=mask_values, compute=False)
 
     profile.update({
         'compress': 'LZW',
@@ -1128,7 +1119,7 @@ def generate_quick_look(file_path, qlfiles):
     return pngname
 
 
-def getMask(raster, dataset):
+def getMask(raster, dataset, mask=None, compute=False):
     """Retrieve and re-sample quality raster to well-known values used in Brazil Data Cube.
 
     We adopted the `Fmask <https://github.com/GERSL/Fmask>`_ (Function of Mask).
@@ -1180,12 +1171,64 @@ def getMask(raster, dataset):
         lut[255] = 4
         rastercm = numpy.take(lut, raster).astype(numpy.uint8)
 
-    efficacy, cloudratio = _qa_statistics(rastercm)
+    efficacy, cloudratio = _qa_statistics(rastercm, mask=mask, compute=compute)
 
     return rastercm.astype(numpy.uint8), efficacy, cloudratio
 
 
-def _qa_statistics(raster) -> Tuple[float, float]:
+def parse_mask(raster: numpy.ndarray, mask: dict):
+    """Parse input mask according to the raster.
+
+    This method expects a dict with contains the following keys:
+
+        clear_data - Array of clear data
+        nodata - Cloud mask nodata
+        not_clear (Optional) _ List of pixels to be not considered.
+
+    It will read the input array and get all unique values. Make sure to call for cloud file.
+
+    Notes:
+        It may take too long do parse, according to the raster.
+
+    Args:
+        raster (numpy.ndarray): Numpy array represents data cube cloud mask
+        mask (dict): Mapping for cloud masking values.
+
+    Returns:
+        dict Representing the mapped values of cloud mask.
+    """
+    clear_data = numpy.array(mask['clear_data'])
+    not_clear_data = numpy.array(mask.get('not_clear_data', []))
+
+    if mask.get('nodata') is None:
+        raise RuntimeError('Excepted nodata value set to compute data set statistics.')
+
+    nodata = mask['nodata']
+
+    # TODO: This method may be slow. Maybe get difference between clear/not_clear/nodata on numpy.where
+    unique_values = numpy.unique(raster)
+
+    if not_clear_data.size == 0:
+        not_clear_data = numpy.setdiff1d(unique_values, clear_data)
+
+    # Not clear data cannot use no data
+    not_clear_data = numpy.setdiff1d(not_clear_data, numpy.array([nodata]))
+    # Store both clear_data, not clear data and no data.
+    useful_values = list(clear_data.tolist())
+    useful_values.extend(list(not_clear_data.tolist()))
+    useful_values.extend([nodata])
+    # Get all unspecified values
+    others_values = numpy.setdiff1d(unique_values, useful_values)
+
+    return dict(
+        clear_data=clear_data,
+        not_clear_data=not_clear_data,
+        nodata=nodata,
+        others=others_values
+    )
+
+
+def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, float]:
     """Retrieve raster statistics efficacy and not clear ratio, based in Fmask values.
 
     Notes:
@@ -1193,20 +1236,24 @@ def _qa_statistics(raster) -> Tuple[float, float]:
         Values 2 and 4 are considered as `not clear data`
         The values for snow `3` and nodata `255` is not used to count efficacy and not clear ratio
     """
+    if compute:
+        mask = parse_mask(raster, mask)
+
+    # Compute how much data is for each class. It will be used as image area
+    clear_pixels = raster[numpy.where(numpy.isin(raster, mask['clear_data']))].size
+    not_clear_pixels = raster[numpy.where(numpy.isin(raster, mask['not_clear_data']))].size
+    others_pixels = raster[numpy.where(numpy.isin(raster, mask['others']))].size
+
+    # Total pixels used to retrieve data efficacy
     total_pixels = raster.size
-    clear_pixel = numpy.count_nonzero(raster < 2)
-    # TODO: Custom values mappings
-    cloud_pixels = raster[raster == 4].size
-    cloud_shadow = raster[raster == 2].size
-    snow_pixels = raster[raster == 3].size
-    not_clear_pixel = cloud_pixels + cloud_shadow
-    image_area = clear_pixel + not_clear_pixel + snow_pixels
+    # Image area is everything, except nodata.
+    image_area = clear_pixels + not_clear_pixels + others_pixels
     not_clear_ratio = 100
 
     if image_area != 0:
-        not_clear_ratio = round(100. * not_clear_pixel / image_area, 2)
+        not_clear_ratio = round(100. * not_clear_pixels / image_area, 2)
 
-    efficacy = round(100. * clear_pixel / total_pixels, 2)
+    efficacy = round(100. * clear_pixels / total_pixels, 2)
 
     return efficacy, not_clear_ratio
 

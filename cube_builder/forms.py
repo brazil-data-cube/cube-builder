@@ -147,6 +147,7 @@ class DataCubeProcessForm(Schema):
     # Reuse data cube from another data cube
     reuse_from = fields.String(required=False, allow_none=True)
     histogram_matching = fields.Boolean(required=False, default=False)
+    mask = fields.Dict()
 
 
 class PeriodForm(Schema):
