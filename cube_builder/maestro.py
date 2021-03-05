@@ -24,8 +24,7 @@ from stac import STAC
 # Cube Builder
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
-from .constants import (CLEAR_OBSERVATION_NAME, DATASOURCE_NAME,
-                        PROVENANCE_NAME, TOTAL_OBSERVATION_NAME)
+from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from .utils.processing import get_cube_id, get_or_create_activity
 from .utils.timeline import Timeline
 

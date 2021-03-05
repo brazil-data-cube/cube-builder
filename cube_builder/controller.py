@@ -14,8 +14,7 @@ from typing import Tuple, Union
 # 3rdparty
 import rasterio
 import sqlalchemy
-from bdc_catalog.models import (Band, BandSRC, Collection, CompositeFunction,
-                                GridRefSys, Item, MimeType, Quicklook,
+from bdc_catalog.models import (Band, BandSRC, Collection, CompositeFunction, GridRefSys, Item, MimeType, Quicklook,
                                 ResolutionUnit, SpatialRefSys, Tile, db)
 from geoalchemy2 import func
 from geoalchemy2.shape import from_shape
@@ -25,10 +24,8 @@ from shapely.geometry import Polygon
 from werkzeug.exceptions import NotFound, abort
 
 from .celery.utils import list_pending_tasks, list_running_tasks
-from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME,
-                        COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
-                        PROVENANCE_ATTRIBUTES, PROVENANCE_NAME,
-                        SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_ATTRIBUTES,
+from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
+                        PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_ATTRIBUTES,
                         TOTAL_OBSERVATION_NAME)
 from .forms import CollectionForm
 from .maestro import Maestro

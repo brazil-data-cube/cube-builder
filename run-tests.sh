@@ -7,8 +7,8 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
-pydocstyle cube_builder && \
-isort --check-only --diff --recursive cube_builder/*.py && \
-check-manifest --ignore ".readthedocs.*" && \
-sphinx-build -qnW --color -b doctest docs/sphinx/ docs/sphinx/_build/doctest # && \
+pydocstyle cube_builder tests setup.py && \
+isort cube_builder tests setup.py --check-only --diff -l 120 && \
+check-manifest --ignore ".drone.yml,.readthedocs.*" && \
+sphinx-build -qnW --color -b doctest docs/sphinx/ docs/sphinx/_build/doctest && \
 pytest

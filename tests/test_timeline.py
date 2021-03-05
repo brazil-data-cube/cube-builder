@@ -9,6 +9,7 @@
 """Define the unittests for data cube timeline."""
 
 import datetime
+
 from dateutil.relativedelta import relativedelta
 
 from cube_builder.utils.timeline import Timeline
