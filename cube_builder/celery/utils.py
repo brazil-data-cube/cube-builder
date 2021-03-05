@@ -7,11 +7,13 @@
 #
 
 """Defines the utility functions to use among celery tasks."""
-import requests
-
-from celery import current_app
 from urllib.parse import urlparse
+
+import requests
+from celery import current_app
+
 from ..config import Config
+
 
 def list_running_tasks():
     """List all running tasks in celery cluster."""

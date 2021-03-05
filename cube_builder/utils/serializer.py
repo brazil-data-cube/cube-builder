@@ -7,8 +7,9 @@
 
 """File responsible for data serialization."""
 
-from sqlalchemy.inspection import inspect
 from decimal import Decimal
+
+from sqlalchemy.inspection import inspect
 
 
 class Serializer(object):

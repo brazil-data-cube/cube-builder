@@ -9,9 +9,9 @@
 """Define Data Cube Timeline utilities."""
 
 from datetime import date, datetime, timedelta
-from dateutil.relativedelta import relativedelta
 from typing import Union
 
+from dateutil.relativedelta import relativedelta
 
 SchemaType = Union['cyclic', 'continuous']
 

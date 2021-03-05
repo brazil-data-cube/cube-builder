@@ -9,6 +9,7 @@
 """Python Module for Cube Builder."""
 
 import os
+
 from setuptools import find_packages, setup
 
 readme = open('README.rst').read()
