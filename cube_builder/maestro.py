@@ -24,8 +24,7 @@ from stac import STAC
 # Cube Builder
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
-from .constants import (CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, FMASK_CLEAR_DATA, FMASK_NOT_CLEAR_DATA,
-                        PROVENANCE_NAME, TOTAL_OBSERVATION_NAME)
+from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from .models import CubeParameters
 from .utils.processing import get_cube_id, get_or_create_activity
 from .utils.timeline import Timeline
@@ -95,7 +94,6 @@ class Maestro:
 
         force = properties.get('force', False)
         self.properties = properties
-        self.properties.setdefault('mask', dict(clear_data=FMASK_CLEAR_DATA, not_clear_data=FMASK_NOT_CLEAR_DATA))
         self.params['force'] = force
         self.mosaics = dict()
         self.cached_stacs = dict()

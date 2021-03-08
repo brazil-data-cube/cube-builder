@@ -67,8 +67,3 @@ COG_MIME_TYPE = 'image/tiff; application=geotiff; profile=cloud-optimized'
 PNG_MIME_TYPE = 'image/png'
 
 SRID_ALBERS_EQUAL_AREA = 100001
-
-FMASK_CLEAR_DATA = (0, 1)
-"""Define the Clear Data values for the cloud masking Fmask4."""
-FMASK_NOT_CLEAR_DATA = (2, 4)
-"""Define the Not Clear Data values for the cloud masking Fmask4."""
