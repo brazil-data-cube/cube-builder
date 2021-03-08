@@ -58,6 +58,12 @@ class BandDefinition(Schema):
     metadata = fields.Dict(required=False, allow_none=False)
 
 
+def validate_mask(value):
+    """Validate data cube definition for mask property."""
+    if not value.get('clear_data'):
+        raise ValidationError('Missing property "clear_data" in the "mask".')
+
+
 class DataCubeForm(Schema):
     """Define parser for datacube creation."""
 
@@ -78,6 +84,7 @@ class DataCubeForm(Schema):
     public = fields.Boolean(required=False, allow_none=False, default=True)
     # Is Data cube generated from Combined Collections?
     is_combined = fields.Boolean(required=False, allow_none=False, default=False)
+    mask = fields.Dict(required=True, validate=validate_mask)
 
     @pre_load
     def validate_indexes(self, data, **kwargs):

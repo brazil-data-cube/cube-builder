@@ -9,3 +9,4 @@
 """Define Cube Builder SQLAlchemy models module."""
 
 from .activity import Activity
+from .cube_parameters import CubeParameters

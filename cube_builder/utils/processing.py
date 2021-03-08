@@ -353,7 +353,6 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
     if band == band_map['quality']:
         raster_merge, efficacy, cloudratio = getMask(raster_merge, datasets, mask=mask, compute=compute)
         template.update({'dtype': 'uint8'})
-        nodata = 255
 
     template['nodata'] = nodata
 
@@ -1117,27 +1116,8 @@ def generate_quick_look(file_path, qlfiles):
     return pngname
 
 
-def getMask(raster, dataset, mask=None, compute=False):
+def getMask(raster, dataset=None, mask=None, compute=False):
     """Retrieve and re-sample quality raster to well-known values used in Brazil Data Cube.
-
-    We adopted the `Fmask <https://github.com/GERSL/Fmask>`_ (Function of Mask).
-    TODO: Add paper/authors reference
-
-    In the Fmask output product, the following classes are presented in a normative quality:
-        - 0: Clear Land Pixel
-        - 1: Clear Water Pixel
-        - 2: Cloud Shadow
-        - 3: Snow-ice
-        - 4: Cloud
-        - 255: no observation
-
-    For satellite which does not supports these values, consider to expose individual values.
-    For example:
-        CBERS does not have `Snow-ice`, `Water` or `Cloud Shadow` pixel values. The following values are described
-        in CBERS quality band:
-        - `0`: Fill/Nodata. Re-sample to `No observation` (255);
-        - `127: Valid Data. Re-sample to `Clear Land Pixel` (0);
-        - `255`: Cloudy. Re-sample to `Cloud` (4)
 
     Args:
         raster - Raster with Quality band values
@@ -1147,27 +1127,6 @@ def getMask(raster, dataset, mask=None, compute=False):
         Tuple containing formatted quality raster, efficacy and cloud ratio, respectively.
     """
     rastercm = raster
-    if any('MOD13Q1' in elm or 'MYD13Q1' in elm for elm in dataset):
-        # MOD13Q1 Pixel Reliability !!!!!!!!!!!!!!!!!!!!
-        # Note that 1 was added to this image in downloadModis because of warping
-        # Rank/Key Summary QA 		Description
-        # -1 		Fill/No Data 	Not Processed
-        # 0 		Good Data 		Use with confidence
-        # 1 		Marginal data 	Useful, but look at other QA information
-        # 2 		Snow/Ice 		Target covered with snow/ice
-        # 3 		Cloudy 			Target not visible, covered with cloud
-        lut = numpy.array([255, 0, 0, 2, 4], dtype=numpy.uint8)
-        rastercm = numpy.take(lut, raster+1).astype(numpy.uint8)
-    elif any('CBERS4' in elm or 'CB4' in elm for elm in dataset):
-        # Key Summary        QA Description
-        #   0 Fill/No Data - Not Processed
-        # 127 Good Data    - Use with confidence
-        # 255 Cloudy       - Target not visible, covered with cloud
-        lut = numpy.zeros(256, dtype=numpy.uint8)
-        lut[0] = 255
-        lut[127] = 0
-        lut[255] = 4
-        rastercm = numpy.take(lut, raster).astype(numpy.uint8)
 
     efficacy, cloudratio = _qa_statistics(rastercm, mask=mask, compute=compute)
 
@@ -1185,8 +1144,24 @@ def parse_mask(raster: numpy.ndarray, mask: dict):
 
     It will read the input array and get all unique values. Make sure to call for cloud file.
 
+    The following section describe an example how to pass the mask values for any cloud processor:
+
+        fmask = dict(
+            clear_data=[0, 1],
+            not_clear_data=[2, 3, 4],
+            nodata=255
+        )
+
+        sen2cor = dict(
+            clear_data=[4, 5, 6, 7],
+            not_clear_data=[2, 3, 8, 9, 10, 11],
+            satured=[1],
+            nodata=0
+        )
+
     Notes:
         It may take too long do parse, according to the raster.
+        Not mapped values will be treated as "others" and may not be count in the Clear Observation Band (CLEAROB).
 
     Args:
         raster (numpy.ndarray): Numpy array represents data cube cloud mask

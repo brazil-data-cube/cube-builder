@@ -9,7 +9,6 @@
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
 # Python
-import datetime
 from contextlib import contextmanager
 from time import time
 from typing import List
@@ -19,13 +18,15 @@ import numpy
 from bdc_catalog.models import Band, Collection, GridRefSys, Tile, db
 from celery import chain, group
 from geoalchemy2 import func
+from shapely.geometry import shape
 from stac import STAC
 
 # Cube Builder
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
-from .constants import (CLEAR_OBSERVATION_NAME, DATASOURCE_NAME,
-                        PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, FMASK_CLEAR_DATA, FMASK_NOT_CLEAR_DATA)
+from .constants import (CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, FMASK_CLEAR_DATA, FMASK_NOT_CLEAR_DATA,
+                        PROVENANCE_NAME, TOTAL_OBSERVATION_NAME)
+from .models import CubeParameters
 from .utils.processing import get_cube_id, get_or_create_activity
 from .utils.timeline import Timeline
 
@@ -160,6 +161,20 @@ class Maestro:
         self.datacube = Collection.query().filter(Collection.name == self.params['datacube']).one()
 
         temporal_schema = self.datacube.temporal_composition_schema
+
+        cube_parameters: CubeParameters = CubeParameters.query().filter(
+            CubeParameters.collection_id == self.datacube.id
+        ).first()
+
+        if cube_parameters is None:
+            raise RuntimeError(f'No parameters configured for data cube "{self.datacube.id}"')
+
+        if cube_parameters.metadata_.get('mask') is None:
+            raise RuntimeError(f'Missing mask values in data cube parameters {cube_parameters.id} '
+                               f'for data cube "{self.datacube.id}"')
+
+        # Pass the cube parameters to the data cube functions arguments
+        self.properties.update(cube_parameters.metadata_)
 
         dstart = self.params['start_date']
         dend = self.params['end_date']
@@ -417,8 +432,8 @@ class Maestro:
         scenes = {}
         options = dict(
             intersects=feature,
-            datetime='{}/{}'.format(start, end),
-            limit=100000
+            time='{}/{}'.format(start, end),
+            limit=1000
         )
 
         bands = self.datacube_bands
@@ -439,12 +454,6 @@ class Maestro:
                 scenes[band.name] = dict()
 
         for dataset in self.params['collections']:
-            if 'CBERS' in dataset:
-                options = dict(
-                    bbox=bbox,
-                    time='{}/{}'.format(start, end),
-                    limit=1000
-                )
             options['collections'] = [dataset]
             stac = self.get_stac(dataset)
 
@@ -454,10 +463,16 @@ class Maestro:
                                                                       end, stac.url), end='', flush=True)
 
             with timing(' total'):
-                if 'CBERS' in dataset and Config.CBERS_AUTH_TOKEN:
-                    token = '?key={}'.format(Config.CBERS_AUTH_TOKEN)
-
-                items = stac.search(filter=options)
+                if 'CBERS' in dataset:
+                    bbox = shape(feature).bounds
+                    _filter = dict(
+                        bbox=','.join([str(elm) for elm in bbox]),
+                        time=f'{start}/{end}',
+                        limit=10000
+                    )
+                    items = stac.collection(dataset).get_items(filter=_filter)
+                else:
+                    items = stac.search(filter=options)
 
                 for feature in items['features']:
                     if feature['type'] == 'Feature':
