@@ -432,7 +432,7 @@ class Maestro:
         scenes = {}
         options = dict(
             intersects=feature,
-            time='{}/{}'.format(start, end),
+            datetime='{}/{}'.format(start, end),
             limit=1000
         )
 

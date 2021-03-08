@@ -647,6 +647,7 @@ def blend(activity, band_map, build_clear_observation=False, block_size=None):
     # Get the map values
     clear_values = mask_values['clear_data']
     not_clear_values = mask_values['not_clear_data']
+    saturated_values = mask_values['saturated_data']
 
     # STACK will be generated in memory
     stack_raster = numpy.full((height, width), dtype=profile['dtype'], fill_value=nodata)
@@ -721,6 +722,7 @@ def blend(activity, band_map, build_clear_observation=False, block_size=None):
             mask[numpy.where(numpy.isin(mask, not_clear_values))] = 0
             # Ensure that Raster noda value (-9999 maybe) is set to False
             mask[raster == nodata] = 0
+            mask[numpy.where(numpy.isin(mask, saturated_values))] = 0
 
             # Create an inverse mask value in order to pass to numpy masked array
             # True => nodata
@@ -1155,7 +1157,7 @@ def parse_mask(raster: numpy.ndarray, mask: dict):
         sen2cor = dict(
             clear_data=[4, 5, 6, 7],
             not_clear_data=[2, 3, 8, 9, 10, 11],
-            satured=[1],
+            saturated=[1],
             nodata=0
         )
 
@@ -1172,6 +1174,7 @@ def parse_mask(raster: numpy.ndarray, mask: dict):
     """
     clear_data = numpy.array(mask['clear_data'])
     not_clear_data = numpy.array(mask.get('not_clear_data', []))
+    saturated_data = mask.get('saturated', [])
 
     if mask.get('nodata') is None:
         raise RuntimeError('Excepted nodata value set to compute data set statistics.')
@@ -1190,12 +1193,14 @@ def parse_mask(raster: numpy.ndarray, mask: dict):
     useful_values = list(clear_data.tolist())
     useful_values.extend(list(not_clear_data.tolist()))
     useful_values.extend([nodata])
+    useful_values.extend(saturated_data)
     # Get all unspecified values
     others_values = numpy.setdiff1d(unique_values, useful_values)
 
     return dict(
         clear_data=clear_data,
         not_clear_data=not_clear_data,
+        saturated_data=saturated_data,
         nodata=nodata,
         others=others_values
     )
