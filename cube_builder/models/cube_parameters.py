@@ -13,6 +13,8 @@ from bdc_catalog.models import Collection
 from bdc_catalog.models.base_sql import BaseModel
 from sqlalchemy.orm import relationship
 
+from cube_builder.config import Config
+
 
 class CubeParameters(BaseModel):
     """Define a table to store the data cube parameters to be passed during the execution."""
@@ -28,5 +30,5 @@ class CubeParameters(BaseModel):
 
     __table_args__ = (
         sa.Index(None, collection_id),
-        dict(schema='cube_builder'),
+        dict(schema=Config.ACTIVITIES_SCHEMA),
     )

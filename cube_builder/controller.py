@@ -211,7 +211,7 @@ class CubeController:
 
         default_params = dict(
             metadata_=dict(
-                mask=params['mask']
+                mask=params['parameters']
             )
         )
         cube_parameters, _ = get_or_create_model(CubeParameters, defaults=default_params, collection_id=cube.id)

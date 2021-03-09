@@ -84,7 +84,7 @@ class DataCubeForm(Schema):
     public = fields.Boolean(required=False, allow_none=False, default=True)
     # Is Data cube generated from Combined Collections?
     is_combined = fields.Boolean(required=False, allow_none=False, default=False)
-    mask = fields.Dict(required=True, validate=validate_mask)
+    parameters = fields.Dict(required=True)
 
     @pre_load
     def validate_indexes(self, data, **kwargs):
