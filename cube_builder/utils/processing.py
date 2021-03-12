@@ -201,7 +201,7 @@ def prepare_asset_url(url: str) -> str:
     return urljoin(url, parsed_url.path)
 
 
-def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, build_provenance=False, compute=False, **kwargs):
+def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: dict, quality_band: str, build_provenance=False, compute=False, **kwargs):
     """Apply datacube merge scenes.
 
     TODO: Describe how it works.
@@ -214,7 +214,6 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
         build_provenance: Build a provenance file for Merge (Used in combined collections)
         **kwargs: Extra properties
     """
-    nodata = kwargs.get('nodata', -9999)
     xmin = kwargs.get('xmin')
     ymax = kwargs.get('ymax')
     dist_x = kwargs.get('dist_x')
@@ -244,26 +243,23 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
         )
         datasets = [datasets]
 
-    source_nodata = 0
-    has_saturated_band = 'saturated_band' in mask
+    source_nodata = nodata = float(band_map[band]['nodata'])
+    data_type = band_map[band]['data_type']
+    resampling = Resampling.nearest
 
-    if band == band_map['quality'] or has_saturated_band:
-        resampling = Resampling.nearest
-
-        nodata = float(mask['nodata'])
-        source_nodata = nodata
-
-        raster = numpy.zeros((rows, cols,), dtype=numpy.uint16)
-        raster_merge = numpy.full((rows, cols,), dtype=numpy.uint16, fill_value=source_nodata)
-
-        if build_provenance:
-            raster_provenance = numpy.full((rows, cols,),
-                                           dtype=DATASOURCE_ATTRIBUTES['data_type'],
-                                           fill_value=DATASOURCE_ATTRIBUTES['nodata'])
-    else:
+    if quality_band == band:
+        source_nodata = nodata = float(mask['nodata'])
+        # Only apply bilinear (change pixel values) for band values
+    elif mask.get('saturated_band') != band:
         resampling = Resampling.bilinear
-        raster = numpy.zeros((rows, cols,), dtype=numpy.int16)
-        raster_merge = numpy.full((rows, cols,), fill_value=nodata, dtype=numpy.int16)
+
+    raster = numpy.zeros((rows, cols,), dtype=data_type)
+    raster_merge = numpy.full((rows, cols,), dtype=data_type, fill_value=source_nodata)
+
+    if build_provenance:
+        raster_provenance = numpy.full((rows, cols,),
+                                       dtype=DATASOURCE_ATTRIBUTES['data_type'],
+                                       fill_value=DATASOURCE_ATTRIBUTES['nodata'])
 
     template = None
     is_combined_collection = len(datasets) > 1
@@ -290,16 +286,13 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
                     if src.profile['nodata'] is not None:
                         source_nodata = src.profile['nodata']
                     elif 'LC8SR' in dataset:
-                        if band != band_map['quality']:
+                        if band != quality_band:
                             # Temporary workaround for landsat
                             # Sometimes, the laSRC does not generate the data set properly and
                             # the data maybe UInt16 instead Int16
                             source_nodata = nodata if src.profile['dtype'] == 'int16' else 0
-                    elif 'CBERS' in dataset and band != band_map['quality']:
+                    elif 'CBERS' in dataset and band != quality_band:
                         source_nodata = nodata
-
-                    if has_saturated_band:
-                        nodata = source_nodata
 
                     kwargs.update({
                         'nodata': source_nodata
@@ -341,31 +334,27 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
                             else:
                                 valid_data_scene = raster[raster != nodata]
                                 raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
+                                valid_data_scene = None
 
                             if template is None:
                                 template = dst.profile
                                 # Ensure type is >= int16
 
-                                if band != band_map['quality']:
-                                    template['dtype'] = 'int16'
-                                    template['nodata'] = nodata
+    template['dtype'] = data_type
+    template['nodata'] = nodata
 
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
     cloudratio = 100
     raster = None
-    if band == band_map['quality']:
+    if band == quality_band:
         raster_merge, efficacy, cloudratio = getMask(raster_merge, datasets, mask=mask, compute=compute)
-        template.update({'dtype': 'uint8'})
-
-    template['nodata'] = nodata
 
     # Ensure file tree is created
     merge_file = Path(merge_file)
     merge_file.parent.mkdir(parents=True, exist_ok=True)
 
     template.update({
-        'compress': 'LZW',
         'tiled': True,
         "interleave": "pixel",
     })
@@ -379,7 +368,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
         nodata=nodata
     )
 
-    if band == band_map['quality'] and len(datasets) > 1:
+    if band == quality_band and len(datasets) > 1:
         provenance = merge_file.parent / merge_file.name.replace(band, DATASOURCE_NAME)
 
         profile = deepcopy(template)
@@ -392,7 +381,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
         options[DATASOURCE_NAME] = str(provenance)
 
     # Persist on file as Cloud Optimized GeoTIFF
-    save_as_cog(str(merge_file), raster_merge, block_size=block_size, **template)
+    save_as_cog(str(merge_file), raster_merge.astype(data_type), block_size=block_size, **template)
 
     return options
 
@@ -513,7 +502,7 @@ def compute_data_set_stats(file_path: str, mask: dict, compute: bool = True) -> 
     return efficacy, cloud_ratio
 
 
-def blend(activity, band_map, build_clear_observation=False, block_size=None):
+def blend(activity, band_map, quality_band, build_clear_observation=False, block_size=None):
     """Apply blend and generate raster from activity.
 
     Basically, the blend operation consists in stack all the images (merges) in period. The stack is based in
@@ -586,7 +575,7 @@ def blend(activity, band_map, build_clear_observation=False, block_size=None):
     # TODO: It must be changed since sen2cor values use 0 as nodata.
     #       The activity_mask may store only nodata for cloud file.
     nodata = int(activity.get('nodata', -9999))
-    if band == band_map['quality']:
+    if band == quality_band:
         nodata = activity_mask['nodata']
 
     # Get basic information (profile) of input files
@@ -612,7 +601,6 @@ def blend(activity, band_map, build_clear_observation=False, block_size=None):
     # Open all input files and save the datasets in two lists, one for masks and other for the current band.
     # The list will be ordered by efficacy/resolution
     masklist = []
-
     bandlist = []
 
     provenance_merge_map = dict()
@@ -622,7 +610,7 @@ def blend(activity, band_map, build_clear_observation=False, block_size=None):
         efficacy = m[0]
         scene = activity['scenes'][key]
 
-        filename = scene['ARDfiles'][band_map['quality']]
+        filename = scene['ARDfiles'][quality_band]
         quality_ref = rasterio.open(filename)
 
         if mask_values is None:
@@ -736,6 +724,7 @@ def blend(activity, band_map, build_clear_observation=False, block_size=None):
 
             if saturated_list:
                 saturated = saturated_list[order].dataset.read(1, window=window)
+
                 saturated = radsat_extract_bits(saturated, 1, 7).astype(numpy.bool_)
 
                 mask[saturated] = 0

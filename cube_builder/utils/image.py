@@ -236,7 +236,7 @@ def radsat_extract_bits(bit_value: Union[int, numpy.ndarray], bit_start: int, bi
         >>> # Check if any band is saturated
         >>> radsat_extract_bits(1026, 1, 7)
         >>> # You can also pass the numpy array
-        >>> radsat_extract_bits(numpy.random.randint(0, 1028, size=(100, 100)))
+        >>> radsat_extract_bits(numpy.random.randint(0, 1028, size=(100, 100)), 1, 7)
     """
     if bit_end is None:
         bit_end = bit_start

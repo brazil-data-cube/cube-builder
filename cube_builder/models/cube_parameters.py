@@ -32,3 +32,13 @@ class CubeParameters(BaseModel):
         sa.Index(None, collection_id),
         dict(schema=Config.ACTIVITIES_SCHEMA),
     )
+
+    def _require_property(self, prop: str):
+        if self.metadata_.get(prop) is None:
+            raise RuntimeError(f'Missing property "{prop}" in data cube parameters {self.id} '
+                               f'for data cube "{self.cube.id}"')
+
+    def validate(self):
+        """Validate minimal properties for metadata field."""
+        self._require_property('mask')
+        self._require_property('quality_band')

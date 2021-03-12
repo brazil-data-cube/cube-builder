@@ -167,9 +167,8 @@ class Maestro:
         if cube_parameters is None:
             raise RuntimeError(f'No parameters configured for data cube "{self.datacube.id}"')
 
-        if cube_parameters.metadata_.get('mask') is None:
-            raise RuntimeError(f'Missing mask values in data cube parameters {cube_parameters.id} '
-                               f'for data cube "{self.datacube.id}"')
+        # Validate parameters
+        cube_parameters.validate()
 
         # Pass the cube parameters to the data cube functions arguments
         self.properties.update(cube_parameters.metadata_)
@@ -316,14 +315,13 @@ class Maestro:
                 band.name for band in bands if band.name not in common_bands
             ]
 
-            band_map = {b.common_name: b.name for b in bands}
-
-            if not band_map.get('quality'):
-                raise RuntimeError('Quality band is required')
+            band_map = {b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata) for b in bands}
 
             warped_datacube = self.warped_datacube.name
 
-            quality = next(filter(lambda b: b.name == band_map['quality'], bands))
+            quality_band = self.properties['quality_band']
+
+            quality = next(filter(lambda b: b.name == quality_band, bands))
             self.properties['mask']['nodata'] = float(quality.nodata)
 
             for tileid in self.mosaics:
