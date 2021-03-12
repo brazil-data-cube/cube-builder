@@ -281,6 +281,19 @@ def prepare_blend(merges, band_map: dict, **kwargs):
 
         activities[_merge['band']] = activity
 
+    if kwargs.get('mask') and kwargs['mask'].get('saturated_band'):
+        saturated_mask = kwargs['mask']['saturated_band']
+
+        if saturated_mask not in activities:
+            raise RuntimeError(f'Unexpected error: Missing {saturated_mask}')
+
+        reference = activities[saturated_mask]
+
+        for band, activity in activities.items():
+            for merge_date, scene in activity['scenes'].items():
+                saturated_merge_file = reference['scenes'][merge_date]['ARDfiles'][saturated_mask]
+                scene['ARDfiles'][saturated_mask] = saturated_merge_file
+
     # TODO: Add option to skip histogram.
     if kwargs.get('histogram_matching'):
         ordered_best_efficacy = sorted(quality_date_stats.items(), key=lambda item: item[1][0], reverse=True)

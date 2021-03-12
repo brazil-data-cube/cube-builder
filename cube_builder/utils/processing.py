@@ -223,10 +223,10 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
     resx, resy = kwargs['resx'], kwargs['resy']
     block_size = kwargs.get('block_size')
     shape = kwargs.get('shape', None)
+
     if shape:
         cols = shape[0]
         rows = shape[1]
-
     else:
         cols = round(dist_x / resx)
         rows = round(dist_y / resy)
@@ -245,8 +245,9 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
         datasets = [datasets]
 
     source_nodata = 0
+    has_saturated_band = 'saturated_band' in mask
 
-    if band == band_map['quality']:
+    if band == band_map['quality'] or has_saturated_band:
         resampling = Resampling.nearest
 
         nodata = float(mask['nodata'])
@@ -296,6 +297,9 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map, 
                             source_nodata = nodata if src.profile['dtype'] == 'int16' else 0
                     elif 'CBERS' in dataset and band != band_map['quality']:
                         source_nodata = nodata
+
+                    if has_saturated_band:
+                        nodata = source_nodata
 
                     kwargs.update({
                         'nodata': source_nodata
@@ -569,6 +573,7 @@ def blend(activity, band_map, build_clear_observation=False, block_size=None):
     Returns:
         A processed activity with the generated values.
     """
+    from .image import radsat_extract_bits
     # Assume that it contains a band and quality band
     numscenes = len(activity['scenes'])
 
@@ -621,7 +626,7 @@ def blend(activity, band_map, build_clear_observation=False, block_size=None):
         quality_ref = rasterio.open(filename)
 
         if mask_values is None:
-            mask_values = parse_mask(quality_ref.read(1), activity_mask)
+            mask_values = parse_mask(activity_mask)
 
         try:
             masklist.append(quality_ref)
@@ -647,6 +652,16 @@ def blend(activity, band_map, build_clear_observation=False, block_size=None):
     # Get the map values
     clear_values = mask_values['clear_data']
     not_clear_values = mask_values['not_clear_data']
+    saturated_list = []
+    if mask_values.get('saturated_band'):
+        for m in sorted(mask_tuples, reverse=True):
+            key = m[1]
+            scene = activity['scenes'][key]
+
+            filename = scene['ARDfiles'][mask_values['saturated_band']]
+            saturated_file = SmartDataSet(filename, mode='r')
+            saturated_list.append(saturated_file)
+
     saturated_values = mask_values['saturated_data']
 
     # STACK will be generated in memory
@@ -718,6 +733,13 @@ def blend(activity, band_map, build_clear_observation=False, block_size=None):
 
             # Mask valid data (0 and 1) as True
             mask[numpy.where(numpy.isin(mask, clear_values))] = 1
+
+            if saturated_list:
+                saturated = saturated_list[order].dataset.read(1, window=window)
+                saturated = radsat_extract_bits(saturated, 1, 7).astype(numpy.bool_)
+
+                mask[saturated] = 0
+
             # Mask cloud/snow/shadow/no-data as False
             mask[numpy.where(numpy.isin(mask, not_clear_values))] = 0
             # Ensure that Raster noda value (-9999 maybe) is set to False
@@ -1135,7 +1157,7 @@ def getMask(raster, dataset=None, mask=None, compute=False):
     return rastercm.astype(numpy.uint8), efficacy, cloudratio
 
 
-def parse_mask(raster: numpy.ndarray, mask: dict):
+def parse_mask(mask: dict):
     """Parse input mask according to the raster.
 
     This method expects a dict with contains the following keys:
@@ -1166,7 +1188,6 @@ def parse_mask(raster: numpy.ndarray, mask: dict):
         Not mapped values will be treated as "others" and may not be count in the Clear Observation Band (CLEAROB).
 
     Args:
-        raster (numpy.ndarray): Numpy array represents data cube cloud mask
         mask (dict): Mapping for cloud masking values.
 
     Returns:
@@ -1181,29 +1202,17 @@ def parse_mask(raster: numpy.ndarray, mask: dict):
 
     nodata = mask['nodata']
 
-    # TODO: This method may be slow. Maybe get difference between clear/not_clear/nodata on numpy.where
-    unique_values = numpy.unique(raster)
-
-    if not_clear_data.size == 0:
-        not_clear_data = numpy.setdiff1d(unique_values, clear_data)
-
-    # Not clear data cannot use no data
-    not_clear_data = numpy.setdiff1d(not_clear_data, numpy.array([nodata]))
-    # Store both clear_data, not clear data and no data.
-    useful_values = list(clear_data.tolist())
-    useful_values.extend(list(not_clear_data.tolist()))
-    useful_values.extend([nodata])
-    useful_values.extend(saturated_data)
-    # Get all unspecified values
-    others_values = numpy.setdiff1d(unique_values, useful_values)
-
-    return dict(
+    res = dict(
         clear_data=clear_data,
         not_clear_data=not_clear_data,
         saturated_data=saturated_data,
         nodata=nodata,
-        others=others_values
     )
+
+    if mask.get('saturated_band'):
+        res['saturated_band'] = mask['saturated_band']
+
+    return res
 
 
 def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, float]:
@@ -1215,17 +1224,16 @@ def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, fl
         The values for snow `3` and nodata `255` is not used to count efficacy and not clear ratio
     """
     if compute:
-        mask = parse_mask(raster, mask)
+        mask = parse_mask(mask)
 
     # Compute how much data is for each class. It will be used as image area
     clear_pixels = raster[numpy.where(numpy.isin(raster, mask['clear_data']))].size
     not_clear_pixels = raster[numpy.where(numpy.isin(raster, mask['not_clear_data']))].size
-    others_pixels = raster[numpy.where(numpy.isin(raster, mask['others']))].size
 
     # Total pixels used to retrieve data efficacy
     total_pixels = raster.size
     # Image area is everything, except nodata.
-    image_area = clear_pixels + not_clear_pixels + others_pixels
+    image_area = clear_pixels + not_clear_pixels
     not_clear_ratio = 100
 
     if image_area != 0:
