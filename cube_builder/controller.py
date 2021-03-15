@@ -29,7 +29,7 @@ from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, CO
                         TOTAL_OBSERVATION_NAME)
 from .forms import CollectionForm
 from .maestro import Maestro
-from .models import Activity
+from .models import Activity, CubeParameters
 from .utils.image import validate_merges
 from .utils.processing import get_cube_parts, get_or_create_model
 from .utils.serializer import Serializer
@@ -208,6 +208,14 @@ class CubeController:
                                   collection=cube)
 
             quicklook.save(commit=False)
+
+        default_params = dict(
+            metadata_=dict(
+                mask=params['parameters']
+            )
+        )
+        cube_parameters, _ = get_or_create_model(CubeParameters, defaults=default_params, collection_id=cube.id)
+        db.session.add(cube_parameters)
 
         # Create default Cube Bands
         if function != 'IDT':
@@ -659,8 +667,37 @@ class CubeController:
         ), 200
 
     @classmethod
-    def list_composite_functions(self):
+    def list_composite_functions(cls):
         """Retrieve a list of available Composite Functions on Brazil Data Cube database."""
         schemas = CompositeFunction.query().all()
 
         return [Serializer.serialize(schema) for schema in schemas], 200
+
+    @classmethod
+    def configure_parameters(cls, collection_id, **kwargs) -> dict:
+        """Configure data cube parameters to be passed during the execution.
+
+        Args:
+            collection_id (int): Data Cube identifier
+            **kwargs (dict): Map of values to be set as parameter.
+
+        Returns:
+            dict The serialized cube parameters instance object.
+        """
+        cube = CubeController.get_cube_or_404(cube_id=collection_id)
+
+        defaults = dict(
+            metadata_=kwargs
+        )
+        cube_parameters, _ = get_or_create_model(CubeParameters, defaults=defaults, collection_id=cube.id)
+
+        with db.session.begin_nested():
+            # We must create a new copy to make effect in SQLAlchemy
+            meta = deepcopy(cube_parameters.metadata_)
+            meta.update(**kwargs)
+            cube_parameters.metadata_ = meta
+            db.session.add(cube_parameters)
+
+        db.session.commit()
+
+        return Serializer.serialize(cube_parameters)

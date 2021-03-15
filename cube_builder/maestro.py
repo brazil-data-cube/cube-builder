@@ -9,7 +9,6 @@
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
 # Python
-import datetime
 from contextlib import contextmanager
 from time import time
 from typing import List
@@ -19,12 +18,14 @@ import numpy
 from bdc_catalog.models import Band, Collection, GridRefSys, Tile, db
 from celery import chain, group
 from geoalchemy2 import func
+from shapely.geometry import shape
 from stac import STAC
 
 # Cube Builder
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
 from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
+from .models import CubeParameters
 from .utils.processing import get_cube_id, get_or_create_activity
 from .utils.timeline import Timeline
 
@@ -159,6 +160,20 @@ class Maestro:
 
         temporal_schema = self.datacube.temporal_composition_schema
 
+        cube_parameters: CubeParameters = CubeParameters.query().filter(
+            CubeParameters.collection_id == self.datacube.id
+        ).first()
+
+        if cube_parameters is None:
+            raise RuntimeError(f'No parameters configured for data cube "{self.datacube.id}"')
+
+        if cube_parameters.metadata_.get('mask') is None:
+            raise RuntimeError(f'Missing mask values in data cube parameters {cube_parameters.id} '
+                               f'for data cube "{self.datacube.id}"')
+
+        # Pass the cube parameters to the data cube functions arguments
+        self.properties.update(cube_parameters.metadata_)
+
         dstart = self.params['start_date']
         dend = self.params['end_date']
 
@@ -199,7 +214,8 @@ class Maestro:
                 (func.ST_XMin(grid_geom.c.geom)).label('min_x'),
                 (func.ST_YMax(grid_geom.c.geom)).label('max_y'),
                 (func.ST_XMax(grid_geom.c.geom) - func.ST_XMin(grid_geom.c.geom)).label('dist_x'),
-                (func.ST_YMax(grid_geom.c.geom) - func.ST_YMin(grid_geom.c.geom)).label('dist_y')
+                (func.ST_YMax(grid_geom.c.geom) - func.ST_YMin(grid_geom.c.geom)).label('dist_y'),
+                (func.ST_AsGeoJSON(func.ST_Transform(grid_geom.c.geom, 4326))).label('feature')
             ).filter(grid_geom.c.tile == tile_name).first()
 
             self.mosaics[tile_name] = dict(
@@ -226,6 +242,7 @@ class Maestro:
                 self.mosaics[tile_name]['periods'][period]['min_x'] = tile_stats.min_x
                 self.mosaics[tile_name]['periods'][period]['max_y'] = tile_stats.max_y
                 self.mosaics[tile_name]['periods'][period]['dirname'] = cube_relative_path
+                self.mosaics[tile_name]['periods'][period]['feature'] = eval(tile_stats.feature)
                 if self.properties.get('shape', None):
                     self.mosaics[tile_name]['periods'][period]['shape'] = self.properties['shape']
 
@@ -306,10 +323,11 @@ class Maestro:
 
             warped_datacube = self.warped_datacube.name
 
+            quality = next(filter(lambda b: b.name == band_map['quality'], bands))
+            self.properties['mask']['nodata'] = float(quality.nodata)
+
             for tileid in self.mosaics:
                 blends = []
-
-                bbox = self.get_bbox(tileid, self.datacube.grs)
 
                 tile = next(filter(lambda t: t.name == tileid, self.tiles))
 
@@ -320,7 +338,9 @@ class Maestro:
                     start = self.mosaics[tileid]['periods'][period]['start']
                     end = self.mosaics[tileid]['periods'][period]['end']
 
-                    assets_by_period = self.search_images(bbox, start, end, tileid)
+                    feature = self.mosaics[tileid]['periods'][period]['feature']
+
+                    assets_by_period = self.search_images(feature, start, end, tileid)
 
                     if self.datacube.composite_function.alias == 'IDT':
                         stats_bands = (TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME)
@@ -342,7 +362,7 @@ class Maestro:
 
                     for band in bands:
                         # Skip trigger/search for Vegetation Index
-                        if band.common_name.lower() in ('ndvi', 'evi',):
+                        if band.common_name.lower() in ('ndvi', 'evi',) or (band._metadata and band._metadata.get('expression')):
                             continue
 
                         merges = assets_by_period[band.name]
@@ -405,13 +425,13 @@ class Maestro:
 
         return self.mosaics
 
-    def search_images(self, bbox: str, start: str, end: str, tile_id: str):
+    def search_images(self, feature: str, start: str, end: str, tile_id: str):
         """Search and prepare images on STAC."""
         scenes = {}
         options = dict(
-            bbox=bbox,
+            intersects=feature,
             datetime='{}/{}'.format(start, end),
-            limit=100000
+            limit=1000
         )
 
         bands = self.datacube_bands
@@ -432,12 +452,7 @@ class Maestro:
                 scenes[band.name] = dict()
 
         for dataset in self.params['collections']:
-            if 'CBERS' in dataset:
-                options = dict(
-                    bbox=bbox,
-                    time='{}/{}'.format(start, end),
-                    limit=100000
-                )
+            options['collections'] = [dataset]
             stac = self.get_stac(dataset)
 
             token = ''
@@ -446,11 +461,16 @@ class Maestro:
                                                                       end, stac.url), end='', flush=True)
 
             with timing(' total'):
-
-                if 'CBERS' in dataset and Config.CBERS_AUTH_TOKEN:
-                    token = '?key={}'.format(Config.CBERS_AUTH_TOKEN)
-
-                items = stac.collection(dataset).get_items(filter=options)
+                if 'CBERS' in dataset:
+                    bbox = shape(feature).bounds
+                    _filter = dict(
+                        bbox=','.join([str(elm) for elm in bbox]),
+                        time=f'{start}/{end}',
+                        limit=10000
+                    )
+                    items = stac.collection(dataset).get_items(filter=_filter)
+                else:
+                    items = stac.search(filter=options)
 
                 for feature in items['features']:
                     if feature['type'] == 'Feature':

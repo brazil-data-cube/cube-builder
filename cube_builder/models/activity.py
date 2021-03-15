@@ -18,14 +18,12 @@ from sqlalchemy.engine.result import ResultProxy
 
 from ..config import Config
 
-db.metadata.schema = Config.ACTIVITIES_SCHEMA
-
 
 class Activity(BaseModel):
     """Define a SQLAlchemy model to track celery execution."""
 
     __tablename__ = 'activities'
-    __table_args__ = {"schema": "cube_builder"}
+    __table_args__ = {"schema": Config.ACTIVITIES_SCHEMA}
 
     id = Column(Integer, primary_key=True)
     collection_id = Column(String(64), nullable=False)
