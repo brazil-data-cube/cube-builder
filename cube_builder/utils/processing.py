@@ -572,9 +572,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
     version = activity['version']
 
-    # TODO: It must be changed since sen2cor values use 0 as nodata.
-    #       The activity_mask may store only nodata for cloud file.
-    nodata = int(activity.get('nodata', -9999))
+    nodata = activity.get('nodata', band_map[band]['nodata'])
     if band == quality_band:
         nodata = activity_mask['nodata']
 
