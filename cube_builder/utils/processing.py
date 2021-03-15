@@ -723,7 +723,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
             if saturated_list:
                 saturated = saturated_list[order].dataset.read(1, window=window)
-
+                # TODO: Get the original band order and apply to the extract function instead.
                 saturated = radsat_extract_bits(saturated, 1, 7).astype(numpy.bool_)
 
                 mask[saturated] = 0
