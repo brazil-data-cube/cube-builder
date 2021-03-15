@@ -563,6 +563,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         A processed activity with the generated values.
     """
     from .image import radsat_extract_bits
+
     # Assume that it contains a band and quality band
     numscenes = len(activity['scenes'])
 
