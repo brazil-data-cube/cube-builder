@@ -10,6 +10,13 @@
 Changes
 =======
 
+
+Version 0.4.2 (2021-03-18)
+--------------------------
+
+- Fix stac resolver for CBERS or any external products (`#157 <https://github.com/brazil-data-cube/cube-builder/issues/157>`_)
+
+
 Version 0.4.1 (2021-01-07)
 --------------------------
 
