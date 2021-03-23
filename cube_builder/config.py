@@ -55,6 +55,10 @@ class Config:
     # So the asset will be /Repository/Mosaic/collectionName/version/tile/period/scene.tif
     ITEM_PREFIX = os.getenv('ITEM_PREFIX', '/Repository')
 
+    # CBERS URL Prefix
+    CBERS_SOURCE_URL_PREFIX = os.getenv('CBERS_SOURCE_URL_PREFIX', 'cdsr.dpi.inpe.br/api/download/TIFF')
+    CBERS_TARGET_URL_PREFIX = os.getenv('CBERS_TARGET_URL_PREFIX', 'www.dpi.inpe.br/catalog/tmp')
+
 
 class ProductionConfig(Config):
     """Production Mode."""

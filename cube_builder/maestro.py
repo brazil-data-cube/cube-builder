@@ -10,6 +10,7 @@
 
 # Python
 import datetime
+import json
 from contextlib import contextmanager
 from time import time
 from typing import List
@@ -200,7 +201,8 @@ class Maestro:
                 (func.ST_XMin(grid_geom.c.geom)).label('min_x'),
                 (func.ST_YMax(grid_geom.c.geom)).label('max_y'),
                 (func.ST_XMax(grid_geom.c.geom) - func.ST_XMin(grid_geom.c.geom)).label('dist_x'),
-                (func.ST_YMax(grid_geom.c.geom) - func.ST_YMin(grid_geom.c.geom)).label('dist_y')
+                (func.ST_YMax(grid_geom.c.geom) - func.ST_YMin(grid_geom.c.geom)).label('dist_y'),
+                (func.ST_AsGeoJSON(func.ST_Transform(grid_geom.c.geom, 4326))).label('feature')
             ).filter(grid_geom.c.tile == tile_name).first()
 
             self.mosaics[tile_name] = dict(
@@ -227,6 +229,7 @@ class Maestro:
                 self.mosaics[tile_name]['periods'][period]['min_x'] = tile_stats.min_x
                 self.mosaics[tile_name]['periods'][period]['max_y'] = tile_stats.max_y
                 self.mosaics[tile_name]['periods'][period]['dirname'] = cube_relative_path
+                self.mosaics[tile_name]['periods'][period]['feature'] = json.loads(tile_stats.feature)
                 if self.properties.get('shape', None):
                     self.mosaics[tile_name]['periods'][period]['shape'] = self.properties['shape']
 
@@ -310,8 +313,6 @@ class Maestro:
             for tileid in self.mosaics:
                 blends = []
 
-                bbox = self.get_bbox(tileid, self.datacube.grs)
-
                 tile = next(filter(lambda t: t.name == tileid, self.tiles))
 
                 grid_crs = tile.grs.crs
@@ -320,8 +321,9 @@ class Maestro:
                 for period in self.mosaics[tileid]['periods']:
                     start = self.mosaics[tileid]['periods'][period]['start']
                     end = self.mosaics[tileid]['periods'][period]['end']
+                    feature = self.mosaics[tileid]['periods'][period]['feature']
 
-                    assets_by_period = self.search_images(bbox, start, end, tileid)
+                    assets_by_period = self.search_images(feature, start, end, tileid)
 
                     if self.datacube.composite_function.alias == 'IDT':
                         stats_bands = (TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME)
@@ -398,13 +400,13 @@ class Maestro:
 
         return self.mosaics
 
-    def search_images(self, bbox: str, start: str, end: str, tile_id: str):
+    def search_images(self, feature: str, start: str, end: str, tile_id: str):
         """Search and prepare images on STAC."""
         scenes = {}
         options = dict(
-            bbox=bbox,
+            intersects=feature,
             datetime='{}/{}'.format(start, end),
-            limit=100000
+            limit=1000
         )
 
         bands = self.datacube_bands
@@ -425,12 +427,7 @@ class Maestro:
                 scenes[band.name] = dict()
 
         for dataset in self.params['collections']:
-            if 'CBERS' in dataset:
-                options = dict(
-                    bbox=bbox,
-                    time='{}/{}'.format(start, end),
-                    limit=100000
-                )
+            options['collections'] = [dataset]
             stac = self.get_stac(dataset)
 
             token = ''
@@ -439,11 +436,7 @@ class Maestro:
                                                                       end, stac.url), end='', flush=True)
 
             with timing(' total'):
-
-                if 'CBERS' in dataset and Config.CBERS_AUTH_TOKEN:
-                    token = '?key={}'.format(Config.CBERS_AUTH_TOKEN)
-
-                items = stac.collection(dataset).get_items(filter=options)
+                items = stac.search(filter=options)
 
                 for feature in items['features']:
                     if feature['type'] == 'Feature':
@@ -470,7 +463,7 @@ class Maestro:
                             scene['band'] = band.name
                             scene['dataset'] = dataset
 
-                            link = link.replace('cdsr.dpi.inpe.br/api/download/TIFF', 'www.dpi.inpe.br/catalog/tmp')
+                            link = link.replace(Config.CBERS_SOURCE_URL_PREFIX, Config.CBERS_TARGET_URL_PREFIX)
 
                             if token:
                                 link = '{}{}'.format(link, token)
