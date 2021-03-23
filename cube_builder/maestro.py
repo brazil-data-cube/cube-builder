@@ -9,6 +9,7 @@
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
 # Python
+import json
 from contextlib import contextmanager
 from time import time
 from typing import List
@@ -18,7 +19,6 @@ import numpy
 from bdc_catalog.models import Band, Collection, GridRefSys, Tile, db
 from celery import chain, group
 from geoalchemy2 import func
-from shapely.geometry import shape
 from stac import STAC
 
 # Cube Builder
@@ -241,7 +241,7 @@ class Maestro:
                 self.mosaics[tile_name]['periods'][period]['min_x'] = tile_stats.min_x
                 self.mosaics[tile_name]['periods'][period]['max_y'] = tile_stats.max_y
                 self.mosaics[tile_name]['periods'][period]['dirname'] = cube_relative_path
-                self.mosaics[tile_name]['periods'][period]['feature'] = eval(tile_stats.feature)
+                self.mosaics[tile_name]['periods'][period]['feature'] = json.loads(tile_stats.feature)
                 if self.properties.get('shape', None):
                     self.mosaics[tile_name]['periods'][period]['shape'] = self.properties['shape']
 
@@ -459,16 +459,7 @@ class Maestro:
                                                                       end, stac.url), end='', flush=True)
 
             with timing(' total'):
-                if 'CBERS' in dataset:
-                    bbox = shape(feature).bounds
-                    _filter = dict(
-                        bbox=','.join([str(elm) for elm in bbox]),
-                        time=f'{start}/{end}',
-                        limit=10000
-                    )
-                    items = stac.collection(dataset).get_items(filter=_filter)
-                else:
-                    items = stac.search(filter=options)
+                items = stac.search(filter=options)
 
                 for feature in items['features']:
                     if feature['type'] == 'Feature':
@@ -495,7 +486,7 @@ class Maestro:
                             scene['band'] = band.name
                             scene['dataset'] = dataset
 
-                            link = link.replace('cdsr.dpi.inpe.br/api/download/TIFF', 'www.dpi.inpe.br/catalog/tmp')
+                            link = link.replace(Config.CBERS_SOURCE_URL_PREFIX, Config.CBERS_TARGET_URL_PREFIX)
 
                             if token:
                                 link = '{}{}'.format(link, token)
