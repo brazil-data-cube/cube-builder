@@ -9,7 +9,6 @@
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
 # Python
-import datetime
 import json
 from contextlib import contextmanager
 from time import time
@@ -20,7 +19,6 @@ import numpy
 from bdc_catalog.models import Band, Collection, GridRefSys, Tile, db
 from celery import chain, group
 from geoalchemy2 import func
-from shapely.geometry import shape
 from stac import STAC
 
 # Cube Builder
@@ -328,8 +326,6 @@ class Maestro:
 
             for tileid in self.mosaics:
                 blends = []
-
-                bbox = self.get_bbox(tileid, self.datacube.grs)
 
                 tile = next(filter(lambda t: t.name == tileid, self.tiles))
 
