@@ -8,14 +8,16 @@
 
 """Define Brazil Data Cube Cube Builder routes."""
 
+from bdc_auth_client.decorators import oauth2
 # 3rdparty
 from flask import Blueprint, jsonify, request
 
 # Cube Builder
+from .celery.utils import list_queues
+from .config import Config
 from .controller import CubeController
-from .forms import (CubeItemsForm, CubeStatusForm, DataCubeForm,
-                    DataCubeMetadataForm, DataCubeProcessForm, GridRefSysForm,
-                    PeriodForm)
+from .forms import (CubeItemsForm, CubeStatusForm, DataCubeForm, DataCubeMetadataForm, DataCubeProcessForm,
+                    GridRefSysForm, PeriodForm)
 from .version import __version__
 
 bp = Blueprint('cubes', import_name=__name__)
@@ -32,7 +34,8 @@ def status():
 
 
 @bp.route('/cube-status', methods=('GET', ))
-def cube_status():
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def cube_status(**kwargs):
     """Retrieve the cube processing state, which refers to total items and total to be done."""
     form = CubeStatusForm()
 
@@ -48,7 +51,8 @@ def cube_status():
 
 @bp.route('/cubes', defaults=dict(cube_id=None), methods=['GET'])
 @bp.route('/cubes/<cube_id>', methods=['GET'])
-def list_cubes(cube_id):
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def list_cubes(cube_id, **kwargs):
     """List all data cubes available."""
     if cube_id is not None:
         message, status_code = CubeController.get_cube(cube_id)
@@ -60,7 +64,8 @@ def list_cubes(cube_id):
 
 
 @bp.route('/cubes', methods=['POST'])
-def create_cube():
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"])
+def create_cube(**kwargs):
     """Define POST handler for datacube creation.
 
     Expects a JSON that matches with ``DataCubeForm``.
@@ -81,7 +86,8 @@ def create_cube():
     return jsonify(cubes), status
 
 @bp.route('/cubes/<cube_id>', methods=['PUT'])
-def update_cube_matadata(cube_id):
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"])
+def update_cube_matadata(cube_id, **kwargs):
     """Define PUT handler for datacube Updation.
 
     Expects a JSON that matches with ``DataCubeMetadataForm``.
@@ -103,7 +109,8 @@ def update_cube_matadata(cube_id):
 
 
 @bp.route('/cubes/<cube_id>/tiles', methods=['GET'])
-def list_tiles(cube_id):
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def list_tiles(cube_id, **kwargs):
     """List all data cube tiles already done."""
     message, status_code = CubeController.list_tiles_cube(cube_id, only_ids=True)
 
@@ -111,7 +118,8 @@ def list_tiles(cube_id):
 
 
 @bp.route('/cubes/<cube_id>/tiles/geom', methods=['GET'])
-def list_tiles_as_features(cube_id):
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def list_tiles_as_features(cube_id, **kwargs):
     """List all tiles as GeoJSON feature."""
     message, status_code = CubeController.list_tiles_cube(cube_id)
 
@@ -119,7 +127,8 @@ def list_tiles_as_features(cube_id):
 
 
 @bp.route('/cubes/<cube_id>/items', methods=['GET'])
-def list_cube_items(cube_id):
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def list_cube_items(cube_id, **kwargs):
     """List all data cube items."""
     form = CubeItemsForm()
 
@@ -136,7 +145,8 @@ def list_cube_items(cube_id):
 
 
 @bp.route('/cubes/<cube_id>/meta', methods=['GET'])
-def get_cube_meta(cube_id):
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def get_cube_meta(cube_id, **kwargs):
     """Retrieve the meta information of a data cube such STAC provider used, collection, etc."""
     message, status_code = CubeController.cube_meta(cube_id)
 
@@ -144,7 +154,8 @@ def get_cube_meta(cube_id):
 
 
 @bp.route('/start', methods=['POST'])
-def start_cube():
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"])
+def start_cube(**kwargs):
     """Define POST handler for datacube execution.
 
     Expects a JSON that matches with ``DataCubeProcessForm``.
@@ -166,7 +177,8 @@ def start_cube():
 
 
 @bp.route('/list-merges', methods=['GET'])
-def list_merges():
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def list_merges(**kwargs):
     """Define POST handler for datacube execution.
 
     Expects a JSON that matches with ``DataCubeProcessForm``.
@@ -180,7 +192,8 @@ def list_merges():
 
 @bp.route('/grids', defaults=dict(grs_id=None), methods=['GET'])
 @bp.route('/grids/<grs_id>', methods=['GET'])
-def list_grs_schemas(grs_id):
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def list_grs_schemas(grs_id, **kwargs):
     """List all data cube Grids."""
     if grs_id is not None:
         result, status_code = CubeController.get_grs_schema(grs_id)
@@ -191,7 +204,8 @@ def list_grs_schemas(grs_id):
 
 
 @bp.route('/create-grids', methods=['POST'])
-def create_grs():
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"])
+def create_grs(**kwargs):
     """Create the grid reference system using HTTP Post method."""
     form = GridRefSysForm()
 
@@ -208,7 +222,8 @@ def create_grs():
 
 
 @bp.route('/list-periods', methods=['POST'])
-def list_periods():
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def list_periods(**kwargs):
     """List data cube periods.
 
     The user must provide the following query-string parameters:
@@ -230,8 +245,17 @@ def list_periods():
 
 
 @bp.route('/composite-functions', methods=['GET'])
-def list_composite_functions():
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def list_composite_functions(**kwargs):
     """List all data cube supported composite functions."""
     message, status_code = CubeController.list_composite_functions()
 
     return jsonify(message), status_code
+
+
+@bp.route('/tasks', methods=['GET'])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+def list_tasks(**kwargs):
+    """List all pending and running tasks on celery."""
+    queues = list_queues()
+    return queues

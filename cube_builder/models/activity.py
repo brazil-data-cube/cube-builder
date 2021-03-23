@@ -11,21 +11,19 @@
 from datetime import datetime
 from typing import Union
 
-# 3rdparty
-from sqlalchemy import Column, Date, String, ARRAY, Integer, JSON, Text
-from sqlalchemy.engine.result import ResultProxy
 from bdc_catalog.models.base_sql import BaseModel, db
+# 3rdparty
+from sqlalchemy import ARRAY, JSON, Column, Date, Integer, String, Text
+from sqlalchemy.engine.result import ResultProxy
+
 from ..config import Config
-
-
-db.metadata.schema = Config.ACTIVITIES_SCHEMA
 
 
 class Activity(BaseModel):
     """Define a SQLAlchemy model to track celery execution."""
 
     __tablename__ = 'activities'
-    __table_args__ = {"schema": "cube_builder"}
+    __table_args__ = {"schema": Config.ACTIVITIES_SCHEMA}
 
     id = Column(Integer, primary_key=True)
     collection_id = Column(String(64), nullable=False)

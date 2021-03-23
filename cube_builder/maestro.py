@@ -20,13 +20,14 @@ import numpy
 from bdc_catalog.models import Band, Collection, GridRefSys, Tile, db
 from celery import chain, group
 from geoalchemy2 import func
+from shapely.geometry import shape
 from stac import STAC
 
 # Cube Builder
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
-from .constants import (CLEAR_OBSERVATION_NAME, DATASOURCE_NAME,
-                        PROVENANCE_NAME, TOTAL_OBSERVATION_NAME)
+from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
+from .models import CubeParameters
 from .utils.processing import get_cube_id, get_or_create_activity
 from .utils.timeline import Timeline
 
@@ -160,6 +161,19 @@ class Maestro:
         self.datacube = Collection.query().filter(Collection.name == self.params['datacube']).one()
 
         temporal_schema = self.datacube.temporal_composition_schema
+
+        cube_parameters: CubeParameters = CubeParameters.query().filter(
+            CubeParameters.collection_id == self.datacube.id
+        ).first()
+
+        if cube_parameters is None:
+            raise RuntimeError(f'No parameters configured for data cube "{self.datacube.id}"')
+
+        # Validate parameters
+        cube_parameters.validate()
+
+        # Pass the cube parameters to the data cube functions arguments
+        self.properties.update(cube_parameters.metadata_)
 
         dstart = self.params['start_date']
         dend = self.params['end_date']
@@ -303,15 +317,19 @@ class Maestro:
                 band.name for band in bands if band.name not in common_bands
             ]
 
-            band_map = {b.common_name: b.name for b in bands}
-
-            if not band_map.get('quality'):
-                raise RuntimeError('Quality band is required')
+            band_map = {b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata) for b in bands}
 
             warped_datacube = self.warped_datacube.name
 
+            quality_band = self.properties['quality_band']
+
+            quality = next(filter(lambda b: b.name == quality_band, bands))
+            self.properties['mask']['nodata'] = float(quality.nodata)
+
             for tileid in self.mosaics:
                 blends = []
+
+                bbox = self.get_bbox(tileid, self.datacube.grs)
 
                 tile = next(filter(lambda t: t.name == tileid, self.tiles))
 
@@ -321,6 +339,7 @@ class Maestro:
                 for period in self.mosaics[tileid]['periods']:
                     start = self.mosaics[tileid]['periods'][period]['start']
                     end = self.mosaics[tileid]['periods'][period]['end']
+
                     feature = self.mosaics[tileid]['periods'][period]['feature']
 
                     assets_by_period = self.search_images(feature, start, end, tileid)
@@ -345,10 +364,17 @@ class Maestro:
 
                     for band in bands:
                         # Skip trigger/search for Vegetation Index
-                        if band.common_name.lower() in ('ndvi', 'evi',):
+                        if band.common_name.lower() in ('ndvi', 'evi',) or (band._metadata and band._metadata.get('expression')):
                             continue
 
                         merges = assets_by_period[band.name]
+
+                        merge_opts = dict()
+
+                        if not merges:
+                            # Adapt to make the merge function to generate empty raster
+                            merges[start_date] = dict()
+                            merge_opts['empty'] = True
 
                         for merge_date, collections in merges.items():
                             assets = []
@@ -370,7 +396,8 @@ class Maestro:
                                 assets=assets,
                                 nodata=float(band.nodata),
                                 bands=band_str_list,
-                                version=self.datacube.version
+                                version=self.datacube.version,
+                                **merge_opts
                             )
 
                             if self.reused_datacube:

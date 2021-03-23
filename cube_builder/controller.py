@@ -14,8 +14,7 @@ from typing import Tuple, Union
 # 3rdparty
 import rasterio
 import sqlalchemy
-from bdc_catalog.models import (Band, BandSRC, Collection, CompositeFunction,
-                                GridRefSys, Item, MimeType, Quicklook,
+from bdc_catalog.models import (Band, BandSRC, Collection, CompositeFunction, GridRefSys, Item, MimeType, Quicklook,
                                 ResolutionUnit, SpatialRefSys, Tile, db)
 from geoalchemy2 import func
 from geoalchemy2.shape import from_shape
@@ -25,14 +24,12 @@ from shapely.geometry import Polygon
 from werkzeug.exceptions import NotFound, abort
 
 from .celery.utils import list_pending_tasks, list_running_tasks
-from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME,
-                        COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
-                        PROVENANCE_ATTRIBUTES, PROVENANCE_NAME,
-                        SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_ATTRIBUTES,
+from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
+                        PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_ATTRIBUTES,
                         TOTAL_OBSERVATION_NAME)
 from .forms import CollectionForm
 from .maestro import Maestro
-from .models import Activity
+from .models import Activity, CubeParameters
 from .utils.image import validate_merges
 from .utils.processing import get_cube_parts, get_or_create_model
 from .utils.serializer import Serializer
@@ -55,7 +52,7 @@ class CubeController:
                 Collection.name == cube_name,
                 Collection.version == cube_version
             ).first_or_404()
-        
+
     @classmethod
     def get_or_create_band(cls, cube, name, common_name, min_value, max_value,
                            nodata, data_type, resolution_x, resolution_y, scale,
@@ -212,6 +209,14 @@ class CubeController:
 
             quicklook.save(commit=False)
 
+        default_params = dict(
+            metadata_=dict(
+                mask=params['parameters']
+            )
+        )
+        cube_parameters, _ = get_or_create_model(CubeParameters, defaults=default_params, collection_id=cube.id)
+        db.session.add(cube_parameters)
+
         # Create default Cube Bands
         if function != 'IDT':
             _ = cls.get_or_create_band(cube.id, **CLEAR_OBSERVATION_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
@@ -282,7 +287,7 @@ class CubeController:
             cube._metadata=params['metadata']
             cube.description=params['description']
             cube.is_public=params['public']
-            
+
         db.session.commit()
 
         return {'message': 'Updated cube!'}, 200
@@ -326,7 +331,7 @@ class CubeController:
             list_cubes.append(cube_dict)
 
         return list_cubes, 200
-    
+
     @classmethod
     def get_cube_status(cls, cube_name: str) -> Tuple[dict, int]:
         """Retrieve a data cube status, which includes total items, tiles, etc."""
@@ -373,7 +378,7 @@ class CubeController:
     def list_tiles_cube(cls, cube_id: int, only_ids=False):
         """Retrieve all tiles (as GeoJSON) that belongs to a data cube."""
         features = db.session.query(
-            Item.tile_id, 
+            Item.tile_id,
             Tile,
             func.ST_AsGeoJSON(Item.geom, 6, 3).cast(sqlalchemy.JSON).label('geom')
         ).distinct(Item.tile_id).filter(Item.collection_id == cube_id, Item.tile_id == Tile.id).all()
@@ -499,7 +504,7 @@ class CubeController:
             "e": float(bbox[2]),
             "s": float(bbox[3])
         }
-        tile_srs_p4 = "+proj=longlat +ellps=GRS80 +datum=GRS80 +no_defs"
+        tile_srs_p4 = "+proj=longlat +ellps=GRS80 +no_defs"
         if projection == 'aea':
             tile_srs_p4 = "+proj=aea +lat_0=-12 +lon_0={} +lat_1=-2 +lat_2=-22 +x_0=5000000 +y_0=10000000 +ellps=GRS80 +units=m +no_defs".format(meridian)
         elif projection == 'sinu':
@@ -512,11 +517,11 @@ class CubeController:
         v_base = num_tiles_y / 2
 
         # Tile size in meters (dx,dy) at center of system (argsmeridian,0.)
-        src_crs = '+proj=longlat +ellps=GRS80 +datum=GRS80 +no_defs'
+        src_crs = '+proj=longlat +ellps=GRS80 +no_defs'
         dst_crs = tile_srs_p4
         xs = [(meridian - degreesx / 2), (meridian + degreesx / 2), meridian, meridian, 0.]
         ys = [0., 0., -degreesy / 2, degreesy / 2, 0.]
-        out = transform(src_crs, dst_crs, xs, ys, zs=None)
+        out = transform(CRS.from_proj4(src_crs), CRS.from_proj4(dst_crs), xs, ys, zs=None)
         x1 = out[0][0]
         x2 = out[0][1]
         y1 = out[1][2]
@@ -546,7 +551,7 @@ class CubeController:
 
         tiles = []
         features = []
-        dst_crs = '+proj=longlat +ellps=GRS80 +datum=GRS80 +no_defs'
+        dst_crs = '+proj=longlat +ellps=GRS80 +no_defs'
         src_crs = tile_srs_p4
 
         for ix in range(h_min, h_max+1):
@@ -569,7 +574,7 @@ class CubeController:
                             (x1, y1),
                             (x1, y2)
                         ]
-                    ), 
+                    ),
                     srid=SRID_ALBERS_EQUAL_AREA
                 )
 
@@ -582,7 +587,7 @@ class CubeController:
                     tile=tile_name,
                     geom=polygon
                 ))
-        
+
         with db.session.begin_nested():
             crs = CRS.from_proj4(tile_srs_p4)
             data = dict(
@@ -600,7 +605,7 @@ class CubeController:
             db.session.add(grs)
 
             [db.session.add(Tile(**tile, grs=grs)) for tile in tiles]
-        db.session.commit()        
+        db.session.commit()
 
         return 'Grid {} created with successfully'.format(name), 201
 
@@ -650,7 +655,7 @@ class CubeController:
             if item.assets.get('thumbnail'):
                 obj['quicklook'] = item.assets['thumbnail']['href']
             del obj['assets']
-                    
+
             result.append(obj)
 
         return dict(
@@ -662,8 +667,37 @@ class CubeController:
         ), 200
 
     @classmethod
-    def list_composite_functions(self):
+    def list_composite_functions(cls):
         """Retrieve a list of available Composite Functions on Brazil Data Cube database."""
         schemas = CompositeFunction.query().all()
 
         return [Serializer.serialize(schema) for schema in schemas], 200
+
+    @classmethod
+    def configure_parameters(cls, collection_id, **kwargs) -> dict:
+        """Configure data cube parameters to be passed during the execution.
+
+        Args:
+            collection_id (int): Data Cube identifier
+            **kwargs (dict): Map of values to be set as parameter.
+
+        Returns:
+            dict The serialized cube parameters instance object.
+        """
+        cube = CubeController.get_cube_or_404(cube_id=collection_id)
+
+        defaults = dict(
+            metadata_=kwargs
+        )
+        cube_parameters, _ = get_or_create_model(CubeParameters, defaults=defaults, collection_id=cube.id)
+
+        with db.session.begin_nested():
+            # We must create a new copy to make effect in SQLAlchemy
+            meta = deepcopy(cube_parameters.metadata_)
+            meta.update(**kwargs)
+            cube_parameters.metadata_ = meta
+            db.session.add(cube_parameters)
+
+        db.session.commit()
+
+        return Serializer.serialize(cube_parameters)

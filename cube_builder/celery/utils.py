@@ -7,8 +7,12 @@
 #
 
 """Defines the utility functions to use among celery tasks."""
+from urllib.parse import urlparse
 
+import requests
 from celery import current_app
+
+from ..config import Config
 
 
 def list_running_tasks():
@@ -23,3 +27,21 @@ def list_pending_tasks():
     inspector = current_app.control.inspect()
 
     return inspector.reserved()
+
+
+def list_queues():
+    """List all cube-builder queues from RabbitMQ."""
+    url = urlparse(Config.RABBIT_MQ_URL)
+    response = requests.get(f'http://{url.hostname}:{15672}/api/queues?columns=name,messages,'\
+                            'messages_ready,messages_unacknowledged',
+                            auth=(url.username, url.password))
+
+    tasks = dict()
+
+    for task in response.json():
+        if 'cube' in task['name']:
+            tasks[task['name']] = dict(total=task['messages'],
+                                       ready=task['messages_ready'],
+                                       unacked=task['messages_unacknowledged'])
+
+    return tasks

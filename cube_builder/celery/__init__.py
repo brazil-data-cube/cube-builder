@@ -8,14 +8,15 @@
 
 """Define Cube Builder celery module initialization."""
 
+import logging
+
+import flask
+from bdc_catalog.models import db
 # 3rdparty
 from celery import Celery
 from flask import Flask
-from bdc_catalog.models import db
-from cube_builder.config import Config
-import logging
-import flask
 
+from cube_builder.config import Config
 
 CELERY_TASKS = [
     'cube_builder.tasks',

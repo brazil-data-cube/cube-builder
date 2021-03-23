@@ -26,11 +26,8 @@ services:
       - cube_builder_net
 
   cube-builder:
-    build:
-      context: .
-      dockerfile: ./docker/Dockerfile
     container_name: cube-builder-api
-    image: registry.dpi.inpe.br/brazildatacube/cube-builder:latest
+    image: registry.dpi.inpe.br/brazil-data-cube/cube-builder:latest
     restart: "always"
     environment:
       - "RABBIT_MQ_URL=pyamqp://guest@cube-builder-rabbitmq"
@@ -68,6 +65,6 @@ services:
       - "LANG=C.UTF-8"
       - "FLASK_ENV=production"
     command: >
-      cube-builder worker -l INFO --concurrency 8 --max-tasks-per-child=30
+      cube-builder worker -l INFO --concurrency 8 --max-tasks-per-child=16 -Q default,merge-cube,prepare-cube,blend-cube,publish-cube
     networks:
       - cube_builder_net

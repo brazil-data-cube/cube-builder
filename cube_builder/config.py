@@ -8,6 +8,7 @@
 """Brazil Data Cube Configuration."""
 
 import os
+from distutils.util import strtobool
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -32,16 +33,13 @@ class Config:
     # Path to store data
     ACTIVITIES_SCHEMA = 'cube_builder'
     DATA_DIR = os.environ.get('DATA_DIR', '/data')
-    RABBIT_MQ_URL = os.environ.get('RABBIT_MQ_URL', 'pyamqp://guest@localhost')
+    RABBIT_MQ_URL = os.environ.get('RABBIT_MQ_URL', 'pyamqp://guest:guest@localhost')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         'SQLALCHEMY_DATABASE_URI',
         'postgresql://postgres:postgres@localhost:5432/bdc_catalog'
     )
-    STAC_URL = os.environ.get(
-        'STAC_URL',
-        'http://brazildatacube.dpi.inpe.br/stac/'
-    )
+    STAC_URL = os.environ.get('STAC_URL', 'https://brazildatacube.dpi.inpe.br/stac/')
     MAX_THREADS_IMAGE_VALIDATOR = int(os.environ.get('MAX_THREADS_IMAGE_VALIDATOR', os.cpu_count()))
     # rasterio
     RASTERIO_ENV = dict(
@@ -53,7 +51,13 @@ class Config:
 
     # Add prefix path to the items. Base path is /Repository
     # So the asset will be /Repository/Mosaic/collectionName/version/tile/period/scene.tif
-    ITEM_PREFIX = os.getenv('ITEM_PREFIX', '/Repository')
+    ITEM_PREFIX = os.getenv('ITEM_PREFIX', '/Repository/Archive')
+
+    # BDC-Auth OAuth2
+    BDC_AUTH_CLIENT_ID = os.getenv('BDC_AUTH_CLIENT_ID', None)
+    BDC_AUTH_CLIENT_SECRET = os.getenv('BDC_AUTH_CLIENT_SECRET', None)
+    BDC_AUTH_ACCESS_TOKEN_URL = os.getenv('BDC_AUTH_ACCESS_TOKEN_URL', None)
+    BDC_AUTH_REQUIRED = strtobool(os.getenv('BDC_AUTH_REQUIRED', '0'))
 
     # CBERS URL Prefix
     CBERS_SOURCE_URL_PREFIX = os.getenv('CBERS_SOURCE_URL_PREFIX', 'cdsr.dpi.inpe.br/api/download/TIFF')

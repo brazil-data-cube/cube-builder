@@ -58,6 +58,12 @@ class BandDefinition(Schema):
     metadata = fields.Dict(required=False, allow_none=False)
 
 
+def validate_mask(value):
+    """Validate data cube definition for mask property."""
+    if not value.get('clear_data'):
+        raise ValidationError('Missing property "clear_data" in the "mask".')
+
+
 class DataCubeForm(Schema):
     """Define parser for datacube creation."""
 
@@ -78,6 +84,7 @@ class DataCubeForm(Schema):
     public = fields.Boolean(required=False, allow_none=False, default=True)
     # Is Data cube generated from Combined Collections?
     is_combined = fields.Boolean(required=False, allow_none=False, default=False)
+    parameters = fields.Dict(required=True)
 
     @pre_load
     def validate_indexes(self, data, **kwargs):
@@ -129,6 +136,7 @@ class DataCubeMetadataForm(Schema):
     title = fields.String(required=False, allow_none=False)
     public = fields.Boolean(required=False, allow_none=False, default=True)
 
+
 class DataCubeProcessForm(Schema):
     """Define parser for datacube generation."""
 
@@ -143,8 +151,11 @@ class DataCubeProcessForm(Schema):
     token = fields.String(required=False, allow_none=True)
     stac_url = fields.String(required=False, allow_none=True)
     shape = fields.List(fields.Integer(required=False))
+    block_size = fields.Integer(required=False, default=512)
     # Reuse data cube from another data cube
     reuse_from = fields.String(required=False, allow_none=True)
+    histogram_matching = fields.Boolean(required=False, default=False)
+    mask = fields.Dict()
 
 
 class PeriodForm(Schema):

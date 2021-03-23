@@ -9,6 +9,7 @@
 """Python Module for Cube Builder."""
 
 import os
+
 from setuptools import find_packages, setup
 
 readme = open('README.rst').read()
@@ -32,9 +33,14 @@ tests_require = [
     'check-manifest>=0.40',
 ]
 
+histogram_require = [
+    'scikit-image>=0.18,<1'
+]
+
 extras_require = {
     'docs': docs_require,
     'tests': tests_require,
+    'histogram': histogram_require
 }
 
 extras_require['all'] = [ req for exts, reqs in extras_require.items() for req in reqs ]
@@ -50,10 +56,12 @@ install_requires = [
     'numpngw>=0.0.8',
     'python-dateutil>=2.8,<3',
     'rasterio[s3]>=1.1.2,<2',
+    'requests>=2.25.1',
     'rio_cogeo>=1.1,<2',
     'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
     'stac.py==0.9.0.post5',
+    'bdc-auth-client @ git+git://github.com/brazil-data-cube/bdc-auth-client.git@v0.2.1#egg=bdc-auth-client'
 ]
 
 packages = find_packages()
@@ -83,6 +91,9 @@ setup(
         ],
         'bdc_db.models': [
             'cube_builder = cube_builder.models'
+        ],
+        'bdc_db.namespaces': [
+            'cube_builder = cube_builder.config:Config.ACTIVITIES_SCHEMA'
         ],
         'console_scripts': [
             'cube-builder = cube_builder.cli:cli'
