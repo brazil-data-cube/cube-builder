@@ -79,7 +79,7 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
         custom_band_path = build_cube_path(cube.name, period, tile_id, version=cube.version, band=band_name)
 
         output_dataset = SmartDataSet(str(custom_band_path), mode='w', **profile)
-        logging.info(f'Generating band {band_name} for cube {cube.name} -{custom_band_path.stem}...')
+        logging.info(f'Generating band {band_name} for cube {cube.name} - {custom_band_path.stem}...')
 
         for _, window in blocks:
             machine_context = {

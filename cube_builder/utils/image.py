@@ -11,7 +11,7 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Union
 
 import numpy
 import rasterio
@@ -202,3 +202,48 @@ def match_histogram_with_merges(source: str, source_mask: str, reference: str, r
     source_arr[valid_positions] = histogram
 
     save_as_cog(str(source), source_arr, block_size=block_size, mode='w', **source_options)
+
+
+def radsat_extract_bits(bit_value: Union[int, numpy.ndarray], bit_start: int, bit_end: Optional[int] = None):
+    """Extract bitwise values from image.
+
+    This method uses the bitwise operation to identify pixel saturation.
+    According to the document `LaSRC Product Guide <https://prd-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/atoms/files/LSDS-1368_L8_C1-LandSurfaceReflectanceCode-LASRC_ProductGuide-v3.pdf>`_,
+    the Landsat Radiometric Saturation Quality Assessment Band (radsat_qa) is a bit
+    packed representation of which sensor bands were saturated during data sensing capture.
+    The value 1 represents saturated value while 0 is valid data.
+    For Landsat-8, the following table represents pixels saturation:
+
+        Bit    Bit Value    Description
+          0        1        Data Fill Flag
+          1        2        Band 1 Data Saturation Flag
+          2        4        Band 2 Data Saturation Flag
+          3        8        Band 3 Data Saturation Flag
+          4       16        Band 4 Data Saturation Flag
+          5       32        Band 5 Data Saturation Flag
+          6       64        Band 6 Data Saturation Flag
+          7      128        Band 7 Data Saturation Flag
+          8      256        Band 8 Data Saturation Flag
+          9      512        Band 9 Data Saturation Flag
+         10     1024        Band 10 Data Saturation Flag
+         11     2048        Band 11 Data Saturation Flag
+
+    Example:
+        >>> # Represents band 10 (1024) and band 1 (2) is saturated.
+        >>> value = 1026
+        >>> for band in range(1, 12):
+        ...     print(f'Band {band} -> {radsat_extract_bits(value, band))}')
+        >>> # Check if any band is saturated
+        >>> radsat_extract_bits(1026, 1, 7)
+        >>> # You can also pass the numpy array
+        >>> radsat_extract_bits(numpy.random.randint(0, 1028, size=(100, 100)), 1, 7)
+    """
+    if bit_end is None:
+        bit_end = bit_start
+
+    mask_size = (1 + bit_end) - bit_start
+    mask = (1 << mask_size) - 1
+
+    res = (bit_value >> bit_start) & mask
+
+    return res
