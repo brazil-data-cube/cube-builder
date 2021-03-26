@@ -1331,7 +1331,7 @@ def save_as_cog(destination: str, raster, mode='w', tags=None, block_size=None, 
     generate_cogs(str(destination), str(destination), block_size=block_size)
 
 
-def generate_cogs(input_data_set_path, file_path, profile='lzw', block_size=None, profile_options=None, **options):
+def generate_cogs(input_data_set_path, file_path, profile='deflate', block_size=None, profile_options=None, **options):
     """Generate Cloud Optimized GeoTIFF files (COG).
 
     Args:
