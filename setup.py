@@ -51,6 +51,7 @@ install_requires = [
     'bdc-catalog @ git+git://github.com/brazil-data-cube/bdc-catalog.git@v0.8.1#egg=bdc-catalog',
     'celery[librabbitmq]>=4.3.0,<5',
     'Flask>=1.1.1,<2',
+    'flask-redoc>=0.2.1',
     'marshmallow-sqlalchemy>=0.19.0,<1',
     'numpy>=1.17.2',
     'numpngw>=0.0.8',

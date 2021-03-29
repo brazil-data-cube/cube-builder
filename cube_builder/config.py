@@ -10,6 +10,8 @@
 import os
 from distutils.util import strtobool
 
+from .version import __version__
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 
@@ -64,6 +66,8 @@ class Config:
     CBERS_TARGET_URL_PREFIX = os.getenv('CBERS_TARGET_URL_PREFIX', 'www.dpi.inpe.br/catalog/tmp')
 
 
+    REDOC = {'title': 'Cube Builder API Doc',
+                    'version': __version__}
 class ProductionConfig(Config):
     """Production Mode."""
 

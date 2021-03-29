@@ -12,6 +12,7 @@ from json import JSONEncoder
 
 from bdc_catalog.ext import BDCCatalog
 from flask import Flask, abort, request
+from flask_redoc import Redoc
 from werkzeug.exceptions import HTTPException, InternalServerError
 
 from . import celery, config
@@ -36,6 +37,7 @@ def create_app(config_name=None):
         # Initialize Flask SQLAlchemy
         BDCCatalog(app)
 
+        Redoc(app, 'spec/openapi.yml')
         # Just make sure to initialize db before celery
         celery_app = celery.create_celery_app(app)
         celery.celery_app = celery_app
@@ -82,7 +84,7 @@ def setup_app(app):
     class ImprovedJSONEncoder(JSONEncoder):
         def default(self, o):
             from datetime import datetime
-            
+
             if isinstance(o, set):
                 return list(o)
             if isinstance(o, datetime):
