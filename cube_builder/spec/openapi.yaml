@@ -1,0 +1,757 @@
+openapi: 3.0.0
+info:
+  title: Cube Builder API.
+  description: Cube Builder is an application to generate data cubes on local cluster using Python and Celery.
+  contact:
+    name: Brazil Data Cube Team
+    url: "https://discord.com/channels/689541907621085198#/"
+    email: brazildatacube@inpe.br
+  license:
+    name: MIT
+    url: "https://opensource.org/licenses/MIT"
+  version: "0.6"
+  x-logo:
+    url: "https://brazil-data-cube.github.io/_static/logo-bdc.png"
+    altText: Brazil Data Cube
+    href: "https://github.com/brazil-data-cube"
+
+paths:
+  /:
+    get:
+      responses:
+        "200":
+          description: Cube-Builder API status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  description:
+                    type: string
+                  version:
+                    type: string
+                required:
+                  - message
+                  - description
+                  - version
+
+  /cube-status:
+    get:
+      description: Retrieve the cube processing state, which refers to total items and total to be done.
+      responses:
+        "200":
+          description: Cube Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataCubeStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /cubes:
+    get:
+      description: List all data cubes available.
+      responses:
+        "200":
+          description: List of all datacubes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DataCube"
+    post:
+      description: Creates a datacube.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataCube" # TODO: datacubeform
+      responses:
+        "200":
+          description: Created datacube.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DataCube"
+
+  /cubes/{cube_id}:
+    get:
+      description: Get a data cube given an identifier.
+      parameters:
+        - $ref: "#/components/parameters/cube_id"
+      responses:
+        "200":
+          description: JSON document with Data Cube data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataCube"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      description: Update a data cube given an identifier.
+      parameters:
+        - $ref: "#/components/parameters/cube_id"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataCubeMetadataForm"
+      responses:
+        "200":
+          description: Cube updated successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /cubes/{cube_id}/tiles:
+    get:
+      description: List all data cube tiles id already done.
+      parameters:
+        - $ref: "#/components/parameters/cube_id"
+      responses:
+        "200":
+          description: List with all tiles already done.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+
+  /cubes/{cube_id}/tiles/geom:
+      get:
+        description: List all data cube tiles geometry already done.
+        parameters:
+          - $ref: "#/components/parameters/cube_id"
+        responses:
+          "200":
+            description: List with all tiles geometry already done.
+            content:
+              application/json:
+                schema:
+                  type: array
+                  items:
+                    $ref: "https://geojson.org/schema/Geometry.json"
+
+  /cubes/{cube_id}/items:
+    get:
+      description: List all data cube tiles already done.
+      parameters:
+        - $ref: "#/components/parameters/cube_id"
+        - $ref: "#/components/parameters/tiles"
+        - $ref: "#/components/parameters/bbox"
+        - $ref: "#/components/parameters/start"
+        - $ref: "#/components/parameters/end"
+        - $ref: "#/components/parameters/page"
+        - $ref: "#/components/parameters/per_page"
+      responses:
+        "200":
+          description: JSON Document listing the query result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Item"
+                  page:
+                    type: integer
+                  per_page:
+                    type: integer
+                  total_items:
+                    type: integer
+                  total_pages:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+
+  /cubes/{cube_id}/meta:
+    get:
+      description: Retrieve the meta information of a data cube such STAC provider used, collection, etc.
+      parameters:
+        - $ref: "#/components/parameters/cube_id"
+      responses:
+        "200":
+          description: JSON Document listing the meta information of a data cube.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /start:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                datacube:
+                  type: string
+                collections:
+                  type: array
+                  items:
+                    type: string
+                tiles:
+                  type: array
+                  items:
+                    type: string
+                start_date:
+                  type: string
+                  format: datetime
+                end_date:
+                  type: string
+                  format: datetime
+                bands:
+                  type: array
+                  items:
+                    type: string
+                force:
+                  type: boolean
+                with_rgb:
+                  type: boolean
+                token:
+                  type: string
+                stac_url:
+                  type: string
+                shape:
+                  type: array
+                  items:
+                    type: integer
+                block_size:
+                  type: integer
+                reuse_from:
+                  type: string
+                histogram_matching:
+                  type: boolean
+      responses:
+        "200":
+          description: Execution started.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    default: true
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /list-merges:
+    get:
+      parameters:
+        - $ref: "#/components/parameters/datacube"
+        - $ref: "#/components/parameters/tile"
+        - $ref: "#/components/parameters/start_date"
+        - $ref: "#/components/parameters/end_date"
+      responses:
+        "200":
+          description: List merge files used in data cube and check for invalid scenes.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    bands:
+                      type: object
+                      additionalProperties:
+                        type: array
+                        items:
+                          type: string
+                    errors:
+                      type: array
+                      items:
+                        type: string
+                    collections:
+                      type: array
+                      items:
+                        type: string
+                      uniqueItems: true
+                    file:
+                      type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /grids:
+    get:
+      responses:
+        "200":
+          description: Retrieve a list of available Grid Schema on Brazil Data Cube database.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/requestBodies/GridRefSys"
+
+  /grids/{grs_id}:
+    get:
+      parameters:
+        - $ref: "#/components/parameters/grs_id"
+      responses:
+        "200":
+          description: Retrieve a Grid Schema definition with tiles associated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  name:
+                    type: string
+                  description:
+                    type: string
+                  table_id:
+                    type: string
+                  crs:
+                    type: string
+
+
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /create-grids:
+    post:
+      requestBody:
+        $ref: "#/components/requestBodies/GridRefSys"
+      responses:
+        "201":
+          description: Grid created.
+          content:
+            text/plain:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /list-periods:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Period"
+      responses:
+        "200":
+          description: JSON Document listing data cube periods
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  timeline:
+                    type: array
+                    items:
+                      type: array
+                      minItems: 2
+                      maxItems: 2
+                      items:
+                        type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /composite-functions:
+    get:
+      responses:
+        "200":
+          description: List of all composite functions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    alias:
+                      type: string
+  /tasks:
+    get:
+      responses:
+        "200":
+          description: Get a lists of queued tasks.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    total:
+                      type: integer
+                    ready:
+                      type: integer
+                    unacked:
+                      type: integer
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+components:
+  parameters:
+    cube_id:
+      name: cube_id
+      in: path
+      required: true
+      description: Cube unique identifier.
+      schema:
+        type: string
+    grs_id:
+      name: grs_id
+      in: path
+      required: true
+      description: GridRefSys unique identifier.
+      schema:
+        type: string
+    tile:
+      name: tile
+      in: query
+      required: true
+      description: Tile unique identifier.
+      schema:
+        type: string
+    datacube:
+      name: datacube
+      in: query
+      required: true
+      description: Cube unique identifier.
+      schema:
+        type: string
+    tiles:
+      name: tiles
+      in: query
+      description: Comma separated list of tiles to be queried.
+      style: form
+      explode: false
+      schema:
+        type: array
+        items:
+          type: string
+        minItems: 1
+    bbox:
+      name: bbox
+      in: query
+      description: Bounding Box as a comma separated list of coordinates (minx, miny, maxx, maxy).
+      style: form
+      explode: false
+      schema:
+        type: array
+        items:
+          type: number
+        minItems: 4
+    start:
+      name: start
+      in: query
+      description: Start date.
+      schema:
+        type: string
+        format: datetime
+    end:
+      name: end
+      in: query
+      description: End date.
+      schema:
+        type: string
+        format: datetime
+    page:
+      name: page
+      in: query
+      description: Page number.
+      schema:
+        type: integer
+    per_page:
+      name: per_page
+      in: query
+      description: Number of items per page.
+      schema:
+        type: integer
+    start_date:
+      name: start_date
+      in: query
+      description: Start date.
+      required: true
+      schema:
+        type: string
+        format: datetime
+    end_date:
+      name: end_date
+      in: query
+      description: End date.
+      required: true
+      schema:
+        type: string
+        format: datetime
+  responses:
+    NotFound:
+      description: The specified resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: BadRequest
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalServerError:
+      description: An internal server error has occured.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  requestBodies:
+    GridRefSys:
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              projection:
+                type: string
+              meridian:
+                type: integer
+              degreesx:
+                type: integer
+              degreesy:
+                type: integer
+              bbox:
+                type: string
+            required:
+              - name
+              - projection
+              - meridian
+              - degreesx
+              - degreesy
+              - bbox
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        description:
+          type: string
+      required:
+        - code
+        - description
+    Item:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        title:
+          type: string
+        collection_id:
+          type: integer
+        tile_id:
+          type: integer
+        cloud_cover:
+          type: number
+        provider_id:
+          type: integer
+        application_id:
+          type: integer
+        _metadata:
+          type: object
+        srid:
+          type: boolean
+        start_date:
+          type: string
+          format: datetime
+        end_date:
+          type: string
+          format: datetime
+        geom:
+          $ref: "https://geojson.org/schema/Geometry.json"
+
+
+    Collection:
+      type: object
+      properties:
+        name:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        temporal_composition:
+          type: object
+          additionalProperties: true
+        composite_function_id:
+          type: integer
+        grid_ref_sys_id:
+          type: integer
+        classification_system_id:
+          type: integer
+        collection_type:
+          type: string
+          enum: ["cube", "collection", "classification", "mosaic"]
+        _metadata:
+          type: object
+        is_public:
+          type: boolean
+        start_date:
+          type: string
+          format: datetime
+        end_date:
+          type: string
+          format: datetime
+        extent:
+          type: string
+        version:
+          type: integer
+        version_predecessor:
+          type: integer
+        version_successor:
+          type: integer
+
+    Band:
+      type: object
+      properties:
+        name:
+          type: string
+        common_name:
+          type: string
+        data_type:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    DataCube:
+      type: object
+      properties:
+        datacube:
+          type: string
+        grs:
+          type: string
+        resolution:
+          type: integer
+        bands_quicklook:
+          type: array
+          items:
+            type: string
+        temporal_composition_schema:
+          type: object
+          additionalProperties: true
+        composite_function:
+          type: string
+        bands:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/Band"
+        quality_band:
+          type: string
+        indexes:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/Band"
+        metadata:
+          type: object
+          additionalProperties: true
+        description:
+          type: string
+        version:
+          type: integer
+        public:
+          type: boolean
+          default: true
+        is_combined:
+          type: boolean
+          default: false
+        status:
+          type: string
+          enum: ["Pending", "Finished"]
+      required:
+        - datacube
+        - grs
+        - resolution
+        - temporal_composition
+        - bands_quicklook
+        - composite_function
+        - bands
+        - quality_band
+        - metadata
+        - description
+        - version
+        - title
+
+    DataCubeStatus:
+      type: object
+      properties:
+        item:
+          type: string
+
+    DataCubeMetadataForm:
+      type: object
+      properties:
+        description:
+          type: string
+        title:
+          type: string
+        public:
+          type: boolean
+          default: true
+        metadata:
+          type: object
+          additionalProperties: true
+
+    Period:
+      type: object
+      properties:
+        schema:
+          type: string
+        step:
+          type: integer
+        unit:
+          type: string
+        start_date:
+          type: string
+        last_date:
+          type: string
+        cycle:
+          type: object
+          additionalProperties: true
+        intervals:
+          type: array
+          items:
+            type: string
