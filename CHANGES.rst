@@ -11,6 +11,20 @@ Changes
 =======
 
 
+Version 0.6.0 (2021-03-23)
+--------------------------
+
+- Change compression type to deflate (`#155 <https://github.com/brazil-data-cube/cube-builder/issues/155>`_)
+- Add custom masking for data cubes (`#16 <https://github.com/brazil-data-cube/cube-builder/issues/16>`_)
+- Add Histogram Equalization Matching support (`#138 <https://github.com/brazil-data-cube/cube-builder/issues/138>`_).
+- Add routes to list pending and running tasks (`#103 <https://github.com/brazil-data-cube/cube-builder/issues/103>`_).
+- Review the raster block size for data cubes (`#140 <https://github.com/brazil-data-cube/cube-builder/issues/140>`_).
+- Add integration with Drone CI (`#149 <https://github.com/brazil-data-cube/cube-builder/pull/149>`_).
+- Add integration with BDC-Auth (`#122 <https://github.com/brazil-data-cube/cube-builder/issues/122>`_).
+- Improve data cube builder tasks distribution (`#47 <https://github.com/brazil-data-cube/cube-builder/issues/47>`_).
+- Generate an empty raster file for period that does not contain any image (`#143 <https://github.com/brazil-data-cube/cube-builder/issues/143>`_).
+
+
 Version 0.4.2 (2021-03-18)
 --------------------------
 

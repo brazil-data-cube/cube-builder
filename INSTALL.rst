@@ -103,29 +103,10 @@ The ``Cube Builder`` uses `BDC-DB <https://github.com/brazil-data-cube/bdc-db/>`
     If you already have a database instance with the Brazil Data Cube data model, you can skip this section.
 
 
-In order to prepare a Brazil Data Cube database model, you must clone the ``BDC-DB`` and run the migrations::
+We have prepared a script to configure the database model::
 
-    git clone https://github.com/brazil-data-cube/bdc-db.git /tmp/bdc-db
-    (
-        cd /tmp/bdc-db
-        SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
-        bdc-db db create-db
-        SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
-        bdc-db db upgrade
-    )
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" ./deploy/configure-db.sh
 
-
-After that, you can initialize ``Cube Builder`` migrations with the following commands::
-
-    SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
-    cube-builder db create-db # Create database and schema
-
-    SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
-    cube-builder db upgrade # Up migrations
-
-    # Load default functions for cube-builder
-    SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
-    cube-builder load-data
 
 
 Launch the ``Cube Builder`` service
