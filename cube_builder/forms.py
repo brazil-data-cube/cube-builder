@@ -9,7 +9,7 @@
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
 from bdc_catalog.models import Collection, GridRefSys, db
-from marshmallow import Schema, fields, pre_load
+from marshmallow import Schema, fields, pre_load, validate
 from marshmallow.validate import OneOf, Regexp, ValidationError
 from marshmallow_sqlalchemy.schema import ModelSchema
 from rasterio.dtypes import dtype_ranges
@@ -64,6 +64,22 @@ def validate_mask(value):
         raise ValidationError('Missing property "clear_data" in the "mask".')
 
 
+class CustomMaskDefinition(Schema):
+    """Define a custom mask."""
+
+    clear_data = fields.List(fields.Integer, required=True, allow_none=False, validate=validate.Length(min=1))
+    not_clear_data = fields.List(fields.Integer, required=False, allow_none=False)
+    nodata = fields.Integer(required=True, allow_none=False)
+    saturated = fields.List(fields.Integer, required=False, allow_none=False)
+    saturated_band = fields.String(required=False, allow_none=False)
+
+
+class CubeParametersSchema(Schema):
+    """Represent the data cube parameters used to be attached to the cube execution."""
+
+    mask = fields.Nested(CustomMaskDefinition, required=True, allow_none=False, many=False)
+
+
 class DataCubeForm(Schema):
     """Define parser for datacube creation."""
 
@@ -84,7 +100,7 @@ class DataCubeForm(Schema):
     public = fields.Boolean(required=False, allow_none=False, default=True)
     # Is Data cube generated from Combined Collections?
     is_combined = fields.Boolean(required=False, allow_none=False, default=False)
-    parameters = fields.Dict(required=True)
+    parameters = fields.Nested(CubeParametersSchema, required=True, allow_none=False, many=False)
 
     @pre_load
     def validate_indexes(self, data, **kwargs):

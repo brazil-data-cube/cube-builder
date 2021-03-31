@@ -10,6 +10,7 @@
 
 # Python
 import json
+import logging
 from contextlib import contextmanager
 from time import time
 from typing import List
@@ -166,6 +167,16 @@ class Maestro:
 
         if cube_parameters is None:
             raise RuntimeError(f'No parameters configured for data cube "{self.datacube.id}"')
+
+        # This step acts like first execution. When no stac_url defined in cube parameters but it was given, save it.
+        if self.properties.get('stac_url') and not cube_parameters.metadata_.get('stac_url'):
+            logging.debug(f'No "stac_url"/"token" configured yet for cube parameters.'
+                          f'Using {self.properties["stac_url"]}')
+            meta = cube_parameters.metadata_.copy()
+            meta['stac_url'] = self.properties['stac_url']
+            meta['token'] = self.properties.get('token')
+            cube_parameters.metadata_ = meta
+            cube_parameters.save(commit=True)
 
         # Validate parameters
         cube_parameters.validate()

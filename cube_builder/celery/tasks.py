@@ -15,7 +15,7 @@ from copy import deepcopy
 
 # 3rdparty
 from bdc_catalog.models import Collection, db
-from celery import chain, group, shared_task
+from celery import chain, group
 
 # Cube Builder
 from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
@@ -26,6 +26,7 @@ from ..utils.processing import blend as blend_processing
 from ..utils.processing import build_cube_path, compute_data_set_stats, get_or_create_model
 from ..utils.processing import merge as merge_processing
 from ..utils.processing import post_processing_quality, publish_datacube, publish_merge
+from . import celery_app
 
 
 def capture_traceback(exception=None):
@@ -57,7 +58,7 @@ def create_execution(activity: dict) -> Activity:
     return model
 
 
-@shared_task(queue='merge-cube')
+@celery_app.task(queue='merge-cube')
 def warp_merge(activity, band_map, mask, force=False, **kwargs):
     """Execute datacube merge task.
 
@@ -206,7 +207,7 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
     return activity
 
 
-@shared_task(queue='prepare-cube')
+@celery_app.task(queue='prepare-cube')
 def prepare_blend(merges, band_map: dict, **kwargs):
     """Receive merges by period and prepare task blend.
 
@@ -347,7 +348,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
     task.apply_async()
 
 
-@shared_task(queue='blend-cube')
+@celery_app.task(queue='blend-cube')
 def blend(activity, band_map, build_clear_observation=False, **kwargs):
     """Execute datacube blend task.
 
@@ -366,7 +367,7 @@ def blend(activity, band_map, build_clear_observation=False, **kwargs):
     return blend_processing(activity, band_map, kwargs['quality_band'], build_clear_observation, block_size=block_size)
 
 
-@shared_task(queue='publish-cube')
+@celery_app.task(queue='publish-cube')
 def publish(blends, band_map, quality_band: str, **kwargs):
     """Execute publish task and catalog datacube result.
 
