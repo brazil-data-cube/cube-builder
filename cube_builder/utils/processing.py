@@ -1186,7 +1186,7 @@ def parse_mask(mask: dict):
     saturated_data = mask.get('saturated', [])
 
     if mask.get('nodata') is None:
-        raise RuntimeError('Excepted nodata value set to compute data set statistics.')
+        raise RuntimeError('Expected nodata value set to compute data set statistics.')
 
     nodata = mask['nodata']
 

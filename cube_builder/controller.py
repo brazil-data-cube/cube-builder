@@ -23,12 +23,10 @@ from rasterio.warp import transform
 from shapely.geometry import Polygon
 from werkzeug.exceptions import NotFound, abort
 
-from .celery.utils import list_pending_tasks, list_running_tasks
 from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
                         PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_ATTRIBUTES,
                         TOTAL_OBSERVATION_NAME)
 from .forms import CollectionForm
-from .maestro import Maestro
 from .models import Activity, CubeParameters
 from .utils.image import validate_merges
 from .utils.processing import get_cube_parts, get_or_create_model
@@ -210,10 +208,9 @@ class CubeController:
             quicklook.save(commit=False)
 
         default_params = dict(
-            metadata_=dict(
-                mask=params['parameters']
-            )
+            metadata_=params['parameters']
         )
+        default_params['metadata_']['quality_band'] = params['quality_band']
         cube_parameters, _ = get_or_create_model(CubeParameters, defaults=default_params, collection_id=cube.id)
         db.session.add(cube_parameters)
 
@@ -397,6 +394,8 @@ class CubeController:
             end_date - End period
             **properties - Additional properties used on datacube generation, such bands and cache.
         """
+        from .maestro import Maestro
+
         maestro = Maestro(datacube, collections, tiles, start_date, end_date, **properties)
 
         maestro.orchestrate()

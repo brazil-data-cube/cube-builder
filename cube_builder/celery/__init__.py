@@ -19,7 +19,7 @@ from flask import Flask
 from cube_builder.config import Config
 
 CELERY_TASKS = [
-    'cube_builder.tasks',
+    'cube_builder.celery.tasks',
 ]
 
 celery_app = None

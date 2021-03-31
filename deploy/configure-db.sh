@@ -12,4 +12,5 @@ bdc-db db init # Create database and schema
 bdc-db db create-namespaces # Schemas
 bdc-db db create-extension-postgis # PostGIS
 bdc-db db create-schema # Up tables
+bdc-db db create-triggers
 cube-builder load-data
