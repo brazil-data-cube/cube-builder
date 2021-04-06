@@ -11,7 +11,7 @@ Changes
 =======
 
 
-Version 0.6.0 (2021-03-23)
+Version 0.6.0 (2021-04-06)
 --------------------------
 
 - Change compression type to deflate (`#155 <https://github.com/brazil-data-cube/cube-builder/issues/155>`_)
