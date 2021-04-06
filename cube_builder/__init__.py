@@ -37,7 +37,7 @@ def create_app(config_name=None):
         # Initialize Flask SQLAlchemy
         BDCCatalog(app)
 
-        Redoc(app, 'spec/openapi.yml')
+        Redoc(app, 'spec/openapi.yaml')
         # Just make sure to initialize db before celery
         celery_app = celery.create_celery_app(app)
         celery.celery_app = celery_app

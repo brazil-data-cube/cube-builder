@@ -101,11 +101,17 @@ In order to create data cube Landsat-8 monthly using the composite function ``St
          --data-raw '
     {
         "datacube": "LC8",
-        "grs": "BRAZIL",
+        "grs": "BRAZIL_MD",
         "title": "Landsat-8 (OLI) Cube Stack Monthly - v001",
         "resolution": 30,
         "version": 1,
-        "metadata": {},
+        "metadata": {
+            "license": "MIT",
+            "platform": {
+                "code": "Landsat-8",
+                "instruments": "OLI"
+            }
+        },
         "temporal_composition": {
             "schema": "Continuous",
             "step": 1,
@@ -152,7 +158,15 @@ In order to create data cube Landsat-8 monthly using the composite function ``St
             }
         ],
         "quality_band": "Fmask4",
-        "description": "This datacube contains the all available images from Landsat-8, with 30 meters of spatial resolution, reprojected and cropped to BDC_MD grid, composed each 16 days using the best pixel (Stack) composite function."
+        "description": "This datacube contains the all available images from Landsat-8, with 30 meters of spatial resolution, reprojected and cropped to BDC_MD grid, composed each 16 days using the best pixel (Stack) composite function.",
+        "parameters": {
+            "mask": {
+                "clear_data": [0, 1],
+                "not_clear_data": [2, 3, 4],
+                "nodata": 255,
+                "saturated_data": []
+            }
+        }
     }'
 
 .. note::
@@ -171,6 +185,8 @@ In order to create data cube Landsat-8 monthly using the composite function ``St
         }
         ..
 
+    The property ``mask`` inside ``parameters`` represents how the Cube Builder will deal with ``Clear Data`` and ``Not Clear Data`` pixels.
+    The ``Clear Data`` pixels are considered to identify the ``Best Pixel`` (Stack) and it is count on the ``Clear Observation Band`` (``ClearOb``).
 
 In order to trigger a data cube, we are going to use a collection `LC8SR-1` made with Surface Reflectance using LaSRC 2.0 with cloud masking Fmask 4.2.
 
@@ -221,7 +237,13 @@ In order to create data cube Sentinel 2, use the following command to create dat
         "title": "Sentinel-2 SR - LaSRC/Fmask 4.2 - Data Cube Stack 16 days -v001",
         "resolution": 10,
         "version": 1,
-        "metadata": {},
+        "metadata": {
+            "license": "MIT",
+            "platform": {
+                "code": "Sentinel-2",
+                "instruments": "MSI"
+            }
+        },
         "temporal_composition": {
             "schema": "Cyclic",
             "step": 16,
@@ -283,7 +305,15 @@ In order to create data cube Sentinel 2, use the following command to create dat
             }
         ],
         "quality_band": "Fmask4",
-        "description": "This data cube contains all available images from Sentinel-2, resampled to 10 meters of spatial resolution, reprojected, cropped and mosaicked to BDC_SM grid and time composed each 16 days using stack temporal composition function."
+        "description": "This data cube contains all available images from Sentinel-2, resampled to 10 meters of spatial resolution, reprojected, cropped and mosaicked to BDC_SM grid and time composed each 16 days using stack temporal composition function.",
+        "parameters": {
+            "mask": {
+                "clear_data": [0, 1],
+                "not_clear_data": [2, 3, 4],
+                "nodata": 255,
+                "saturated_data": []
+            }
+        }
     }'
 
 In order to trigger a data cube, we are going to use a collection `S2_MSI_L2_SR_LASRC-1` made with Surface Reflectance using LaSRC 2.0 with cloud masking Fmask 4.2::
@@ -313,7 +343,12 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
         "title": "CBERS-4 (AWFI) SR - Data Cube Stack 16 days - v001",
         "resolution": 64,
         "version": 1,
-        "metadata": {},
+        "metadata": {
+            "platform": {
+              "code": "CBERS-4",
+              "instruments": "AWFI"
+            }
+        },
         "temporal_composition": {
             "schema": "Cyclic",
             "step": 16,
@@ -368,7 +403,15 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
             }
         ],
         "quality_band": "Fmask4",
-        "description": "This data cube contains the all available images from CBERS-4/AWFI resampled to 64 meters of spatial resolution, reprojected and cropped to BDC_LG grid, composed each 16 days using the best pixel (Stack) composite function."
+        "description": "This data cube contains the all available images from CBERS-4/AWFI resampled to 64 meters of spatial resolution, reprojected and cropped to BDC_LG grid, composed each 16 days using the best pixel (Stack) composite function.",
+        "parameters": {
+            "mask": {
+                "clear_data": [127],
+                "not_clear_data": [255],
+                "nodata": 0,
+                "saturated_data": []
+            }
+        }
     }'
 
 Trigger data cube generation with following command:
