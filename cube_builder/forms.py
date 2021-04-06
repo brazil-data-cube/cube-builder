@@ -70,7 +70,7 @@ class CustomMaskDefinition(Schema):
     clear_data = fields.List(fields.Integer, required=True, allow_none=False, validate=validate.Length(min=1))
     not_clear_data = fields.List(fields.Integer, required=False, allow_none=False)
     nodata = fields.Integer(required=True, allow_none=False)
-    saturated = fields.List(fields.Integer, required=False, allow_none=False)
+    saturated_data = fields.List(fields.Integer, required=False, allow_none=False)
     saturated_band = fields.String(required=False, allow_none=False)
 
 

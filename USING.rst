@@ -163,7 +163,8 @@ In order to create data cube Landsat-8 monthly using the composite function ``St
             "mask": {
                 "clear_data": [0, 1],
                 "not_clear_data": [2, 3, 4],
-                "nodata": 255
+                "nodata": 255,
+                "saturated_data": []
             }
         }
     }'
@@ -309,7 +310,8 @@ In order to create data cube Sentinel 2, use the following command to create dat
             "mask": {
                 "clear_data": [0, 1],
                 "not_clear_data": [2, 3, 4],
-                "nodata": 255
+                "nodata": 255,
+                "saturated_data": []
             }
         }
     }'
@@ -406,7 +408,8 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
             "mask": {
                 "clear_data": [127],
                 "not_clear_data": [255],
-                "nodata": 0
+                "nodata": 0,
+                "saturated_data": []
             }
         }
     }'

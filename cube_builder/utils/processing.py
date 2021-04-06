@@ -1167,7 +1167,7 @@ def parse_mask(mask: dict):
         sen2cor = dict(
             clear_data=[4, 5, 6, 7],
             not_clear_data=[2, 3, 8, 9, 10, 11],
-            saturated=[1],
+            saturated_data=[1],
             nodata=0
         )
 
@@ -1183,7 +1183,7 @@ def parse_mask(mask: dict):
     """
     clear_data = numpy.array(mask['clear_data'])
     not_clear_data = numpy.array(mask.get('not_clear_data', []))
-    saturated_data = mask.get('saturated', [])
+    saturated_data = mask.get('saturated_data', [])
 
     if mask.get('nodata') is None:
         raise RuntimeError('Expected nodata value set to compute data set statistics.')
