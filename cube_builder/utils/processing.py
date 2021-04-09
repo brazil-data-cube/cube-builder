@@ -593,8 +593,8 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         scene = activity['scenes'][key]
         resolution = scene.get('resx') or scene.get('resy') or scene.get('resolution')
 
-        efficacy = int(scene['efficacy'])
-        resolution = int(resolution)
+        efficacy = scene['efficacy']
+        resolution = resolution
         mask_tuples.append((100. * efficacy / resolution, key))
 
     # Open all input files and save the datasets in two lists, one for masks and other for the current band.
@@ -718,9 +718,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             mask = msrc.read(1, window=window)
             copy_mask = numpy.array(mask, copy=True)
 
-            # Mask valid data (0 and 1) as True
-            mask[numpy.where(numpy.isin(mask, clear_values))] = 1
-
             if saturated_list:
                 saturated = saturated_list[order].dataset.read(1, window=window)
                 # TODO: Get the original band order and apply to the extract function instead.
@@ -733,6 +730,8 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             # Ensure that Raster noda value (-9999 maybe) is set to False
             mask[raster == nodata] = 0
             mask[numpy.where(numpy.isin(mask, saturated_values))] = 0
+            # Mask valid data (0 and 1) as True
+            mask[numpy.where(numpy.isin(mask, clear_values))] = 1
 
             # Create an inverse mask value in order to pass to numpy masked array
             # True => nodata
