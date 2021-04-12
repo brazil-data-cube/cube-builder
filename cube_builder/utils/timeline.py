@@ -9,7 +9,7 @@
 """Define Data Cube Timeline utilities."""
 
 from datetime import date, datetime, timedelta
-from typing import Union
+from typing import List, Union
 
 from dateutil.relativedelta import relativedelta
 
@@ -190,3 +190,47 @@ class Timeline:
                                                      cut_start, cut_end, intervals)
 
         return periods
+
+
+def temporal_priority_timeline(day_of_year: int, timeline: List[str]) -> List[str]:
+    """Organize the timeline according the given day of period.
+
+    This function consists in given a determined period provided by user, the Cube builder will
+    organize the timeline with the most close in time range according the reference day.
+
+    The following example describes how it works.
+
+    Example:
+        >>> # Monthly Period - January
+        >>> timeline = ['2017-01-01', '2017-01-08', '2017-01-15', '2017-01-27']
+        >>> day_reference = 15
+        >>> priority_timeline = temporal_priority_timeline(day_of_year=day_reference, timeline=timeline)
+        >>> priority_timeline
+        ... ['2017-01-15', '2017-01-08', '2017-01-27', '2017-01-01']
+
+    Args:
+        day_of_year (int) - Day refence of Period.
+        timeline (List[str]) - List of timelines to be sorted.
+
+    Returns:
+        List[str] The sorted timeline values according the reference day.
+    """
+    if not timeline:
+        return []  # TODO: Should throw exception?
+
+    ordered_timeline = sorted(timeline)
+    delta = (datetime.fromisoformat(ordered_timeline[0]) + relativedelta(days=day_of_year - 1)).date()
+
+    def _compare_time_instant(time_instant: str):
+        t = datetime.fromisoformat(time_instant).date()
+
+        return abs(t - delta)
+
+    output = []
+
+    while len(ordered_timeline) > 0:
+        best_time_instant = min(ordered_timeline, key=_compare_time_instant)
+        ordered_timeline.pop(ordered_timeline.index(best_time_instant))
+        output.append(best_time_instant)
+
+    return output
