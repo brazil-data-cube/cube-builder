@@ -11,6 +11,12 @@ Changes
 =======
 
 
+Version 0.6.0 (2021-04-12)
+--------------------------
+
+- Fix the generation of STACK product when ``saturated_data`` value is set to 1 (`#167 <https://github.com/brazil-data-cube/cube-builder/issues/167>`_).
+
+
 Version 0.6.0 (2021-04-06)
 --------------------------
 
