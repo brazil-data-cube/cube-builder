@@ -562,7 +562,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     Returns:
         A processed activity with the generated values.
     """
-    from .image import radsat_extract_bits
+    from .image import get_qa_mask, radsat_extract_bits
 
     # Assume that it contains a band and quality band
     numscenes = len(activity['scenes'])
@@ -606,7 +606,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
     for m in sorted(mask_tuples, reverse=True):
         key = m[1]
-        efficacy = m[0]
         scene = activity['scenes'][key]
 
         filename = scene['ARDfiles'][quality_band]
@@ -725,13 +724,21 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
                 mask[saturated] = 0
 
-            # Mask cloud/snow/shadow/no-data as False
-            mask[numpy.where(numpy.isin(mask, not_clear_values))] = 0
-            # Ensure that Raster noda value (-9999 maybe) is set to False
-            mask[raster == nodata] = 0
-            mask[numpy.where(numpy.isin(mask, saturated_values))] = 0
-            # Mask valid data (0 and 1) as True
-            mask[numpy.where(numpy.isin(mask, clear_values))] = 1
+            if mask_values['bits']:
+                m = numpy.ma.masked_array(mask, mask=mask == mask_values['nodata'], fill_value=mask_values['nodata'])
+                matched = get_qa_mask(m).mask
+                # Mark all invalid data
+                mask[matched.mask] = 0
+                # Mark all clear data as 1
+                mask[numpy.invert(matched.mask)] = 1
+            else:
+                # Mask cloud/snow/shadow/no-data as False
+                mask[numpy.where(numpy.isin(mask, not_clear_values))] = 0
+                # Ensure that Raster noda value (-9999 maybe) is set to False
+                mask[raster == nodata] = 0
+                mask[numpy.where(numpy.isin(mask, saturated_values))] = 0
+                # Mask valid data (0 and 1) as True
+                mask[numpy.where(numpy.isin(mask, clear_values))] = 1
 
             # Create an inverse mask value in order to pass to numpy masked array
             # True => nodata
@@ -1194,6 +1201,7 @@ def parse_mask(mask: dict):
         not_clear_data=not_clear_data,
         saturated_data=saturated_data,
         nodata=nodata,
+        bits=mask.get('bits', False)
     )
 
     if mask.get('saturated_band'):
@@ -1210,15 +1218,24 @@ def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, fl
         Values 2 and 4 are considered as `not clear data`
         The values for snow `3` and nodata `255` is not used to count efficacy and not clear ratio
     """
+    from .image import get_qa_mask
+
     if compute:
         mask = parse_mask(mask)
 
-    # Compute how much data is for each class. It will be used as image area
-    clear_pixels = raster[numpy.where(numpy.isin(raster, mask['clear_data']))].size
-    not_clear_pixels = raster[numpy.where(numpy.isin(raster, mask['not_clear_data']))].size
-
     # Total pixels used to retrieve data efficacy
     total_pixels = raster.size
+    if mask['bits']:
+        nodata_pixels = raster[raster == mask['nodata']].size
+        qa_mask = get_qa_mask(raster, clear_data=mask['clear_data'], nodata=mask['nodata'])
+        # Since the nodata values is already masked, we should remove the difference
+        not_clear_pixels = qa_mask[qa_mask.mask].size - nodata_pixels
+        clear_pixels = qa_mask[numpy.invert(qa_mask.mask)].size
+    else:
+        # Compute how much data is for each class. It will be used as image area
+        clear_pixels = raster[numpy.where(numpy.isin(raster, mask['clear_data']))].size
+        not_clear_pixels = raster[numpy.where(numpy.isin(raster, mask['not_clear_data']))].size
+
     # Image area is everything, except nodata.
     image_area = clear_pixels + not_clear_pixels
     not_clear_ratio = 100

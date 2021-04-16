@@ -9,6 +9,7 @@
 """Define a utility to validate merge images."""
 
 import logging
+from collections import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional, Union
@@ -247,3 +248,65 @@ def radsat_extract_bits(bit_value: Union[int, numpy.ndarray], bit_start: int, bi
     res = (bit_value >> bit_start) & mask
 
     return res
+
+
+def extract_qa_bits(band_data, bit_location, bit_length) -> numpy.ma.masked_array:
+    """Extract Quality Assessment Bits from Landsat-8 Collection 2 Level-2 products.
+
+    This method uses the bitwise operation to extract bits according to the document
+    `https://prd-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/atoms/files/LSDS-1619_Landsat8-C2-L2-ScienceProductGuide-v2.pdf`, page 13.
+
+    Notes:
+        Currently this method masks the value that has any bit with Medium or High Confidence.
+        It will be support any confidence value in the next releases.
+
+    Args:
+        band_data (numpy.ma.masked_array) - The QA Raster Data
+        bit_location (int) - The band bit value
+        bit_length (int) - How much bits should match.
+
+    Returns:
+        numpy.ma.masked_array An array with masked values.
+    """
+    # Bit shift offset for value comparison
+    value = 1
+
+    for bit_offset in [8, 10, 12, 14]:  # 9~8 => Cloud Confidence
+        shifted_data = (band_data >> bit_offset) & 2 > 0
+
+        band_data.mask += shifted_data
+
+    position_value = bit_length << bit_location
+    shifted_value = value << bit_location
+
+    mask = (band_data & position_value) == shifted_value
+    # Only mask the unmatched values
+    band_data.mask = numpy.invert(mask)
+
+    return band_data
+
+
+def get_qa_mask(data: numpy.ma.masked_array, clear_data: List[float] = None, nodata: float = None) -> numpy.ma.masked_array:
+    """Get the Raster Mask from any Landsat Quality Assessment product."""
+    is_numpy_array = type(data) in (numpy.ndarray, numpy.ma.masked_array)
+    if type(data) in (float, int,):
+        data = numpy.ma.masked_array([data])
+    elif isinstance(data, Iterable) and not is_numpy_array:
+        data = numpy.ma.masked_array(data)
+    elif not is_numpy_array:
+        raise TypeError(f'Expected a number or numpy masked array for {data}')
+
+    result = data
+    internal = numpy.invert(data.astype(numpy.bool_))
+
+    for value in clear_data:
+        matched = extract_qa_bits(data, value, 1)
+
+        internal += numpy.invert(matched.mask)
+
+    if nodata is not None:
+        data[data == nodata] = numpy.ma.masked
+
+    data.mask = numpy.invert(internal)
+
+    return result
