@@ -288,12 +288,12 @@ def extract_qa_bits(band_data, bit_location, bit_length) -> numpy.ma.masked_arra
 
 def get_qa_mask(data: numpy.ma.masked_array, clear_data: List[float] = None, nodata: float = None) -> numpy.ma.masked_array:
     """Get the Raster Mask from any Landsat Quality Assessment product."""
-    is_numpy_array = type(data) in (numpy.ndarray, numpy.ma.masked_array)
+    is_numpy_or_masked_array = type(data) in (numpy.ndarray, numpy.ma.masked_array)
     if type(data) in (float, int,):
         data = numpy.ma.masked_array([data])
-    elif isinstance(data, Iterable) and not is_numpy_array:
-        data = numpy.ma.masked_array(data)
-    elif not is_numpy_array:
+    elif (isinstance(data, Iterable) and not is_numpy_or_masked_array) or (isinstance(data, numpy.ndarray) and not hasattr(data, 'mask')):
+        data = numpy.ma.masked_array(data, mask=data == nodata, fill_value=nodata)
+    elif not is_numpy_or_masked_array:
         raise TypeError(f'Expected a number or numpy masked array for {data}')
 
     result = data

@@ -72,6 +72,7 @@ class CustomMaskDefinition(Schema):
     nodata = fields.Integer(required=True, allow_none=False)
     saturated_data = fields.List(fields.Integer, required=False, allow_none=False)
     saturated_band = fields.String(required=False, allow_none=False)
+    bits = fields.Boolean(required=False, allow_none=False, default=False)
 
 
 class CubeParametersSchema(Schema):

@@ -726,7 +726,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
             if mask_values['bits']:
                 m = numpy.ma.masked_array(mask, mask=mask == mask_values['nodata'], fill_value=mask_values['nodata'])
-                matched = get_qa_mask(m).mask
+                matched = get_qa_mask(m, clear_data=clear_values, nodata=mask_values['nodata'])
                 # Mark all invalid data
                 mask[matched.mask] = 0
                 # Mark all clear data as 1
@@ -1148,7 +1148,7 @@ def getMask(raster, dataset=None, mask=None, compute=False):
 
     efficacy, cloudratio = _qa_statistics(rastercm, mask=mask, compute=compute)
 
-    return rastercm.astype(numpy.uint8), efficacy, cloudratio
+    return rastercm, efficacy, cloudratio
 
 
 def parse_mask(mask: dict):
