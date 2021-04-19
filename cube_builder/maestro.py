@@ -483,10 +483,10 @@ class Maestro:
                                 band_name_href = band.common_name
 
                             elif band.name not in feature['assets']:
-                                if f'{band.name}.TIF' not in feature['assets']:
+                                if f'sr_{band.name}' not in feature['assets']:
                                     continue
                                 else:
-                                    band_name_href = f'{band.name}.TIF'
+                                    band_name_href = f'sr_{band.name}'
 
                             scenes[band.name].setdefault(date, dict())
 
