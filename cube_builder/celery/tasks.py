@@ -27,6 +27,7 @@ from ..utils.processing import blend as blend_processing
 from ..utils.processing import build_cube_path, compute_data_set_stats, get_or_create_model
 from ..utils.processing import merge as merge_processing
 from ..utils.processing import post_processing_quality, publish_datacube, publish_merge
+from ..utils.timeline import temporal_priority_timeline
 from . import celery_app
 
 
@@ -317,6 +318,16 @@ def prepare_blend(merges, band_map: dict, **kwargs):
                 source = activity['scenes'][date]['ARDfiles'][band]
                 source_mask = activity['scenes'][date]['ARDfiles'][quality_band]
                 match_histogram_with_merges(source, source_mask, reference, best_mask_file, block_size=block_size)
+
+    if kwargs.get('reference_day'):
+        timeline = list(quality_date_stats.keys())
+        ordered_dates = temporal_priority_timeline(kwargs['reference_day'], timeline)
+        # TODO: Check factor to generate weights based in len of ordered_dates
+        weights = [100 - (idx * 0.01) for idx, _ in enumerate(ordered_dates)]
+
+        for activity in activities.values():
+            for idx, date in enumerate(ordered_dates):
+                activity['scenes'][date]['efficacy'] = weights[idx]
 
     # Prepare list of activities to dispatch
     activity_list = list(activities.values())

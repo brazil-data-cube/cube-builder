@@ -597,8 +597,8 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         scene = activity['scenes'][key]
         resolution = scene.get('resx') or scene.get('resy') or scene.get('resolution')
 
-        efficacy = int(scene['efficacy'])
-        resolution = int(resolution)
+        efficacy = scene['efficacy']
+        resolution = resolution
         mask_tuples.append((100. * efficacy / resolution, key))
 
     # Open all input files and save the datasets in two lists, one for masks and other for the current band.

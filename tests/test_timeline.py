@@ -12,7 +12,7 @@ import datetime
 
 from dateutil.relativedelta import relativedelta
 
-from cube_builder.utils.timeline import Timeline
+from cube_builder.utils.timeline import Timeline, temporal_priority_timeline
 
 
 class TestTimeline:
@@ -181,3 +181,92 @@ class TestTimeline:
         assert timeline[0][0] == datetime.date(year=2019, month=12, day=21)
         # Should match last time instant with next year
         assert timeline[-1][-1] == datetime.date(year=2021, month=3, day=20)
+
+
+class TestTemporalPriorityTimeline:
+    """Test the generation of timeline using Temporal Priority Timeline algorithm."""
+
+    @staticmethod
+    def _assert_timeline(given: list, expected_list: list):
+        assert len(given) == len(expected_list)
+
+        for idx, time_instant in enumerate(given):
+            expected_time_instant = expected_list[idx]
+
+            assert time_instant == expected_time_instant
+
+    def test_day15_monthly(self):
+        timeline = [
+            '2020-01-01',
+            '2020-01-07',
+            '2020-01-12',
+            '2020-01-15',
+            '2020-01-18',
+            '2020-01-23',
+            '2020-01-28',
+            '2020-02-01',
+        ]
+        # We refers the day 31 to be the last day of month period
+        reference_day = 15
+        ts = temporal_priority_timeline(reference_day, timeline)
+
+        expected = [
+            '2020-01-15',
+            '2020-01-12',
+            '2020-01-18',
+            '2020-01-07',
+            '2020-01-23',
+            '2020-01-28',
+            '2020-01-01',
+            '2020-02-01',
+        ]
+
+        self._assert_timeline(ts, expected)
+
+    def test_last_day_of_period(self):
+        timeline = [
+            '2020-12-12',
+            '2020-12-15',
+            '2020-12-01',
+            '2020-12-07',
+            '2020-12-18',
+            '2020-12-28',
+            '2020-12-23',
+            '2021-01-01',
+        ]
+        # We refers the day 31 to be the last day of month period
+        reference_day = 31
+        ts = temporal_priority_timeline(reference_day, timeline)
+        ordered_desc = sorted([datetime.datetime.fromisoformat(t) for t in timeline], reverse=True)
+        expected = [elm.strftime('%Y-%m-%d') for elm in ordered_desc]
+
+        self._assert_timeline(ts, expected)
+
+    def test_day42_a_quarter(self):
+        timeline = [
+            '2019-04-01',
+            '2019-04-18',
+            '2019-04-25',
+            '2019-05-03',
+            '2019-05-31',
+            '2019-06-13',
+        ]
+        reference = 42
+        ts = temporal_priority_timeline(reference, timeline)
+        # TODO: 05-03   04-25    05-31  04-18   06-13   04-01
+        expected = ['2019-05-03', '2019-04-25', '2019-05-31', '2019-04-18', '2019-06-13', '2019-04-01']
+        self._assert_timeline(ts, expected)
+
+    def test_timeline_16days_year_cycle(self):
+        timeline = [
+            '2019-12-19',
+            '2019-12-20',
+            '2019-12-25',
+            '2019-12-26',
+        ]
+        reference = 2
+        ts = temporal_priority_timeline(reference, timeline)
+
+        expected = ['2019-12-20', '2019-12-19', '2019-12-25', '2019-12-26']
+
+        self._assert_timeline(ts, expected)
