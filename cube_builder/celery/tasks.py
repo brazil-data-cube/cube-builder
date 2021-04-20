@@ -11,6 +11,7 @@
 # Python Native
 import logging
 import traceback
+from collections.abc import Iterable
 from copy import deepcopy
 
 # 3rdparty
@@ -64,9 +65,9 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
 
     This task consists in the following steps:
 
-    **1.** Prepare a raster using dimensions of datacube GRS schema.
-    **2.** Open collection dataset with RasterIO and reproject to datacube GRS Schema.
-    **3.** Fill the respective pathrow into raster
+        - Prepare a raster using dimensions of datacube GRS schema.
+        - Open collection dataset with RasterIO and reproject to datacube GRS Schema.
+        - Fill the respective pathrow into raster
 
     Args:
         activity - Datacube Activity Model
@@ -374,18 +375,23 @@ def publish(blends, band_map, quality_band: str, **kwargs):
     Args:
         activity - Datacube Activity Model
     """
-    period = blends[0]['period']
+    if isinstance(blends, Iterable):
+        blend_reference = blends[0]
+    else:
+        blend_reference = blends
+
+    period = blend_reference['period']
     logging.info(f'Executing publish {period}')
 
-    version = blends[0]['version']
+    version = blend_reference['version']
 
     cube: Collection = Collection.query().filter(
-        Collection.name == blends[0]['datacube'],
+        Collection.name == blend_reference['datacube'],
         Collection.version == version
     ).first()
-    warped_datacube = blends[0]['warped_datacube']
-    tile_id = blends[0]['tile_id']
-    reused_cube = blends[0].get('reuse_datacube')
+    warped_datacube = blend_reference['warped_datacube']
+    tile_id = blend_reference['tile_id']
+    reused_cube = blend_reference.get('reuse_datacube')
 
     # Retrieve which bands to generate quick look
     bands = cube.bands
@@ -400,7 +406,7 @@ def publish(blends, band_map, quality_band: str, **kwargs):
 
     composite_function = DataCubeFragments(cube.name).composite_function
 
-    quality_blend = None
+    quality_blend = dict(efficacy=100, cloudratio=0)
 
     for blend_result in blends:
         if composite_function != 'IDENTITY':
