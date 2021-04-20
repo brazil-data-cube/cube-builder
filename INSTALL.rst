@@ -148,7 +148,7 @@ Enter the following command to start ``Cube Builder`` worker::
 
     DATA_DIR="/data" \
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
-    cube-builder worker -l INFO --concurrency 8
+    cube-builder worker -l INFO --concurrency 8 -Q default,merge-cube,prepare-cube,blend-cube,publish-cube
 
 
 You may need to replace the definition of some parameters:
@@ -157,6 +157,7 @@ You may need to replace the definition of some parameters:
 
     - ``--concurrency 8``: defines the number of concurrent processes to generate of data cube. The default is the number of CPUs available on your system.
 
+    - ``-Q default,merge-cube,prepare-cube,blend-cube,publish-cube``: the list of Queues to be consumed by ``Cube-Builder`` in order to execute the tasks generation. You can set many workers to listen specific queues and set the maximum of threads to be executed in parallel.
 
 .. note::
 
@@ -166,12 +167,6 @@ You may need to replace the definition of some parameters:
 .. warning::
 
     The ``Cube Builder`` can use a lot of memory for each concurrent process, since it opens multiple images in memory. You can limit the concurrent processes in order to prevent it.
-
-
-Using the Cube Builder
-----------------------
-
-Please, refer to the document `USING.rst <./USING.rst>`_ for more information on how to use the ``Cube Builder``.
 
 
 .. rubric:: Footnotes
