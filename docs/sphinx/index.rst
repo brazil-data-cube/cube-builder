@@ -22,6 +22,7 @@
     installation
     deploy
     usage
+    api
     history
 
 

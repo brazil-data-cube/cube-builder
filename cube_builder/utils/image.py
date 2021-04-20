@@ -162,7 +162,7 @@ def match_histogram_with_merges(source: str, source_mask: str, reference: str, r
 
     See more in `Histogram Matching <https://scikit-image.org/docs/dev/auto_examples/color_exposure/plot_histogram_matching.html>`_.
 
-    Notes:
+    Note:
         It overwrites the source file.
 
     Args:
@@ -212,7 +212,7 @@ def radsat_extract_bits(bit_value: Union[int, numpy.ndarray], bit_start: int, bi
     the Landsat Radiometric Saturation Quality Assessment Band (radsat_qa) is a bit
     packed representation of which sensor bands were saturated during data sensing capture.
     The value 1 represents saturated value while 0 is valid data.
-    For Landsat-8, the following table represents pixels saturation:
+    For Landsat-8, the following table represents pixels saturation::
 
         Bit    Bit Value    Description
           0        1        Data Fill Flag
@@ -229,14 +229,13 @@ def radsat_extract_bits(bit_value: Union[int, numpy.ndarray], bit_start: int, bi
          11     2048        Band 11 Data Saturation Flag
 
     Example:
+        >>> from cube_builder.utils.image import radsat_extract_bits
         >>> # Represents band 10 (1024) and band 1 (2) is saturated.
-        >>> value = 1026
-        >>> for band in range(1, 12):
-        ...     print(f'Band {band} -> {radsat_extract_bits(value, band))}')
         >>> # Check if any band is saturated
         >>> radsat_extract_bits(1026, 1, 7)
+        1
         >>> # You can also pass the numpy array
-        >>> radsat_extract_bits(numpy.random.randint(0, 1028, size=(100, 100)), 1, 7)
+        >>> # radsat_extract_bits(numpy.random.randint(0, 1028, size=(100, 100)), 1, 7)
     """
     if bit_end is None:
         bit_end = bit_start

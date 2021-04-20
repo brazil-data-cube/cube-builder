@@ -26,7 +26,7 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
     This method seeks for custom bands on Collection Band definition. A custom band must have
     `metadata` property filled out according the ``bdc_catalog.jsonschemas.band-metadata.json``.
 
-    Notes:
+    Note:
         When collection does not have any index band, returns empty dict.
 
     Raises:
