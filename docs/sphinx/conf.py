@@ -32,6 +32,8 @@ extensions = [
     # 'sphinx_tabs.tabs',
 ]
 
+autodoc_mock_imports = ['librabbitmq']
+
 # Paths that contain templates, relative to this directory.
 templates_path = ['_templates']
 
