@@ -391,7 +391,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
 
 
 def post_processing_quality(quality_file: str, bands: List[str], cube: str,
-                            date: str, tile_id, quality_band: str, version: int, block_size:int=None):
+                            date: str, tile_id, quality_band: str, band_map: dict, version: int, block_size:int=None):
     """Stack the merge bands in order to apply a filter on the quality band.
 
     We have faced some issues regarding `nodata` value in spectral bands, which was resulting
@@ -419,7 +419,9 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
     with rasterio.open(str(quality_file)) as merge_dataset:
         blocks = list(merge_dataset.block_windows())
         profile = merge_dataset.profile
-        nodata = profile.get('nodata', 255)
+        nodata = profile.get('nodata', band_map[quality_band]['nodata'])
+        if nodata is not None:
+            nodata = float(nodata)
         raster_merge = merge_dataset.read(1)
 
     _default_bands = DATASOURCE_NAME, 'ndvi', 'evi', 'cnc', TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME
@@ -438,7 +440,8 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
             with rasterio.open(str(band_file)) as ds:
                 raster = ds.read(1, window=block)
 
-            nodata_found = numpy.where(raster == -9999)
+            band_nodata = band_map[band]['nodata']
+            nodata_found = numpy.where(raster == float(band_nodata))
             raster_nodata_pos = numpy.ravel_multi_index(nodata_found, raster.shape)
             nodata_positions = numpy.union1d(nodata_positions, raster_nodata_pos)
 

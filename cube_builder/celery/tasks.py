@@ -238,7 +238,8 @@ def prepare_blend(merges, band_map: dict, **kwargs):
         if not was_reused:
             logging.info(f'Applying post-processing in {str(quality_file)}')
             post_processing_quality(quality_file, bands, merges[0]['warped_collection_id'],
-                                    period, merges[0]['tile_id'], quality_band, version=version, block_size=block_size)
+                                    period, merges[0]['tile_id'], quality_band, band_map,
+                                    version=version, block_size=block_size)
         else:
             logging.info(f'Skipping post-processing {str(quality_file)}')
 
