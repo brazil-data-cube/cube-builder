@@ -11,6 +11,21 @@ Changes
 =======
 
 
+Version 0.6.2 (2021-04-20)
+--------------------------
+
+- Use masked array while composing data cubes (`#175 <https://github.com/brazil-data-cube/cube-builder/issues/175>`_).
+- Fix ReadTheDocs build broken (https://cube-builder.readthedocs.io/en/latest/).
+- Improve documentation how to setup Cube-Builder.
+
+
+
+Version 0.6.1 (2021-04-12)
+--------------------------
+
+- Fix the generation of STACK product when ``saturated_data`` value is set to 1 (`#167 <https://github.com/brazil-data-cube/cube-builder/issues/167>`_).
+
+
 Version 0.6.0 (2021-04-06)
 --------------------------
 

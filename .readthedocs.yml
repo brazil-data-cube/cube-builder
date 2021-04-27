@@ -6,11 +6,18 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
-"""Version information for Python Module for Cube Builder.
+version: 2
 
-This file is imported by ``cube_builder.__init__``,
-and parsed by ``setup.py``.
-"""
+sphinx:
+    configuration: docs/sphinx/conf.py
 
+formats: []
 
-__version__ = '0.8.0'
+python:
+    version: 3.7
+
+    install:
+        - method: pip
+          path: .
+          extra_requirements:
+              - docs

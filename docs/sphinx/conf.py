@@ -32,6 +32,8 @@ extensions = [
     # 'sphinx_tabs.tabs',
 ]
 
+autodoc_mock_imports = ['librabbitmq']
+
 # Paths that contain templates, relative to this directory.
 templates_path = ['_templates']
 
@@ -54,14 +56,12 @@ exclude_patterns = [
 html_theme = 'sphinx_rtd_theme'
 
 html_theme_options = {
-    'html_baseurl': 'https://cube-builder.github.io/',
     'analytics_id': 'XXXXXXXXXX',
     'logo_only': False,
     'display_version': True,
     'prev_next_buttons_location': 'both',
     'style_external_links': True,
     # 'vcs_pageview_mode': 'edit',
-    'github_url': 'https://github.com/brazil-data-cube/cube-builder',
     'style_nav_header_background': '#2980B9',
     'collapse_navigation': True,
     'sticky_navigation': False,

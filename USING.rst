@@ -369,7 +369,7 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
             {"name": "BAND14", "common_name": "green", "data_type": "int16"},
             {"name": "BAND15", "common_name": "red", "data_type": "int16"},
             {"name": "BAND16", "common_name": "nir", "data_type": "int16"},
-            {"name": "Fmask4", "common_name": "quality","data_type": "uint8"}
+            {"name": "CMASK", "common_name": "quality","data_type": "uint8"}
         ],
         "indexes": [
             {
@@ -402,7 +402,7 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
                 }
             }
         ],
-        "quality_band": "Fmask4",
+        "quality_band": "CMASK",
         "description": "This data cube contains the all available images from CBERS-4/AWFI resampled to 64 meters of spatial resolution, reprojected and cropped to BDC_LG grid, composed each 16 days using the best pixel (Stack) composite function.",
         "parameters": {
             "mask": {
@@ -426,8 +426,47 @@ Trigger data cube generation with following command:
         --end=2019-01-31
 
 
-.. note::
+Restarting or Reprocessing a Data Cube
+--------------------------------------
 
-    In order to restart data cube generation, just pass the same command line to trigger a data cube.
-    It will reuse the entire process, executing only the failed tasks. You can also pass optional parameter
-    ``--force`` to build data cube without cache.
+When the ``Cube-Builder`` could not generate data cube for any unknown issue, you may restarting the entire process
+with the same command you have dispatched::
+
+    cube-builder build CB4_64_16D_STK \
+        --collections=CBERS4_AWFI_L4_SR \
+        --tiles=022024 \
+        --start=2019-01-01 \
+        --end=2019-01-31
+
+It will reuse most of files that were already processed, executing only the failed tasks. If you notice anything suspicious or want to re-create theses files again, use the option ``--force``::
+
+    cube-builder build CB4_64_16D_STK \
+        --collections=CBERS4_AWFI_L4_SR \
+        --tiles=022024 \
+        --start=2019-01-01 \
+        --end=2019-01-31 \
+        --force
+
+
+Data Cube Parameters
+--------------------
+
+The ``Cube-Builder`` supports a few parameters to be set during the data cube execution.
+
+In order to check the parameters associated with data cube ``CB4_64_16D_STK-1``, use the command::
+
+    cube-builder show-parameters CB4_64_16D_STK-1
+
+
+The following output represents all the parameters related with the given data cube::
+
+    mask -> {'clear_data': [127], 'not_clear_data': [255], 'nodata': 0}
+    quality_band -> CMASK
+    stac_url -> https://brazildatacube.dpi.inpe.br/stac/
+    token -> ChangeME
+
+
+You can change any parameter with the command ``cube-builder configure`` with ``DataCubeName-Version``::
+
+    cube-builder configure CB4_64_16D_STK-1 --stac-url=AnySTAC
+

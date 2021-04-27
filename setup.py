@@ -40,7 +40,10 @@ histogram_require = [
 extras_require = {
     'docs': docs_require,
     'tests': tests_require,
-    'histogram': histogram_require
+    'histogram': histogram_require,
+    'rabbitmq': [
+        'librabbitmq>=1.5.0',
+    ]
 }
 
 extras_require['all'] = [ req for exts, reqs in extras_require.items() for req in reqs ]
@@ -49,7 +52,7 @@ setup_requires = []
 
 install_requires = [
     'bdc-catalog @ git+git://github.com/brazil-data-cube/bdc-catalog.git@v0.8.1#egg=bdc-catalog',
-    'celery[librabbitmq]>=4.3.0,<5',
+    'celery>=4.3.0,<5',
     'Flask>=1.1.1,<2',
     'flask-redoc>=0.2.1',
     'marshmallow-sqlalchemy>=0.19.0,<1',

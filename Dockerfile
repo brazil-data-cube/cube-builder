@@ -6,12 +6,12 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
-FROM registry.dpi.inpe.br/brazildatacube/geo:0.3
+FROM python:3.8
 
 ADD . /app
 
 WORKDIR /app
 
-RUN pip3 install pip --upgrade && \
-    pip3 install wheel && \
-    pip3 install -e .
+RUN python -m pip install pip --upgrade && \
+    python -m pip install wheel && \
+    python -m pip install -e .[rabbitmq]
