@@ -79,6 +79,9 @@ class CubeParametersSchema(Schema):
     """Represent the data cube parameters used to be attached to the cube execution."""
 
     mask = fields.Nested(CustomMaskDefinition, required=True, allow_none=False, many=False)
+    reference_day = fields.Integer(required=False, allow_none=False)
+    histogram_matching = fields.Bool(required=False, allow_none=False)
+    no_post_process = fields.Bool(required=False, allow_none=False)
 
 
 class DataCubeForm(Schema):
