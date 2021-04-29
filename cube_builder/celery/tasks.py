@@ -231,17 +231,18 @@ def prepare_blend(merges, band_map: dict, **kwargs):
     version = merges[0]['args']['version']
     bands = [b for b in band_map.keys() if b != kwargs['mask'].get('saturated_band')]
 
-    for period, stats in quality_date_stats.items():
-        _, _, quality_file, was_reused = stats
+    if 'no_post_process' not in kwargs:
+        for period, stats in quality_date_stats.items():
+            _, _, quality_file, was_reused = stats
 
-        # Do not apply post-processing on reused data cube since it may be already processed.
-        if not was_reused:
-            logging.info(f'Applying post-processing in {str(quality_file)}')
-            post_processing_quality(quality_file, bands, merges[0]['warped_collection_id'],
-                                    period, merges[0]['tile_id'], quality_band, band_map,
-                                    version=version, block_size=block_size)
-        else:
-            logging.info(f'Skipping post-processing {str(quality_file)}')
+            # Do not apply post-processing on reused data cube since it may be already processed.
+            if not was_reused:
+                logging.info(f'Applying post-processing in {str(quality_file)}')
+                post_processing_quality(quality_file, bands, merges[0]['warped_collection_id'],
+                                        period, merges[0]['tile_id'], quality_band, band_map,
+                                        version=version, block_size=block_size)
+            else:
+                logging.info(f'Skipping post-processing {str(quality_file)}')
 
     def _is_not_stk(_merge):
         """Control flag to generate cloud mask.
