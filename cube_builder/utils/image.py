@@ -249,7 +249,7 @@ def radsat_extract_bits(bit_value: Union[int, numpy.ndarray], bit_start: int, bi
     return res
 
 
-def extract_qa_bits(band_data, bit_location, bit_length) -> numpy.ma.masked_array:
+def extract_qa_bits(band_data, bit_location, confidence=False) -> numpy.ma.masked_array:
     """Extract Quality Assessment Bits from Landsat-8 Collection 2 Level-2 products.
 
     This method uses the bitwise operation to extract bits according to the document
@@ -267,25 +267,26 @@ def extract_qa_bits(band_data, bit_location, bit_length) -> numpy.ma.masked_arra
     Returns:
         numpy.ma.masked_array An array with masked values.
     """
-    # Bit shift offset for value comparison
-    value = 1
+    data = band_data.copy()
 
+    if confidence:
+        qa_cloud_confidence(data)
+
+    mask = (data & (1 << bit_location)) # >> bit_location
+
+    return mask
+
+
+def qa_cloud_confidence(data):
+    """Apply the Bit confidence to the Quality Assessment mask."""
     for bit_offset in [8, 10, 12, 14]:  # 9~8 => Cloud Confidence
-        shifted_data = (band_data >> bit_offset) & 2 > 0
+        shifted_data = (data >> bit_offset) & 2 > 0
 
-        band_data.mask += shifted_data
-
-    position_value = bit_length << bit_location
-    shifted_value = value << bit_location
-
-    mask = (band_data & position_value) == shifted_value
-    # Only mask the unmatched values
-    band_data.mask = numpy.invert(mask)
-
-    return band_data
+        data.mask += shifted_data
+    return data
 
 
-def get_qa_mask(data: numpy.ma.masked_array, clear_data: List[float] = None, nodata: float = None) -> numpy.ma.masked_array:
+def get_qa_mask(data: numpy.ma.masked_array, clear_data: List[float] = None, not_clear_data: List[float] = None, nodata: float = None) -> numpy.ma.masked_array:
     """Get the Raster Mask from any Landsat Quality Assessment product."""
     is_numpy_or_masked_array = type(data) in (numpy.ndarray, numpy.ma.masked_array)
     if type(data) in (float, int,):
@@ -295,17 +296,24 @@ def get_qa_mask(data: numpy.ma.masked_array, clear_data: List[float] = None, nod
     elif not is_numpy_or_masked_array:
         raise TypeError(f'Expected a number or numpy masked array for {data}')
 
-    result = data
-    internal = numpy.invert(data.astype(numpy.bool_))
+    result = data.copy()
+    clear_mask = data.mask.copy()
 
     for value in clear_data:
-        matched = extract_qa_bits(data, value, 1)
+        masked = numpy.ma.getdata(extract_qa_bits(result, value))
+        clear_mask = numpy.ma.logical_or(masked > 0, clear_mask)
 
-        internal += numpy.invert(matched.mask)
+    result.mask = numpy.invert(clear_mask)
+
+    # Cloud Confidence only once
+    qa_cloud_confidence(result)
+
+    # Mask all not clear data before get any valid data
+    for value in not_clear_data:
+        masked = extract_qa_bits(result, value)
+        result = numpy.ma.masked_where(masked > 0, result)
 
     if nodata is not None:
-        data[data == nodata] = numpy.ma.masked
-
-    data.mask = numpy.invert(internal)
+        result[data == nodata] = numpy.ma.masked
 
     return result
