@@ -673,7 +673,10 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     # Create directory
     cube_file.parent.mkdir(parents=True, exist_ok=True)
 
-    median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
+    cube_function = DataCubeFragments(datacube).composite_function
+
+    if cube_function == 'MED':
+        median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
 
     if build_clear_observation:
         logging.warning('Creating and computing Clear Observation (ClearOb) file...')
@@ -732,7 +735,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
             if mask_values['bits']:
                 matched = get_qa_mask(masked, clear_data=clear_values, nodata=mask_values['nodata'])
-                masked.mask = numpy.inverse(matched.mask)
+                masked.mask = numpy.invert(matched.mask)
             else:
                 # Mask cloud/snow/shadow/no-data as False
                 masked.mask[numpy.where(numpy.isin(masked, not_clear_values))] = True
@@ -810,11 +813,11 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             # Update what was done.
             notdonemask = notdonemask * bmask
 
-        median = numpy.ma.median(stackMA, axis=0).data
+        if cube_function == 'MED':
+            median = numpy.ma.median(stackMA, axis=0).data
+            median[notdonemask.astype(numpy.bool_)] = nodata
 
-        median[notdonemask.astype(numpy.bool_)] = nodata
-
-        median_raster[window.row_off: row_offset, window.col_off: col_offset] = median.astype(profile['dtype'])
+            median_raster[window.row_off: row_offset, window.col_off: col_offset] = median.astype(profile['dtype'])
 
         if build_clear_observation:
             count_raster = numpy.ma.count(stackMA, axis=0)
@@ -856,8 +859,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         activity['clear_observation_file'] = str(clear_ob_data_set.path)
         activity['total_observation'] = str(total_observation_file)
 
-    cube_function = DataCubeFragments(datacube).composite_function
-
     if cube_function == 'MED':
         # Close and upload the MEDIAN dataset
         save_as_cog(str(cube_file), median_raster, block_size=block_size, mode='w', **profile)
@@ -881,6 +882,9 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     activity['blends'] = {
         cube_function: str(cube_file)
     }
+
+    # Release reference count
+    stack_raster = None
 
     activity['efficacy'] = efficacy
     activity['cloudratio'] = cloudcover
