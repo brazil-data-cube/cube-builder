@@ -19,14 +19,17 @@ from bdc_catalog.models import Collection, db
 from celery import chain, group
 
 # Cube Builder
-from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
+from ..constants import (CLEAR_OBSERVATION_NAME, DATASOURCE_NAME,
+                         PROVENANCE_NAME, TOTAL_OBSERVATION_NAME)
 from ..models import Activity
 from ..utils.image import create_empty_raster, match_histogram_with_merges
 from ..utils.processing import DataCubeFragments
 from ..utils.processing import blend as blend_processing
-from ..utils.processing import build_cube_path, compute_data_set_stats, get_or_create_model
+from ..utils.processing import (build_cube_path, compute_data_set_stats,
+                                get_or_create_model)
 from ..utils.processing import merge as merge_processing
-from ..utils.processing import post_processing_quality, publish_datacube, publish_merge
+from ..utils.processing import (post_processing_quality, publish_datacube,
+                                publish_merge)
 from ..utils.timeline import temporal_priority_timeline
 from . import celery_app
 

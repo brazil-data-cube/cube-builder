@@ -36,9 +36,10 @@ from rio_cogeo.profiles import cog_profiles
 
 from ..config import Config
 # Constant to define required bands to generate both NDVI and EVI
-from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
-                         DATASOURCE_NAME, PNG_MIME_TYPE, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA,
-                         TOTAL_OBSERVATION_NAME)
+from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME,
+                         COG_MIME_TYPE, DATASOURCE_ATTRIBUTES, DATASOURCE_NAME,
+                         PNG_MIME_TYPE, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME,
+                         SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_NAME)
 # Builder
 from .index_generator import generate_band_indexes
 

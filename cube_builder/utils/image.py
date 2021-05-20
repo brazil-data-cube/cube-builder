@@ -12,7 +12,7 @@ import logging
 from collections import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List, Optional, Union, NamedTuple
+from typing import List, NamedTuple, Optional, Union
 
 import numpy
 import rasterio
