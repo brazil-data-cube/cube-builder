@@ -12,7 +12,7 @@ import logging
 from collections import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Union, NamedTuple
 
 import numpy
 import rasterio
@@ -249,45 +249,119 @@ def radsat_extract_bits(bit_value: Union[int, numpy.ndarray], bit_start: int, bi
     return res
 
 
-def extract_qa_bits(band_data, bit_location, confidence=False) -> numpy.ma.masked_array:
-    """Extract Quality Assessment Bits from Landsat-8 Collection 2 Level-2 products.
-
-    This method uses the bitwise operation to extract bits according to the document
-    `https://prd-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/atoms/files/LSDS-1619_Landsat8-C2-L2-ScienceProductGuide-v2.pdf`, page 13.
-
-    Notes:
-        Currently this method masks the value that has any bit with Medium or High Confidence.
-        It will be support any confidence value in the next releases.
+def extract_qa_bits(band_data, bit_location):
+    """Get bit information from given position.
 
     Args:
         band_data (numpy.ma.masked_array) - The QA Raster Data
         bit_location (int) - The band bit value
-        bit_length (int) - How much bits should match.
-
-    Returns:
-        numpy.ma.masked_array An array with masked values.
     """
-    data = band_data.copy()
-
-    if confidence:
-        qa_cloud_confidence(data)
-
-    mask = (data & (1 << bit_location)) # >> bit_location
-
-    return mask
+    return band_data & (1 << bit_location)
 
 
-def qa_cloud_confidence(data):
+NO_CONFIDENCE = 0
+LOW = 1  # 0b01
+MEDIUM = RESERVED = 2  # 0b10
+HIGH = 3  # 0b11
+
+
+class QAConfidence(NamedTuple):
+    """Type for Quality Assessment definition for Landsat Collection 2.
+
+    These properties will be evaluated using Python Virtual Machine like::
+
+        # Define that will discard all cloud values which has confidence greater or equal MEDIUM.
+        qa = QAConfidence(cloud='cloud >= MEDIUM', cloud_shadow=None, cirrus=None, snow=None)
+    """
+
+    cloud: Union[str, None]
+    """Represent the Cloud Confidence."""
+    cloud_shadow: Union[str, None]
+    """Represent the Cloud Shadow Confidence."""
+    cirrus: Union[str, None]
+    """Represent the Cirrus."""
+    snow: Union[str, None]
+    """Represent the Snow/Ice."""
+
+
+def qa_cloud_confidence(data, confidence: QAConfidence):
     """Apply the Bit confidence to the Quality Assessment mask."""
-    for bit_offset in [8, 10, 12, 14]:  # 9~8 => Cloud Confidence
-        shifted_data = (data >> bit_offset) & 2 > 0
+    from .interpreter import execute
 
-        data.mask += shifted_data
+    # Define the context variables available for cloud confidence processing
+    ctx = dict(
+        NO_CONFIDENCE=NO_CONFIDENCE,
+        LOW=LOW,
+        MEDIUM=MEDIUM,
+        RESERVED=RESERVED,
+        HIGH=HIGH
+    )
+
+    def _invoke(varname, conf, context_var, start_offset, end_offset, qa):
+        expression = f'{varname} = {conf}'
+        array = (qa >> start_offset) - ((qa >> end_offset) << 2)
+        ctx[context_var] = array
+
+        _res = execute(expression, context=ctx)
+        res = _res[varname]
+
+        return numpy.ma.masked_where(numpy.ma.getdata(res), qa)
+
+    if confidence.cloud:
+        data = _invoke('_cloud', confidence.cloud, 'cloud', 8, 10, data)
+    if confidence.cloud_shadow:
+        data = _invoke('_cloud_shadow', confidence.cloud_shadow, 'cloud_shadow', 10, 12, data)
+    if confidence.snow:
+        data = _invoke('_snow', confidence.snow, 'snow', 12, 14, data)
+    if confidence.cirrus:
+        data = _invoke('_cirrus', confidence.cirrus, 'cirrus', 14, 16, data)
+
     return data
 
 
-def get_qa_mask(data: numpy.ma.masked_array, clear_data: List[float] = None, not_clear_data: List[float] = None, nodata: float = None) -> numpy.ma.masked_array:
-    """Get the Raster Mask from any Landsat Quality Assessment product."""
+def get_qa_mask(data: numpy.ma.masked_array,
+                clear_data: List[float] = None,
+                not_clear_data: List[float] = None,
+                nodata: float = None,
+                confidence: QAConfidence = None) -> numpy.ma.masked_array:
+    """Extract Quality Assessment Bits from Landsat-8 Collection 2 Level-2 products.
+
+    This method uses the bitwise operation to extract bits according to the document
+    `Landsat 8 Collection 2 (C2) Level 2 Science Product (L2SP) Guide <https://prd-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/atoms/files/LSDS-1619_Landsat8-C2-L2-ScienceProductGuide-v2.pdf>`_, page 13.
+
+    Example:
+        >>> import numpy
+        >>> from cube_builder.utils.image import QAConfidence, get_qa_mask
+
+        >>> mid_cloud_confidence = QAConfidence(cloud='cloud == MEDIUM', cloud_shadow=None, cirrus=None, snow=None)
+        >>> clear = [6, 7]  # Clear and Water
+        >>> not_clear = [1, 2, 3, 4]  # Dilated Cloud, Cirrus, Cloud, Cloud Shadow
+        >>> get_qa_mask(numpy.ma.array([22080], dtype=numpy.int16, fill_value=1),
+        ...             clear_data=clear, not_clear_data=not_clear,
+        ...             nodata=1, confidence=mid_cloud_confidence)
+        masked_array(data=[--],
+                     mask=[ True],
+               fill_value=1,
+                    dtype=int16)
+        >>> # When no cloud confidence set, this value will be Clear since Cloud Pixel is off.
+        >>> get_qa_mask(numpy.ma.array([22080], dtype=numpy.int16, fill_value=1),
+        ...             clear_data=clear, not_clear_data=not_clear,
+        ...             nodata=1)
+        masked_array(data=[22080],
+                     mask=[False],
+               fill_value=1,
+                    dtype=int16)
+
+    Args:
+        data (numpy.ma.masked_array): The QA Raster Data
+        clear_data (List[float]): The bits values to be considered as Clear. Default is [].
+        not_clear_data (List[float]): The bits values to be considered as Not Clear Values (Cloud,Shadow, etc).
+        nodata (float): Pixel nodata value.
+        confidence (QAConfidence): The confidence rules mapping. See more in :class:`~cube_builder.utils.image.QAConfidence`.
+
+    Returns:
+        numpy.ma.masked_array An array which the values represents `clear_data` and the masked values represents `not_clear_data`.
+    """
     is_numpy_or_masked_array = type(data) in (numpy.ndarray, numpy.ma.masked_array)
     if type(data) in (float, int,):
         data = numpy.ma.masked_array([data])
@@ -297,21 +371,26 @@ def get_qa_mask(data: numpy.ma.masked_array, clear_data: List[float] = None, not
         raise TypeError(f'Expected a number or numpy masked array for {data}')
 
     result = data.copy()
-    clear_mask = data.mask.copy()
-
-    for value in clear_data:
-        masked = numpy.ma.getdata(extract_qa_bits(result, value))
-        clear_mask = numpy.ma.logical_or(masked > 0, clear_mask)
-
-    result.mask = numpy.invert(clear_mask)
 
     # Cloud Confidence only once
-    qa_cloud_confidence(result)
+    if confidence:
+        result = qa_cloud_confidence(result, confidence=confidence)
 
     # Mask all not clear data before get any valid data
     for value in not_clear_data:
         masked = extract_qa_bits(result, value)
         result = numpy.ma.masked_where(masked > 0, result)
+
+    clear_mask = data.mask.copy()
+    for value in clear_data:
+        masked = numpy.ma.getdata(extract_qa_bits(result, value))
+        clear_mask = numpy.ma.logical_or(masked > 0, clear_mask)
+
+    if len(result.mask.shape) > 0:
+        result = numpy.ma.masked_where(clear_mask, result)
+    else:  # Adapt to work with single value
+        if clear_mask[0]:
+            result.mask = numpy.invert(clear_mask)
 
     if nodata is not None:
         result[data == nodata] = numpy.ma.masked
