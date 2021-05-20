@@ -1233,10 +1233,10 @@ def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, fl
     total_pixels = raster.size
     if mask['bits']:
         nodata_pixels = raster[raster == mask['nodata']].size
-        qa_mask = get_qa_mask(raster, clear_data=mask['clear_data'], nodata=mask['nodata'])
+        qa_mask = get_qa_mask(raster, clear_data=mask['clear_data'], not_clear_data=mask['not_clear_data'], nodata=mask['nodata'], confidence=mask.get('confidence'))
+        clear_pixels = qa_mask[numpy.invert(qa_mask.mask)].size
         # Since the nodata values is already masked, we should remove the difference
         not_clear_pixels = qa_mask[qa_mask.mask].size - nodata_pixels
-        clear_pixels = qa_mask[numpy.invert(qa_mask.mask)].size
     else:
         # Compute how much data is for each class. It will be used as image area
         clear_pixels = raster[numpy.where(numpy.isin(raster, mask['clear_data']))].size

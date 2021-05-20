@@ -384,13 +384,13 @@ def get_qa_mask(data: numpy.ma.masked_array,
         masked = extract_qa_bits(result, value)
         result = numpy.ma.masked_where(masked > 0, result)
 
-    clear_mask = data.mask.copy()
+    clear_mask = result.mask.copy()
     for value in clear_data:
         masked = numpy.ma.getdata(extract_qa_bits(result, value))
         clear_mask = numpy.ma.logical_or(masked > 0, clear_mask)
 
     if len(result.mask.shape) > 0:
-        result = numpy.ma.masked_where(clear_mask, result)
+        result = numpy.ma.masked_where(numpy.invert(clear_mask), result)
     else:  # Adapt to work with single value
         if clear_mask[0]:
             result.mask = numpy.invert(clear_mask)
