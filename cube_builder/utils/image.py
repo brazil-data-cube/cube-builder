@@ -282,6 +282,8 @@ class QAConfidence(NamedTuple):
     """Represent the Cirrus."""
     snow: Union[str, None]
     """Represent the Snow/Ice."""
+    landsat_8: bool
+    """Flag to identify Landsat-8 Satellite."""
 
 
 def qa_cloud_confidence(data, confidence: QAConfidence):
@@ -297,24 +299,25 @@ def qa_cloud_confidence(data, confidence: QAConfidence):
         HIGH=HIGH
     )
 
-    def _invoke(varname, conf, context_var, start_offset, end_offset, qa):
-        expression = f'{varname} = {conf}'
+    def _invoke(conf, context_var, start_offset, end_offset, qa):
+        var_name = f'_{context_var}'
+        expression = f'{var_name} = {conf}'
         array = (qa >> start_offset) - ((qa >> end_offset) << 2)
         ctx[context_var] = array
 
         _res = execute(expression, context=ctx)
-        res = _res[varname]
+        res = _res[var_name]
 
         return numpy.ma.masked_where(numpy.ma.getdata(res), qa)
 
     if confidence.cloud:
-        data = _invoke('_cloud', confidence.cloud, 'cloud', 8, 10, data)
+        data = _invoke(confidence.cloud, 'cloud', 8, 10, data)
     if confidence.cloud_shadow:
-        data = _invoke('_cloud_shadow', confidence.cloud_shadow, 'cloud_shadow', 10, 12, data)
+        data = _invoke(confidence.cloud_shadow, 'cloud_shadow', 10, 12, data)
     if confidence.snow:
-        data = _invoke('_snow', confidence.snow, 'snow', 12, 14, data)
-    if confidence.cirrus:
-        data = _invoke('_cirrus', confidence.cirrus, 'cirrus', 14, 16, data)
+        data = _invoke(confidence.snow, 'snow', 12, 14, data)
+    if confidence.landsat_8 and confidence.cirrus:
+        data = _invoke(confidence.cirrus, 'cirrus', 14, 16, data)
 
     return data
 
