@@ -336,7 +336,7 @@ def get_qa_mask(data: numpy.ma.masked_array,
         >>> import numpy
         >>> from cube_builder.utils.image import QAConfidence, get_qa_mask
 
-        >>> mid_cloud_confidence = QAConfidence(cloud='cloud == MEDIUM', cloud_shadow=None, cirrus=None, snow=None)
+        >>> mid_cloud_confidence = QAConfidence(cloud='cloud == MEDIUM', cloud_shadow=None, cirrus=None, snow=None, landsat_8=True)
         >>> clear = [6, 7]  # Clear and Water
         >>> not_clear = [1, 2, 3, 4]  # Dilated Cloud, Cirrus, Cloud, Cloud Shadow
         >>> get_qa_mask(numpy.ma.array([22080], dtype=numpy.int16, fill_value=1),
