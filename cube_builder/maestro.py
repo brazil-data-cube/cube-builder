@@ -483,7 +483,10 @@ class Maestro:
                                 band_name_href = band.common_name
 
                             elif band.name not in feature['assets']:
-                                if f'sr_{band.name}' not in feature['assets']:
+                                # TODO: Implement asset resolver
+                                if f'{band.name}.TIF' in feature['assets']:
+                                    band_name_href = f'{band.name}.TIF'
+                                elif f'sr_{band.name}' not in feature['assets']:
                                     continue
                                 else:
                                     band_name_href = f'sr_{band.name}'
