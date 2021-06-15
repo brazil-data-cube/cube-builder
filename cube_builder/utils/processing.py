@@ -34,7 +34,6 @@ from rasterio.warp import Resampling, reproject
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 
-from .image import QAConfidence
 from ..config import Config
 # Constant to define required bands to generate both NDVI and EVI
 from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
@@ -581,7 +580,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     Returns:
         A processed activity with the generated values.
     """
-    from .image import get_qa_mask, radsat_extract_bits
+    from .image import QAConfidence, get_qa_mask, radsat_extract_bits
 
     # Assume that it contains a band and quality band
     numscenes = len(activity['scenes'])

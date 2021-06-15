@@ -12,7 +12,7 @@ import logging
 from collections import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List, NamedTuple, Optional, Union
+from typing import List, Optional, Union
 
 import numpy
 import rasterio
@@ -287,6 +287,7 @@ class QAConfidence:
     """Flag to identify Landsat-8 Satellite."""
 
     def __init__(self, cloud=None, cloud_shadow=None, cirrus=None, snow=None, landsat_8=None):
+        """Build QA Confidence object."""
         self.cloud = cloud
         self.cloud_shadow = cloud_shadow
         self.cirrus = cirrus
