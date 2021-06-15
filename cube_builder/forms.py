@@ -11,11 +11,11 @@
 from bdc_catalog.models import Collection, GridRefSys, db
 from marshmallow import Schema, fields, pre_load, validate
 from marshmallow.validate import OneOf, Regexp, ValidationError
-from marshmallow_sqlalchemy.schema import ModelSchema
+from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
 from rasterio.dtypes import dtype_ranges
 
 
-class CollectionForm(ModelSchema):
+class CollectionForm(SQLAlchemyAutoSchema):
     """Form definition for Model Collection."""
 
     class Meta:
@@ -26,7 +26,7 @@ class CollectionForm(ModelSchema):
         exclude = ('extent', )
 
 
-class GridRefSysForm(ModelSchema):
+class GridRefSysForm(SQLAlchemyAutoSchema):
     """Form definition for the model GrsSchema."""
 
     id = fields.String(dump_only=True)
