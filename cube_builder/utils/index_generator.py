@@ -30,7 +30,7 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
         When collection does not have any index band, returns empty dict.
 
     Raises:
-        RuntimeError when an error occurs while interpreting the band expression in Python Virtual Machine.
+        RuntimeError: when an error occurs while interpreting the band expression in Python Virtual Machine.
 
     Returns:
         A dict values with generated bands.

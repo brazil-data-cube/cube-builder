@@ -161,7 +161,8 @@ def match_histogram_with_merges(source: str, source_mask: str, reference: str, r
     This functions implements the `skimage.exposure.match_histograms`, which consists in the manipulate the pixels of an
     input image and match the histogram with the reference image.
 
-    See more in `Histogram Matching <https://scikit-image.org/docs/dev/auto_examples/color_exposure/plot_histogram_matching.html>`_.
+    See Also:
+        - `Histogram Matching <https://scikit-image.org/docs/dev/auto_examples/color_exposure/plot_histogram_matching.html>`_.
 
     Note:
         It overwrites the source file.
@@ -265,7 +266,7 @@ MEDIUM = RESERVED = 2  # 0b10
 HIGH = 3  # 0b11
 
 
-class QAConfidence(NamedTuple):
+class QAConfidence:
     """Type for Quality Assessment definition for Landsat Collection 2.
 
     These properties will be evaluated using Python Virtual Machine like::
@@ -282,44 +283,66 @@ class QAConfidence(NamedTuple):
     """Represent the Cirrus."""
     snow: Union[str, None]
     """Represent the Snow/Ice."""
-    landsat_8: bool
+    landsat_8: Union[bool, numpy.ndarray]
     """Flag to identify Landsat-8 Satellite."""
 
+    def __init__(self, cloud=None, cloud_shadow=None, cirrus=None, snow=None, landsat_8=None):
+        self.cloud = cloud
+        self.cloud_shadow = cloud_shadow
+        self.cirrus = cirrus
+        self.snow = snow
+        self.landsat_8 = landsat_8
 
-def qa_cloud_confidence(data, confidence: QAConfidence):
-    """Apply the Bit confidence to the Quality Assessment mask."""
-    from .interpreter import execute
+    def apply(self, data):
+        """Apply the Bit confidence to the Quality Assessment mask.
 
-    # Define the context variables available for cloud confidence processing
-    ctx = dict(
-        NO_CONFIDENCE=NO_CONFIDENCE,
-        LOW=LOW,
-        MEDIUM=MEDIUM,
-        RESERVED=RESERVED,
-        HIGH=HIGH
-    )
+        Args:
+            data (numpy.ma.MaskedArray): The Masked raster QA Pixel
 
-    def _invoke(conf, context_var, start_offset, end_offset, qa):
-        var_name = f'_{context_var}'
-        expression = f'{var_name} = {conf}'
-        array = (qa >> start_offset) - ((qa >> end_offset) << 2)
-        ctx[context_var] = array
+        Returns:
+            numpy.ma.MaskedArray - The masked pixels with satisfy the confidence attributes.
+        """
+        from .interpreter import execute
 
-        _res = execute(expression, context=ctx)
-        res = _res[var_name]
+        # Define the context variables available for cloud confidence processing
+        ctx = dict(
+            NO_CONFIDENCE=NO_CONFIDENCE,
+            LOW=LOW,
+            MEDIUM=MEDIUM,
+            RESERVED=RESERVED,
+            HIGH=HIGH
+        )
 
-        return numpy.ma.masked_where(numpy.ma.getdata(res), qa)
+        def _invoke(conf, context_var, start_offset, end_offset, qa):
+            var_name = f'_{context_var}'
+            expression = f'{var_name} = {conf}'
+            array = (qa >> start_offset) - ((qa >> end_offset) << 2)
+            ctx[context_var] = array
 
-    if confidence.cloud:
-        data = _invoke(confidence.cloud, 'cloud', 8, 10, data)
-    if confidence.cloud_shadow:
-        data = _invoke(confidence.cloud_shadow, 'cloud_shadow', 10, 12, data)
-    if confidence.snow:
-        data = _invoke(confidence.snow, 'snow', 12, 14, data)
-    if confidence.landsat_8 and confidence.cirrus:
-        data = _invoke(confidence.cirrus, 'cirrus', 14, 16, data)
+            _res = execute(expression, context=ctx)
+            res = _res[var_name]
 
-    return data
+            return numpy.ma.masked_where(numpy.ma.getdata(res), qa)
+
+        if self.cloud:
+            data = _invoke(self.cloud, 'cloud', 8, 10, data)
+        if self.cloud_shadow:
+            data = _invoke(self.cloud_shadow, 'cloud_shadow', 10, 12, data)
+        if self.snow:
+            data = _invoke(self.snow, 'snow', 12, 14, data)
+
+        if self.cirrus:
+            if isinstance(self.landsat_8, bool):
+                self.landsat_8 = numpy.full(data.shape,
+                                            dtype=numpy.bool_,
+                                            fill_value=self.landsat_8)
+
+            landsat_8_pixels = data[self.landsat_8]
+            res = _invoke(self.cirrus, 'cirrus', 14, 16, landsat_8_pixels)
+
+            data[self.landsat_8] = res
+
+        return data
 
 
 def get_qa_mask(data: numpy.ma.masked_array,
@@ -363,39 +386,52 @@ def get_qa_mask(data: numpy.ma.masked_array,
         confidence (QAConfidence): The confidence rules mapping. See more in :class:`~cube_builder.utils.image.QAConfidence`.
 
     Returns:
-        numpy.ma.masked_array An array which the values represents `clear_data` and the masked values represents `not_clear_data`.
+        numpy.ma.masked_array: An array which the values represents `clear_data` and the masked values represents `not_clear_data`.
     """
     is_numpy_or_masked_array = type(data) in (numpy.ndarray, numpy.ma.masked_array)
     if type(data) in (float, int,):
         data = numpy.ma.masked_array([data])
-    elif (isinstance(data, Iterable) and not is_numpy_or_masked_array) or (isinstance(data, numpy.ndarray) and not hasattr(data, 'mask')):
+    elif (isinstance(data, Iterable) and not is_numpy_or_masked_array) or (
+            isinstance(data, numpy.ndarray) and not hasattr(data, 'mask')):
         data = numpy.ma.masked_array(data, mask=data == nodata, fill_value=nodata)
     elif not is_numpy_or_masked_array:
         raise TypeError(f'Expected a number or numpy masked array for {data}')
 
-    result = data.copy()
+    if nodata is not None:
+        data[data == nodata] = numpy.ma.masked
 
     # Cloud Confidence only once
     if confidence:
-        result = qa_cloud_confidence(result, confidence=confidence)
+        data = confidence.apply(data)
 
     # Mask all not clear data before get any valid data
     for value in not_clear_data:
-        masked = extract_qa_bits(result, value)
-        result = numpy.ma.masked_where(masked > 0, result)
+        if value == 2 and confidence:
+            not_landsat_8_positions = numpy.where(numpy.invert(confidence.landsat_8))
+            tmp_result = numpy.ma.masked_where(data.mask, data)
+            tmp_result.mask[not_landsat_8_positions] = True
 
-    clear_mask = result.mask.copy()
+            masked = extract_qa_bits(tmp_result, value)
+            if isinstance(masked.mask, numpy.bool_):
+                masked.mask = numpy.full(data.shape, fill_value=masked.mask, dtype=numpy.bool_)
+
+            masked.mask[not_landsat_8_positions] = data[not_landsat_8_positions].mask
+
+            tmp_result = None
+        else:
+            masked = extract_qa_bits(data, value)
+
+        data = numpy.ma.masked_where(masked > 0, data)
+
+    clear_mask = data.mask.copy()
     for value in clear_data:
-        masked = numpy.ma.getdata(extract_qa_bits(result, value))
+        masked = numpy.ma.getdata(extract_qa_bits(data, value))
         clear_mask = numpy.ma.logical_or(masked > 0, clear_mask)
 
-    if len(result.mask.shape) > 0:
-        result = numpy.ma.masked_where(numpy.invert(clear_mask), result)
+    if len(data.mask.shape) > 0:
+        data = numpy.ma.masked_where(numpy.invert(clear_mask), data)
     else:  # Adapt to work with single value
         if clear_mask[0]:
-            result.mask = numpy.invert(clear_mask)
+            data.mask = numpy.invert(clear_mask)
 
-    if nodata is not None:
-        result[data == nodata] = numpy.ma.masked
-
-    return result
+    return data

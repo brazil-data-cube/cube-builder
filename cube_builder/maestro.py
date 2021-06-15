@@ -108,10 +108,10 @@ class Maestro:
         When collection not found, search on INPE STAC.
 
         Args:
-            collection - Collection name to search
+            collection (str): Collection name to search
 
         Returns:
-            STAC client
+            STAC: The STAC which offers the given collection.
         """
         if self.properties.get('stac_url'):
             return self._stac(collection, self.properties['stac_url'], **self.properties)
@@ -135,7 +135,7 @@ class Maestro:
             url - STAC URL
 
         Returns:
-            STAC client
+            STAC: STAC instance
         """
         try:
             options = dict()

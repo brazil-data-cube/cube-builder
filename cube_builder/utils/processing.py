@@ -34,6 +34,7 @@ from rasterio.warp import Resampling, reproject
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 
+from .image import QAConfidence
 from ..config import Config
 # Constant to define required bands to generate both NDVI and EVI
 from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
@@ -342,7 +343,17 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
 
                             if template is None:
                                 template = dst.profile
-                                # Ensure type is >= int16
+
+                            if build_provenance:
+                                raster_masked = numpy.ma.masked_where(raster == nodata, raster)
+
+                                where_valid = numpy.invert(raster_masked.mask)
+                                # TODO: Review and validate this step.
+                                # Using according to the given collections order.
+                                raster_provenance[where_valid] = datasets.index(dataset)
+
+                                where_valid = None
+                                raster_masked = None
 
     template['dtype'] = data_type
     template['nodata'] = nodata
@@ -352,7 +363,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
     cloudratio = 100
     raster = None
     if band == quality_band:
-        raster_merge, efficacy, cloudratio = getMask(raster_merge, datasets, mask=mask, compute=compute)
+        efficacy, cloudratio = _qa_statistics(raster_merge, mask=mask, compute=compute)
 
     # Ensure file tree is created
     merge_file = Path(merge_file)
@@ -513,7 +524,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     """Apply blend and generate raster from activity.
 
     Basically, the blend operation consists in stack all the images (merges) in period. The stack is based in
-    best pixel image (Best clear ratio). The cloud pixels are masked with `numpy.ma` module, enabling to apply
+    best pixel image (Best clear ratio). The cloud pixels are masked with the module `numpy.ma <https://numpy.org/doc/stable/reference/maskedarray.generic.html>`_, enabling to apply
     temporal composite function MEDIAN, AVG over these rasters.
 
     The following example represents a data cube Landsat-8 16 days using function Best Pixel (Stack - STK) and
@@ -558,8 +569,9 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         It may be cloud/cloud-shadow (when there is no valid pixel 0 and 1). Otherwise, fill as `nodata`.
 
     See Also:
-        Numpy Masked Arrays https://numpy.org/doc/stable/reference/maskedarray.generic.html
-        Brazil Data Cube Temporal Compositing https://brazil-data-cube.github.io/products/specifications/processing-flow.html#temporal-compositing
+        - `Numpy Masked Arrays <https://numpy.org/doc/stable/reference/maskedarray.generic.html>`_
+
+        - `Brazil Data Cube Temporal Compositing <https://brazil-data-cube.github.io/products/specifications/processing-flow.html#temporal-compositing>`_
 
     Args:
         activity: Prepared blend activity metadata
@@ -675,6 +687,11 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
     cube_function = DataCubeFragments(datacube).composite_function
 
+    confidence = None
+    if mask_values['bits']:
+        conf = mask_values.get('confidence', dict())
+        confidence = QAConfidence(**conf)
+
     if cube_function == 'MED':
         median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
 
@@ -734,8 +751,12 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
                 masked.mask = saturated.astype(numpy.bool_)
 
             if mask_values['bits']:
-                matched = get_qa_mask(masked, clear_data=clear_values, nodata=mask_values['nodata'])
-                masked.mask = numpy.invert(matched.mask)
+                matched = get_qa_mask(masked,
+                                      clear_data=clear_values,
+                                      not_clear_data=not_clear_values,
+                                      nodata=mask_values['nodata'],
+                                      confidence=confidence)  # TODO: Pass the QA Confidence
+                masked.mask = matched.mask
             else:
                 # Mask cloud/snow/shadow/no-data as False
                 masked.mask[numpy.where(numpy.isin(masked, not_clear_values))] = True
@@ -1233,7 +1254,11 @@ def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, fl
     total_pixels = raster.size
     if mask['bits']:
         nodata_pixels = raster[raster == mask['nodata']].size
-        qa_mask = get_qa_mask(raster, clear_data=mask['clear_data'], not_clear_data=mask['not_clear_data'], nodata=mask['nodata'], confidence=mask.get('confidence'))
+        qa_mask = get_qa_mask(raster,
+                              clear_data=mask['clear_data'],
+                              not_clear_data=mask['not_clear_data'],
+                              nodata=mask['nodata'],
+                              confidence=mask.get('confidence'))
         clear_pixels = qa_mask[numpy.invert(qa_mask.mask)].size
         # Since the nodata values is already masked, we should remove the difference
         not_clear_pixels = qa_mask[qa_mask.mask].size - nodata_pixels
