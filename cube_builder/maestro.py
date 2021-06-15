@@ -332,6 +332,8 @@ class Maestro:
 
             quality_band = self.properties['quality_band']
 
+            stac_kwargs = self.properties.get('stac_kwargs', dict())
+
             quality = next(filter(lambda b: b.name == quality_band, bands))
             self.properties['mask']['nodata'] = float(quality.nodata)
 
@@ -349,7 +351,7 @@ class Maestro:
 
                     feature = self.mosaics[tileid]['periods'][period]['feature']
 
-                    assets_by_period = self.search_images(feature, start, end, tileid)
+                    assets_by_period = self.search_images(feature, start, end, tileid, **stac_kwargs)
 
                     if self.datacube.composite_function.alias == 'IDT':
                         stats_bands = (TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME)
@@ -434,7 +436,7 @@ class Maestro:
 
         return self.mosaics
 
-    def search_images(self, feature: str, start: str, end: str, tile_id: str):
+    def search_images(self, feature: str, start: str, end: str, tile_id: str, **kwargs):
         """Search and prepare images on STAC."""
         scenes = {}
         options = dict(
@@ -442,6 +444,7 @@ class Maestro:
             datetime='{}/{}'.format(start, end),
             limit=1000
         )
+        options.update(kwargs)
 
         bands = self.datacube_bands
 
