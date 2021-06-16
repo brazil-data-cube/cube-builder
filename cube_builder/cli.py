@@ -162,6 +162,7 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
 @click.option('--histogram-matching', is_flag=True, help='Match the histogram in the temporal composition function.')
 @click.option('--mask',  type=click.STRING, help='Custom mask values for data cube.')
 @click.option('--quality-band', type=click.STRING, help='Quality band name')
+@click.option('--band-map', type=click.STRING, help='Band mapping when combine sensors. Default is None')
 @with_appcontext
 def _configure_parameters(datacube: str, **kwargs):
     """Configure the default parameters for data cube.
