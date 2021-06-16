@@ -67,6 +67,10 @@ def _common_bands():
     return TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, 'cnc', DATASOURCE_NAME
 
 
+def _has_default_or_index_bands(band: Band) -> bool:
+    return band.common_name.lower() in ('ndvi', 'evi',) or (band._metadata and band._metadata.get('expression'))
+
+
 class Maestro:
     """Define class for handling data cube generation."""
 
@@ -372,8 +376,11 @@ class Maestro:
                     period_start_end = '{}_{}'.format(start_date, end_date)
 
                     for band in bands:
+                        assets_by_period[band.name] = dict()
+
+                    for band in bands:
                         # Skip trigger/search for Vegetation Index
-                        if band.common_name.lower() in ('ndvi', 'evi',) or (band._metadata and band._metadata.get('expression')):
+                        if _has_default_or_index_bands(band):
                             continue
 
                         merges = assets_by_period[band.name]
@@ -381,6 +388,16 @@ class Maestro:
                         merge_opts = dict()
 
                         if not merges:
+                            for _b in bands:
+                                if _b.name == band.name or _has_default_or_index_bands(_b):
+                                    continue
+                                _m = assets_by_period[_b.name]
+                                if _m:
+                                    raise RuntimeError(
+                                        f'Unexpected Error: The band {_b.name} has scenes, however '
+                                        f'there any bands ({band.name}) that don\'t have any scenes on provider.'
+                                    )
+
                             # Adapt to make the merge function to generate empty raster
                             merges[start_date] = dict()
                             merge_opts['empty'] = True

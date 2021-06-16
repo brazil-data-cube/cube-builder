@@ -29,6 +29,7 @@ from ..utils.processing import merge as merge_processing
 from ..utils.processing import post_processing_quality, publish_datacube, publish_merge
 from ..utils.timeline import temporal_priority_timeline
 from . import celery_app
+from .utils import clear_merge
 
 
 def capture_traceback(exception=None):
@@ -442,6 +443,7 @@ def publish(blends, band_map, quality_band: str, **kwargs):
                                                cloudratio=definition['cloudratio'],
                                                ARDfiles=dict()))
             merges[merge_date]['ARDfiles'].update(definition['ARDfiles'])
+            merges[merge_date]['empty'] = definition.get('empty', False)
 
         if blend_result['band'] == quality_band:
             quality_blend = blend_result
@@ -457,6 +459,11 @@ def publish(blends, band_map, quality_band: str, **kwargs):
 
     if not reused_cube:
         for merge_date, definition in merges.items():
+            if definition.get('empty') and definition['empty']:
+                # Empty data cubes, Keep only composite item
+                clear_merge(merge_date, definition)
+                continue
+
             publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map)
 
         try:
