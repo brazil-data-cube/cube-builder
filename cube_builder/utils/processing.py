@@ -223,6 +223,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
     dist_x = kwargs.get('dist_x')
     dist_y = kwargs.get('dist_y')
     datasets = kwargs.get('datasets')
+    platforms = kwargs.get('platforms', [])
     resx, resy = kwargs['resx'], kwargs['resy']
     block_size = kwargs.get('block_size')
     shape = kwargs.get('shape', None)
@@ -274,6 +275,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
                 link = prepare_asset_url(asset['link'])
 
                 dataset = asset['dataset']
+                platform = asset.get('platform')
 
                 with rasterio.open(link) as src:
                     meta = src.meta.copy()
@@ -349,7 +351,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
                                 where_valid = numpy.invert(raster_masked.mask)
                                 # TODO: Review and validate this step.
                                 # Using according to the given collections order.
-                                raster_provenance[where_valid] = datasets.index(dataset)
+                                raster_provenance[where_valid] = platforms.index(platform)
 
                                 where_valid = None
                                 raster_masked = None

@@ -12,6 +12,7 @@
 import json
 import logging
 from contextlib import contextmanager
+from copy import deepcopy
 from time import time
 from typing import List
 
@@ -99,6 +100,7 @@ class Maestro:
         self.mosaics = dict()
         self.cached_stacs = dict()
         self.bands = []
+        self.platforms = []
         self.tiles = []
 
     def get_stac(self, collection: str) -> STAC:
@@ -331,6 +333,9 @@ class Maestro:
             warped_datacube = self.warped_datacube.name
 
             quality_band = self.properties['quality_band']
+            parameters = deepcopy(self.properties)
+            # Do not pass band_mapping to the function context
+            parameters.pop('band_map', None)
 
             quality = next(filter(lambda b: b.name == quality_band, bands))
             self.properties['mask']['nodata'] = float(quality.nodata)
@@ -401,6 +406,7 @@ class Maestro:
                                 srs=grid_crs,
                                 tile_id=tileid,
                                 assets=assets,
+                                platforms=self.platforms,
                                 nodata=float(band.nodata),
                                 bands=band_str_list,
                                 version=self.datacube.version,
@@ -421,11 +427,11 @@ class Maestro:
                                 **properties
                             )
 
-                            task = warp_merge.s(activity, band_map, **self.properties)
+                            task = warp_merge.s(activity, band_map, **parameters)
                             merges_tasks.append(task)
 
                     if len(merges_tasks) > 0:
-                        task = chain(group(merges_tasks), prepare_blend.s(band_map, **self.properties))
+                        task = chain(group(merges_tasks), prepare_blend.s(band_map, **parameters))
                         blends.append(task)
 
                 if len(blends) > 0:
@@ -437,13 +443,19 @@ class Maestro:
     def search_images(self, feature: str, start: str, end: str, tile_id: str):
         """Search and prepare images on STAC."""
         scenes = {}
+        t = f'{start}T00:00:00/{end}T23:59:59'
+
         options = dict(
             intersects=feature,
-            datetime='{}/{}'.format(start, end),
+            datetime=t,
+            time=t,
             limit=1000
         )
 
         bands = self.datacube_bands
+
+        band_mapping = self.properties.get('band_map', dict())
+        platforms = set()
 
         # Retrieve band definition in dict format.
         # TODO: Should we use from STAC?
@@ -462,6 +474,8 @@ class Maestro:
 
         for dataset in self.params['collections']:
             options['collections'] = [dataset]
+            options.setdefault('query', dict())
+            options['query']['collections'] = [dataset]
             stac = self.get_stac(dataset)
 
             token = ''
@@ -476,20 +490,29 @@ class Maestro:
                     if feature['type'] == 'Feature':
                         date = feature['properties']['datetime'][0:10]
                         identifier = feature['id']
+                        platform = feature['properties'].get('platform')
 
                         for band in bands:
                             band_name_href = band.name
+
+                            if platform and band_mapping:
+                                platforms.add(platform)
+                                if platform not in band_mapping or not band_mapping[platform].get(band_name_href):
+                                    continue
+
+                                band_name_href = band_mapping[platform].get(band_name_href)
+
                             if 'CBERS' in dataset and band.common_name not in ('evi', 'ndvi'):
                                 band_name_href = band.common_name
 
                             elif band.name not in feature['assets']:
                                 # TODO: Implement asset resolver
-                                if f'{band.name}.TIF' in feature['assets']:
-                                    band_name_href = f'{band.name}.TIF'
-                                elif f'sr_{band.name}' not in feature['assets']:
+                                if f'{band_name_href}.TIF' in feature['assets']:
+                                    band_name_href = f'{band_name_href}.TIF'
+                                elif f'sr_{band_name_href}' not in feature['assets']:
                                     continue
                                 else:
-                                    band_name_href = f'sr_{band.name}'
+                                    band_name_href = f'sr_{band_name_href}'
 
                             scenes[band.name].setdefault(date, dict())
 
@@ -499,6 +522,9 @@ class Maestro:
                             scene['sceneid'] = identifier
                             scene['band'] = band.name
                             scene['dataset'] = dataset
+                            scene['platform'] = platform
+                            if band_mapping:
+                                scene['original_band_name'] = band_name_href
 
                             link = link.replace(Config.CBERS_SOURCE_URL_PREFIX, Config.CBERS_TARGET_URL_PREFIX)
 
@@ -512,5 +538,7 @@ class Maestro:
 
                             scenes[band.name][date].setdefault(dataset, [])
                             scenes[band.name][date][dataset].append(scene)
+
+        self.platforms = sorted(list(platforms))
 
         return scenes

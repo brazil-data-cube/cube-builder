@@ -82,6 +82,7 @@ class CubeParametersSchema(Schema):
     reference_day = fields.Integer(required=False, allow_none=False)
     histogram_matching = fields.Bool(required=False, allow_none=False)
     no_post_process = fields.Bool(required=False, allow_none=False)
+    band_map = fields.Dict(required=False, allow_none=False)
 
 
 class DataCubeForm(Schema):
