@@ -376,9 +376,6 @@ class Maestro:
                     period_start_end = '{}_{}'.format(start_date, end_date)
 
                     for band in bands:
-                        assets_by_period[band.name] = dict()
-
-                    for band in bands:
                         # Skip trigger/search for Vegetation Index
                         if _has_default_or_index_bands(band):
                             continue
