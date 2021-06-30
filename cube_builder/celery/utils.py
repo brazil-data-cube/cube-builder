@@ -10,7 +10,6 @@
 
 import logging
 import os
-import shutil
 from urllib.parse import urlparse
 
 import requests
@@ -63,5 +62,5 @@ def clear_merge(merge_date, scenes):
     if base_dir is not None:
         # Ensure folder is empty
         if not os.listdir(base_dir):
-            shutil.rmtree(base_dir)
+            os.rmdir(base_dir)
     logging.info(f'Cleaning up {merge_date} - {base_dir}')
