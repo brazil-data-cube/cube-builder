@@ -29,6 +29,7 @@ from ..utils.processing import merge as merge_processing
 from ..utils.processing import post_processing_quality, publish_datacube, publish_merge
 from ..utils.timeline import temporal_priority_timeline
 from . import celery_app
+from .utils import clear_merge
 
 
 def capture_traceback(exception=None):
@@ -231,17 +232,18 @@ def prepare_blend(merges, band_map: dict, **kwargs):
     version = merges[0]['args']['version']
     bands = [b for b in band_map.keys() if b != kwargs['mask'].get('saturated_band')]
 
-    for period, stats in quality_date_stats.items():
-        _, _, quality_file, was_reused = stats
+    if 'no_post_process' not in kwargs:
+        for period, stats in quality_date_stats.items():
+            _, _, quality_file, was_reused = stats
 
-        # Do not apply post-processing on reused data cube since it may be already processed.
-        if not was_reused:
-            logging.info(f'Applying post-processing in {str(quality_file)}')
-            post_processing_quality(quality_file, bands, merges[0]['warped_collection_id'],
-                                    period, merges[0]['tile_id'], quality_band, band_map,
-                                    version=version, block_size=block_size)
-        else:
-            logging.info(f'Skipping post-processing {str(quality_file)}')
+            # Do not apply post-processing on reused data cube since it may be already processed.
+            if not was_reused:
+                logging.info(f'Applying post-processing in {str(quality_file)}')
+                post_processing_quality(quality_file, bands, merges[0]['warped_collection_id'],
+                                        period, merges[0]['tile_id'], quality_band, band_map,
+                                        version=version, block_size=block_size)
+            else:
+                logging.info(f'Skipping post-processing {str(quality_file)}')
 
     def _is_not_stk(_merge):
         """Control flag to generate cloud mask.
@@ -441,6 +443,7 @@ def publish(blends, band_map, quality_band: str, **kwargs):
                                                cloudratio=definition['cloudratio'],
                                                ARDfiles=dict()))
             merges[merge_date]['ARDfiles'].update(definition['ARDfiles'])
+            merges[merge_date]['empty'] = definition.get('empty', False)
 
         if blend_result['band'] == quality_band:
             quality_blend = blend_result
@@ -456,6 +459,11 @@ def publish(blends, band_map, quality_band: str, **kwargs):
 
     if not reused_cube:
         for merge_date, definition in merges.items():
+            if definition.get('empty') and definition['empty']:
+                # Empty data cubes, Keep only composite item
+                clear_merge(merge_date, definition)
+                continue
+
             publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map)
 
         try:

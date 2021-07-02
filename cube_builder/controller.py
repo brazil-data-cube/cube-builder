@@ -460,10 +460,17 @@ class CubeController:
 
         activity = Activity.query().filter(Activity.collection_id == cube.name).first()
 
-        response = dict()
+        cube_params = CubeParameters\
+            .query()\
+            .filter(CubeParameters.collection_id == cube.id)\
+            .first_or_404(f'No data cube parameters for {cube.name}-{cube.version}')
+
+        response = dict(**cube_params.metadata_)
 
         if activity is not None:
-            response['collections'] = activity.args['dataset']
+            # TODO: Remove this activity dataset retrieval.
+            # This is a workaround for deal with Cube Builder legacy versions. Will be removed soon
+            response['collections'] = activity.args.get('dataset', activity.args.get('datasets'))
 
         return response, 200
 

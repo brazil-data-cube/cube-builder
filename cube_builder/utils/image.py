@@ -65,7 +65,7 @@ def validate(row: RowProxy):
                             )
                         )
 
-        except rasterio.RasterioIOError:
+        except rasterio.RasterioIOError as e:
             errors.append(dict(message='File not found or invalid.', band=row.band, file=url))
 
     return row, errors
@@ -96,6 +96,8 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
 
             output[row.date]['file'] = row.file
             output[row.date]['errors'].extend(errors)
+            if row.traceback:
+                output[row.date]['errors'].append(dict(message=row.traceback, band=row.band))
 
             output[row.date]['bands'].setdefault(row.band, list())
             output[row.date]['bands'][row.band].append(row.link)

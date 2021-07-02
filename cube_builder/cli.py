@@ -162,6 +162,7 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
 @click.option('--histogram-matching', is_flag=True, help='Match the histogram in the temporal composition function.')
 @click.option('--mask',  type=click.STRING, help='Custom mask values for data cube.')
 @click.option('--quality-band', type=click.STRING, help='Quality band name')
+@click.option('--cloud-cover', type=click.FLOAT, help='Cloud Cover Factor. Default is 100 to use all.', default=100)
 @with_appcontext
 def _configure_parameters(datacube: str, **kwargs):
     """Configure the default parameters for data cube.
@@ -172,6 +173,9 @@ def _configure_parameters(datacube: str, **kwargs):
 
     if kwargs.get('mask'):
         kwargs['mask'] = eval(kwargs['mask'])
+
+    cloud_cover = kwargs.pop('cloud_cover', 100)
+    kwargs['stac_kwargs'] = dict(query={"eo:cloud_cover": {"lte": cloud_cover}})
 
     quality_band = kwargs['quality_band']
     band_map = [b.name for b in cube.bands]
