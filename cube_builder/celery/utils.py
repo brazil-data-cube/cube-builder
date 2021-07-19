@@ -56,6 +56,11 @@ def clear_merge(merge_date, scenes):
     for band, absolute_path in scenes['ARDfiles'].items():
         if base_dir is None:
             base_dir = os.path.dirname(absolute_path)
+        basename = os.path.basename(base_dir)
+
+        if merge_date not in basename:
+            logging.warning(f'Skipping clear merge {base_dir} - {merge_date}')
+            continue
 
         os.remove(absolute_path)
 
