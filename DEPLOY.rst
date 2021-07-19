@@ -45,7 +45,37 @@ Running the Docker Containers
         $ docker-compose up -d postgres
 
 
-    After launching the container, please, refer to the section "Prepare the Database System" in the `INSTALL.rst <./INSTALL.rst>`_ documentation. This will guide you in the preparation of the PostgreSQL setup.
+    Please check the `docker-compose.yml` file. It will expose the following database parameters available in docker context environment::
+
+        SQLALCHEMY_DATABASE_URI=postgresql://postgres:postgres@cube-builder-pg:5432/bdc
+
+    After launching the container, please, refer to the section "Prepare the Database System" in the `INSTALL.rst <INSTALL.rst>`_ documentation. This will guide you in the preparation of the PostgreSQL setup.
+
+    For docker environment, you may run the database step using the following command::
+
+        docker-compose run --name prepare-db --rm cube-builder ./deploy/configure-db.sh
+
+    If the above command runs successfully, you will be able to see the database creation as following::
+
+        Starting cube-builder-rabbitmq ... done
+        Creating cube-builder_cube-builder_run ... done
+        Creating database postgresql://postgres:postgres@cube-builder-pg:5432/bdc...
+        Database created!
+        Creating namespace lccs...
+        Creating namespace bdc...
+        Creating namespace cube_builder...
+        Namespaces created!
+        Creating extension postgis...
+        Extension created!
+        Creating database schema...
+          [####################################]  100%
+        Database schema created!
+        Registering triggers from "bdc_catalog.triggers"
+                -> /usr/local/lib/python3.8/site-packages/bdc_catalog/triggers/timeline.sql
+                -> /usr/local/lib/python3.8/site-packages/bdc_catalog/triggers/band_metadata_expression.sql
+                -> /usr/local/lib/python3.8/site-packages/bdc_catalog/triggers/collection_statistics.sql
+        Triggers from "bdc_catalog.triggers" registered
+
 
 
 Use the following command in order to launch all the containers needed to run cube-builder [#f1]_:
@@ -61,15 +91,15 @@ If the above command runs successfully, you will be able to list the launched co
 
     $ docker container ls
 
-    CONTAINER ID        IMAGE                                                    COMMAND                  CREATED             STATUS              PORTS                    NAMES
-    a3bb86d2df56        rabbitmq:3-management                                    "docker-entrypoint.s…"   3 minutes ago       Up 2 minutes        4369/tcp, 5671/tcp, 0.0.0.0:5672->5672/tcp, 15671/tcp, 25672/tcp, 0.0.0.0:15672->15672/tcp   cube-builder-rabbitmq
-    e3862ab6e756        registry.dpi.inpe.br/brazildatacube/cube-builder:latest  "bash -c 'cube-build…"   2 minutes ago       Up 2 minutes        0.0.0.0:5001->5000/tcp   cube-builder-api
-    13caa0f27030        registry.dpi.inpe.br/brazildatacube/cube-builder:latest  "cube-builder worker…"   2 minutes ago       Up 2 minutes                                 cube-builder-worker
+    CONTAINER ID        IMAGE                                                      COMMAND                  CREATED             STATUS              PORTS                    NAMES
+    a3bb86d2df56        rabbitmq:3-management                                      "docker-entrypoint.s…"   3 minutes ago       Up 2 minutes        4369/tcp, 5671/tcp, 0.0.0.0:5672->5672/tcp, 15671/tcp, 25672/tcp, 0.0.0.0:15672->15672/tcp   cube-builder-rabbitmq
+    e3862ab6e756        registry.dpi.inpe.br/brazil-data-cube/cube-builder:latest  "bash -c 'cube-build…"   2 minutes ago       Up 2 minutes        0.0.0.0:5001->5000/tcp   cube-builder-api
+    13caa0f27030        registry.dpi.inpe.br/brazil-data-cube/cube-builder:latest  "cube-builder worker…"   2 minutes ago       Up 2 minutes                                 cube-builder-worker
 
 
 .. note::
 
-    Refer to the `USING.rst <./USING.rst>`_ documentation in order to use the cube builder services.
+    Refer to the `USING.rst <USING.rst>`_ documentation in order to use the cube builder services.
 
 
 .. rubric:: Footnotes
