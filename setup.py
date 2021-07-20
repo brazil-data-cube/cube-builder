@@ -55,7 +55,7 @@ install_requires = [
     'celery>=4.3.0,<5',
     'Flask>=1.1.1,<2',
     'flask-redoc>=0.2.1',
-    'marshmallow-sqlalchemy>=0.19.0,<1',
+    'marshmallow-sqlalchemy>=0.19.0,<0.25',
     'numpy>=1.17.2',
     'numpngw>=0.0.8',
     'python-dateutil>=2.8,<3',
@@ -64,7 +64,7 @@ install_requires = [
     'rio_cogeo>=1.1,<2',
     'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
-    'stac.py==0.9.0.post5',
+    'stac.py==0.9.0.post12',
     'bdc-auth-client @ git+git://github.com/brazil-data-cube/bdc-auth-client.git@v0.2.1#egg=bdc-auth-client'
 ]
 

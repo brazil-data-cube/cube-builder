@@ -11,7 +11,7 @@
 from bdc_catalog.models import Collection, GridRefSys, db
 from marshmallow import Schema, fields, pre_load, validate
 from marshmallow.validate import OneOf, Regexp, ValidationError
-from marshmallow_sqlalchemy import SQLAlchemyAutoSchema
+from marshmallow_sqlalchemy.schema import SQLAlchemyAutoSchema
 from rasterio.dtypes import dtype_ranges
 
 

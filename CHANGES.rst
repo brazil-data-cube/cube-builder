@@ -11,6 +11,13 @@ Changes
 =======
 
 
+Version 0.6.3 (2021-07-19)
+--------------------------
+
+- Improve the documentation how to deploy cube-builder on production environment using docker-compose (`#190 <https://github.com/brazil-data-cube/cube-builder/issues/190>`_).
+- Remove the deprecated ModelSchema and use SQLAlchemyAutoSchema instead - marshmallow-sqlalchemy (`#192 <https://github.com/brazil-data-cube/cube-builder/issues/192>`_).
+
+
 Version 0.6.2 (2021-04-20)
 --------------------------
 
