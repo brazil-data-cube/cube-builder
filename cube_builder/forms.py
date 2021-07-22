@@ -8,9 +8,10 @@
 
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
-from bdc_catalog.models import Collection, GridRefSys, db
+from bdc_catalog.models import Band, Collection, GridRefSys, db
 from marshmallow import Schema, fields, pre_load, validate
 from marshmallow.validate import OneOf, Regexp, ValidationError
+from marshmallow_sqlalchemy import auto_field
 from marshmallow_sqlalchemy.schema import SQLAlchemyAutoSchema
 from rasterio.dtypes import dtype_ranges
 
@@ -43,6 +44,19 @@ class GridRefSysForm(SQLAlchemyAutoSchema):
         model = GridRefSys
         sqla_session = db.session
         exclude = ('table_id', )
+
+
+class BandForm(SQLAlchemyAutoSchema):
+    """Represent the BDC-Catalog Band model."""
+
+    collection_id = auto_field()
+
+    class Meta:
+        """Internal meta information of form interface."""
+
+        model = Band
+        sqla_session = db.session
+        exclude = []
 
 
 INVALID_CUBE_NAME = 'Invalid data cube name. Expected only letters and numbers.'
@@ -154,6 +168,7 @@ class DataCubeMetadataForm(Schema):
     description = fields.String(required=False, allow_none=False)
     title = fields.String(required=False, allow_none=False)
     public = fields.Boolean(required=False, allow_none=False, default=True)
+    bands = fields.Nested(BandForm, required=False, many=True)
 
 
 class DataCubeProcessForm(Schema):
