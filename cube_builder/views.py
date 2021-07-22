@@ -85,6 +85,7 @@ def create_cube(**kwargs):
 
     return jsonify(cubes), status
 
+
 @bp.route('/cubes/<cube_id>', methods=['PUT'])
 @oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def update_cube_matadata(cube_id, **kwargs):
@@ -113,6 +114,17 @@ def update_cube_matadata(cube_id, **kwargs):
 def list_tiles(cube_id, **kwargs):
     """List all data cube tiles already done."""
     message, status_code = CubeController.list_tiles_cube(cube_id, only_ids=True)
+
+    return jsonify(message), status_code
+
+
+@bp.route('/cubes/<cube_id>/parameters', methods=['PUT'])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
+def update_cube_parameters(cube_id, **kwargs):
+    """Update the data cube parameters execution."""
+    parameters = request.get_json()
+
+    message, status_code = CubeController.configure_parameters(cube_id, **parameters)
 
     return jsonify(message), status_code
 
