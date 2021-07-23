@@ -280,10 +280,20 @@ class CubeController:
         with db.session.begin_nested():
             cube = cls.get_cube_or_404(cube_id=cube_id)
 
-            cube.title = params['title']
-            cube._metadata=params['metadata']
-            cube.description=params['description']
-            cube.is_public=params['public']
+            cube.title = params.get('title') or cube.title
+            cube._metadata = params.get('metadata') or cube._metadata
+            cube.description = params.get('description') or cube.description
+            cube.is_public = params.get('public') or cube.is_public
+
+            if params.get('bands'):
+                band_map = {b.id: b for b in cube.bands}
+                for band_meta in params['bands']:
+                    if band_meta.get('id') not in band_map or band_meta.get('collection_id') != cube.id:
+                        abort(400, f'Band "{band_meta.get("id")}" does not belongs to cube "{cube.name}-{cube.version}"')
+
+                    band_ctx = band_map[band_meta['id']]
+                    for prop, value in band_meta.items():
+                        setattr(band_ctx, prop, value)
 
         db.session.commit()
 
