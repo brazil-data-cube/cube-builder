@@ -177,7 +177,7 @@ class CubeController:
                     collection=cube,
                     min_value=0,
                     max_value=10000 if is_not_cloud else 4,
-                    nodata=-9999 if is_not_cloud else 255,
+                    nodata=band['nodata'],
                     scale=0.0001 if is_not_cloud else 1,
                     data_type=data_type,
                     resolution_x=params['resolution'],

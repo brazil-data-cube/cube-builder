@@ -69,6 +69,7 @@ class BandDefinition(Schema):
     name = fields.String(required=True, allow_none=False)
     common_name = fields.String(required=True, allow_none=False)
     data_type = fields.String(required=True, allow_none=False, validate=OneOf(SUPPORTED_DATA_TYPES))
+    nodata = fields.Float(required=False, allow_none=False)
     metadata = fields.Dict(required=False, allow_none=False)
 
 
