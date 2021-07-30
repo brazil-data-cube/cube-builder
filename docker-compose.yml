@@ -25,13 +25,27 @@ services:
     networks:
       - cube_builder_net
 
+  postgres:
+    container_name: cube-builder-pg
+    image: postgis/postgis:13-3.1
+    restart: "always"
+    volumes:
+      - "./volumes/pg:/var/lib/postgresql/data"
+    environment:
+      - "POSTGRES_PASSWORD=postgres"
+    ports:
+      - "5432:5432"
+    networks:
+      - cube_builder_net
+
   cube-builder:
+    build: .
     container_name: cube-builder-api
     image: registry.dpi.inpe.br/brazil-data-cube/cube-builder:latest
     restart: "always"
     environment:
       - "RABBIT_MQ_URL=pyamqp://guest@cube-builder-rabbitmq"
-      - "SQLALCHEMY_DATABASE_URI=postgresql://postgres:bdc_collection_builder2019@bdc_collection_builder-pg:5432/bdc_scripts"
+      - "SQLALCHEMY_DATABASE_URI=postgresql://postgres:postgres@cube-builder-pg:5432/bdc"
       - "DATA_DIR=/gfs"
       - "LC_ALL=C.UTF-8"
       - "LANG=C.UTF-8"
@@ -47,10 +61,12 @@ services:
       bash -c "cube-builder run --host 0.0.0.0"
     depends_on:
       - mq
+      - postgres
 
   worker:
+    build: .
     container_name: cube-builder-worker
-    image: registry.dpi.inpe.br/brazildatacube/cube-builder:latest
+    image: registry.dpi.inpe.br/brazil-data-cube/cube-builder:latest
     restart: "always"
     depends_on:
       - mq
@@ -59,7 +75,7 @@ services:
       - /gfs:/gfs
     environment:
       - "RABBIT_MQ_URL=pyamqp://guest@cube-builder-rabbitmq"
-      - "SQLALCHEMY_DATABASE_URI=postgresql://postgres:bdc_collection_builder2019@bdc_collection_builder-pg:5432/bdc_scripts"
+      - "SQLALCHEMY_DATABASE_URI=postgresql://postgres:postgres@cube-builder-pg:5432/bdc"
       - "DATA_DIR=/gfs"
       - "LC_ALL=C.UTF-8"
       - "LANG=C.UTF-8"

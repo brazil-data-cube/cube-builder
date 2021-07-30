@@ -68,6 +68,10 @@ def _common_bands():
     return TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, 'cnc', DATASOURCE_NAME
 
 
+def _has_default_or_index_bands(band: Band) -> bool:
+    return band.common_name.lower() in ('ndvi', 'evi',) or (band._metadata and band._metadata.get('expression'))
+
+
 class Maestro:
     """Define class for handling data cube generation."""
 
@@ -337,6 +341,8 @@ class Maestro:
             # Do not pass band_mapping to the function context
             parameters.pop('band_map', None)
 
+            stac_kwargs = self.properties.get('stac_kwargs', dict())
+
             quality = next(filter(lambda b: b.name == quality_band, bands))
             self.properties['mask']['nodata'] = float(quality.nodata)
 
@@ -354,7 +360,7 @@ class Maestro:
 
                     feature = self.mosaics[tileid]['periods'][period]['feature']
 
-                    assets_by_period = self.search_images(feature, start, end, tileid)
+                    assets_by_period = self.search_images(feature, start, end, tileid, **stac_kwargs)
 
                     if self.datacube.composite_function.alias == 'IDT':
                         stats_bands = (TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME)
@@ -376,7 +382,7 @@ class Maestro:
 
                     for band in bands:
                         # Skip trigger/search for Vegetation Index
-                        if band.common_name.lower() in ('ndvi', 'evi',) or (band._metadata and band._metadata.get('expression')):
+                        if _has_default_or_index_bands(band):
                             continue
 
                         merges = assets_by_period[band.name]
@@ -384,6 +390,16 @@ class Maestro:
                         merge_opts = dict()
 
                         if not merges:
+                            for _b in bands:
+                                if _b.name == band.name or _has_default_or_index_bands(_b):
+                                    continue
+                                _m = assets_by_period[_b.name]
+                                if _m:
+                                    raise RuntimeError(
+                                        f'Unexpected Error: The band {_b.name} has scenes, however '
+                                        f'there any bands ({band.name}) that don\'t have any scenes on provider.'
+                                    )
+
                             # Adapt to make the merge function to generate empty raster
                             merges[start_date] = dict()
                             merge_opts['empty'] = True
@@ -440,7 +456,7 @@ class Maestro:
 
         return self.mosaics
 
-    def search_images(self, feature: str, start: str, end: str, tile_id: str):
+    def search_images(self, feature: str, start: str, end: str, tile_id: str, **kwargs):
         """Search and prepare images on STAC."""
         scenes = {}
         t = f'{start}T00:00:00/{end}T23:59:59'
@@ -451,6 +467,7 @@ class Maestro:
             time=t,
             limit=1000
         )
+        options.update(kwargs)
 
         bands = self.datacube_bands
 

@@ -46,7 +46,6 @@ class Config:
     # rasterio
     RASTERIO_ENV = dict(
         GDAL_DISABLE_READDIR_ON_OPEN=True,
-        CPL_VSIL_CURL_ALLOWED_EXTENSIONS='.tif'
     )
     # Access Token
     FLASK_ACCESS_TOKEN = os.getenv('FLASK_ACCESS_TOKEN', None)
@@ -65,9 +64,9 @@ class Config:
     CBERS_SOURCE_URL_PREFIX = os.getenv('CBERS_SOURCE_URL_PREFIX', 'cdsr.dpi.inpe.br/api/download/TIFF')
     CBERS_TARGET_URL_PREFIX = os.getenv('CBERS_TARGET_URL_PREFIX', 'www.dpi.inpe.br/catalog/tmp')
 
+    REDOC = {'title': 'Cube Builder API Doc', 'version': __version__}
 
-    REDOC = {'title': 'Cube Builder API Doc',
-                    'version': __version__}
+
 class ProductionConfig(Config):
     """Production Mode."""
 

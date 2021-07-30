@@ -34,7 +34,7 @@ def status():
 
 
 @bp.route('/cube-status', methods=('GET', ))
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def cube_status(**kwargs):
     """Retrieve the cube processing state, which refers to total items and total to be done."""
     form = CubeStatusForm()
@@ -51,7 +51,7 @@ def cube_status(**kwargs):
 
 @bp.route('/cubes', defaults=dict(cube_id=None), methods=['GET'])
 @bp.route('/cubes/<cube_id>', methods=['GET'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_cubes(cube_id, **kwargs):
     """List all data cubes available."""
     if cube_id is not None:
@@ -64,7 +64,7 @@ def list_cubes(cube_id, **kwargs):
 
 
 @bp.route('/cubes', methods=['POST'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def create_cube(**kwargs):
     """Define POST handler for datacube creation.
 
@@ -85,8 +85,9 @@ def create_cube(**kwargs):
 
     return jsonify(cubes), status
 
+
 @bp.route('/cubes/<cube_id>', methods=['PUT'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def update_cube_matadata(cube_id, **kwargs):
     """Define PUT handler for datacube Updation.
 
@@ -109,7 +110,7 @@ def update_cube_matadata(cube_id, **kwargs):
 
 
 @bp.route('/cubes/<cube_id>/tiles', methods=['GET'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_tiles(cube_id, **kwargs):
     """List all data cube tiles already done."""
     message, status_code = CubeController.list_tiles_cube(cube_id, only_ids=True)
@@ -117,8 +118,19 @@ def list_tiles(cube_id, **kwargs):
     return jsonify(message), status_code
 
 
+@bp.route('/cubes/<cube_id>/parameters', methods=['PUT'])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
+def update_cube_parameters(cube_id, **kwargs):
+    """Update the data cube parameters execution."""
+    parameters = request.get_json()
+
+    message, status_code = CubeController.configure_parameters(cube_id, **parameters)
+
+    return jsonify(message), status_code
+
+
 @bp.route('/cubes/<cube_id>/tiles/geom', methods=['GET'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_tiles_as_features(cube_id, **kwargs):
     """List all tiles as GeoJSON feature."""
     message, status_code = CubeController.list_tiles_cube(cube_id)
@@ -127,7 +139,7 @@ def list_tiles_as_features(cube_id, **kwargs):
 
 
 @bp.route('/cubes/<cube_id>/items', methods=['GET'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_cube_items(cube_id, **kwargs):
     """List all data cube items."""
     form = CubeItemsForm()
@@ -145,7 +157,7 @@ def list_cube_items(cube_id, **kwargs):
 
 
 @bp.route('/cubes/<cube_id>/meta', methods=['GET'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def get_cube_meta(cube_id, **kwargs):
     """Retrieve the meta information of a data cube such STAC provider used, collection, etc."""
     message, status_code = CubeController.cube_meta(cube_id)
@@ -154,7 +166,7 @@ def get_cube_meta(cube_id, **kwargs):
 
 
 @bp.route('/start', methods=['POST'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def start_cube(**kwargs):
     """Define POST handler for datacube execution.
 
@@ -177,7 +189,7 @@ def start_cube(**kwargs):
 
 
 @bp.route('/list-merges', methods=['GET'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_merges(**kwargs):
     """Define POST handler for datacube execution.
 
@@ -192,7 +204,7 @@ def list_merges(**kwargs):
 
 @bp.route('/grids', defaults=dict(grs_id=None), methods=['GET'])
 @bp.route('/grids/<grs_id>', methods=['GET'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_grs_schemas(grs_id, **kwargs):
     """List all data cube Grids."""
     if grs_id is not None:
@@ -204,7 +216,7 @@ def list_grs_schemas(grs_id, **kwargs):
 
 
 @bp.route('/create-grids', methods=['POST'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def create_grs(**kwargs):
     """Create the grid reference system using HTTP Post method."""
     form = GridRefSysForm()
@@ -222,7 +234,7 @@ def create_grs(**kwargs):
 
 
 @bp.route('/list-periods', methods=['POST'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_periods(**kwargs):
     """List data cube periods.
 
@@ -245,7 +257,7 @@ def list_periods(**kwargs):
 
 
 @bp.route('/composite-functions', methods=['GET'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_composite_functions(**kwargs):
     """List all data cube supported composite functions."""
     message, status_code = CubeController.list_composite_functions()
@@ -254,7 +266,7 @@ def list_composite_functions(**kwargs):
 
 
 @bp.route('/tasks', methods=['GET'])
-@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_tasks(**kwargs):
     """List all pending and running tasks on celery."""
     queues = list_queues()

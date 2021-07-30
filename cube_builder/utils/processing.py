@@ -22,6 +22,7 @@ from typing import List, Tuple, Union
 import numpy
 import rasterio
 import rasterio.features
+import requests
 import shapely
 import shapely.geometry
 from bdc_catalog.models import Item, Tile, db
@@ -276,6 +277,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
 
                 dataset = asset['dataset']
                 platform = asset.get('platform')
+                _check_rio_file_access(link, access_token=kwargs.get('token'))
 
                 with rasterio.open(link) as src:
                     meta = src.meta.copy()
@@ -400,6 +402,34 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
     save_as_cog(str(merge_file), raster_merge.astype(data_type), block_size=block_size, **template)
 
     return options
+
+
+def _check_rio_file_access(url: str, access_token: str = None):
+    """Make a HEAD request in order to check if the given resource is available and reachable."""
+    headers = dict()
+    if access_token:
+        headers.update({'X-Api-Key': access_token})
+    try:
+        if url and not url.startswith('http'):
+            return
+
+        _ = requests.head(url, headers=headers)
+    except requests.exceptions.ConnectionError as e:
+        raise ConnectionError(f'Connection refused {e.request.url}')
+    except requests.exceptions.HTTPError as e:
+        if e.response is None:
+            raise
+        reason = e.response.reason
+        msg = str(e)
+        if e.response.status_code == 403:
+            if e.request.headers.get('x-api-key') or 'access_token=' in e.request.url:
+                msg = "You don't have permission to request this resource."
+            else:
+                msg = 'Missing Authentication Token.'
+        elif e.response.status_code == 500:
+            msg = 'Could not request this resource.'
+
+        raise requests.exceptions.HTTPError(f'({reason}) {msg}', request=e.request, response=e.response)
 
 
 def post_processing_quality(quality_file: str, bands: List[str], cube: str,
@@ -626,6 +656,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
     for m in sorted(mask_tuples, reverse=True):
         key = m[1]
+        efficacy = m[0]
         scene = activity['scenes'][key]
 
         filename = scene['ARDfiles'][quality_band]

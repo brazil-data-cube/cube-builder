@@ -9,10 +9,12 @@
 """Define a utility to validate merge images."""
 
 import logging
+import os
 from collections import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Optional, Union
+from urllib.parse import urlparse
 
 import numpy
 import rasterio
@@ -66,10 +68,18 @@ def validate(row: RowProxy):
                             )
                         )
 
-        except rasterio.RasterioIOError:
-            errors.append(dict(message='File not found or invalid.', band=row.band, file=url))
+        except rasterio.RasterioIOError as e:
+            if not row.traceback:
+                errors.append(dict(message=f'File not found or invalid. ({url})', band=row.band,
+                                   file=url, filename=_file_name(url)))
 
     return row, errors
+
+
+def _file_name(url: str) -> str:
+    parsed = urlparse(url)
+
+    return os.path.basename(parsed.path)
 
 
 def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_IMAGE_VALIDATOR) -> dict:
@@ -97,6 +107,9 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
 
             output[row.date]['file'] = row.file
             output[row.date]['errors'].extend(errors)
+            if row.traceback:
+                output[row.date]['errors'].append(dict(message=row.traceback, band=row.band,
+                                                       filename=_file_name(row.link)))
 
             output[row.date]['bands'].setdefault(row.band, list())
             output[row.date]['bands'][row.band].append(row.link)

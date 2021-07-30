@@ -7,6 +7,9 @@
 #
 
 """Defines the utility functions to use among celery tasks."""
+
+import logging
+import os
 from urllib.parse import urlparse
 
 import requests
@@ -45,3 +48,24 @@ def list_queues():
                                        unacked=task['messages_unacknowledged'])
 
     return tasks
+
+
+def clear_merge(merge_date, scenes):
+    """Clear entire directory containing the Data Cube Identity Item."""
+    base_dir = None
+    for band, absolute_path in scenes['ARDfiles'].items():
+        if base_dir is None:
+            base_dir = os.path.dirname(absolute_path)
+        basename = os.path.basename(base_dir)
+
+        if merge_date not in basename:
+            logging.warning(f'Skipping clear merge {base_dir} - {merge_date}')
+            continue
+
+        os.remove(absolute_path)
+
+    if base_dir is not None:
+        # Ensure folder is empty
+        if not os.listdir(base_dir):
+            os.rmdir(base_dir)
+    logging.info(f'Cleaning up {merge_date} - {base_dir}')
