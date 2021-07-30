@@ -507,6 +507,10 @@ class Maestro:
                     if feature['type'] == 'Feature':
                         date = feature['properties']['datetime'][0:10]
                         identifier = feature['id']
+                        # TODO: Add handler to deal with parse result serializer.
+                        if stac.url.startswith('https://landsatlook.usgs.gov'):
+                            # Remove last SR sentence.
+                            identifier = f'{identifier[:-3]}{identifier[-3:].replace("_SR", "")}'
                         platform = feature['properties'].get('platform')
 
                         for band in bands:

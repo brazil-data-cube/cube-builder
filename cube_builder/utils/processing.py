@@ -219,6 +219,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
         build_provenance: Build a provenance file for Merge (Used in combined collections)
         **kwargs: Extra properties
     """
+    from .image import QAConfidence
     xmin = kwargs.get('xmin')
     ymax = kwargs.get('ymax')
     dist_x = kwargs.get('dist_x')
@@ -261,11 +262,16 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
 
     raster = numpy.zeros((rows, cols,), dtype=data_type)
     raster_merge = numpy.full((rows, cols,), dtype=data_type, fill_value=source_nodata)
+    confidence = None
 
     if build_provenance:
         raster_provenance = numpy.full((rows, cols,),
                                        dtype=DATASOURCE_ATTRIBUTES['data_type'],
                                        fill_value=DATASOURCE_ATTRIBUTES['nodata'])
+        if mask.get('bits'):
+            conf = mask['confidence']
+            conf.setdefault('landsat_8', True)
+            confidence = QAConfidence(**conf)
 
     template = None
     is_combined_collection = len(datasets) > 1
@@ -277,6 +283,9 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
 
                 dataset = asset['dataset']
                 platform = asset.get('platform')
+
+                index_landsat_8 = platforms.index('LANDSAT_8') if 'LANDSAT_8' in platforms else -1
+
                 _check_rio_file_access(link, access_token=kwargs.get('token'))
 
                 with rasterio.open(link) as src:
@@ -361,12 +370,15 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
     template['dtype'] = data_type
     template['nodata'] = nodata
 
+    if build_provenance and mask.get('bits'):
+        confidence.landsat_8 = raster_provenance == index_landsat_8
+
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
     cloudratio = 100
     raster = None
     if band == quality_band:
-        efficacy, cloudratio = _qa_statistics(raster_merge, mask=mask, compute=compute)
+        efficacy, cloudratio = _qa_statistics(raster_merge, mask=mask, compute=compute, confidence=confidence)
 
     # Ensure file tree is created
     merge_file = Path(merge_file)
@@ -718,10 +730,13 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     cube_file.parent.mkdir(parents=True, exist_ok=True)
 
     cube_function = DataCubeFragments(datacube).composite_function
+    platforms = activity.get('platforms', [])
+    index_landsat_8 = platforms.index('LANDSAT_8') if 'LANDSAT_8' in platforms else -1
 
     confidence = None
     if mask_values['bits']:
         conf = mask_values.get('confidence', dict())
+        conf.setdefault('landsat_8', True)
         confidence = QAConfidence(**conf)
 
     if cube_function == 'MED':
@@ -782,6 +797,16 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
                 saturated = radsat_extract_bits(saturated, 1, 7).astype(numpy.bool_)
                 masked.mask = saturated.astype(numpy.bool_)
 
+            # Get current observation file name
+            file_name = Path(bandlist[order].name).stem
+            file_date = datetime.strptime(file_name.split('_')[4], '%Y-%m-%d')
+            day_of_year = file_date.timetuple().tm_yday
+
+            if build_clear_observation and is_combined_collection:
+                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
+                if mask_values['bits']:
+                    confidence.landsat_8 = datasource_block == index_landsat_8
+
             if mask_values['bits']:
                 matched = get_qa_mask(masked,
                                       clear_data=clear_values,
@@ -811,11 +836,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
             stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask.astype(numpy.uint8)
 
-            # Get current observation file name
-            file_name = Path(bandlist[order].name).stem
-            file_date = datetime.strptime(file_name.split('_')[4], '%Y-%m-%d')
-            day_of_year = file_date.timetuple().tm_yday
-
             # Find all no data in destination STACK image
             stack_raster_where_nodata = numpy.where(
                 stack_raster[window.row_off: row_offset, window.col_off: col_offset] == nodata
@@ -825,9 +845,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             stack_raster_nodata_pos = numpy.ravel_multi_index(stack_raster_where_nodata,
                                                               stack_raster[window.row_off: row_offset,
                                                               window.col_off: col_offset].shape)
-
-            if build_clear_observation and is_combined_collection:
-                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
 
             # Find all valid/cloud in destination STACK image
             raster_where_data = numpy.where(raster != nodata)
@@ -1269,7 +1286,7 @@ def parse_mask(mask: dict):
     return res
 
 
-def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, float]:
+def _qa_statistics(raster, mask: dict, compute: bool = False, confidence=None) -> Tuple[float, float]:
     """Retrieve raster statistics efficacy and not clear ratio, based in Fmask values.
 
     Note:
@@ -1282,6 +1299,8 @@ def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, fl
     if compute:
         mask = parse_mask(mask)
 
+    confidence = confidence or mask.get('confidence')
+
     # Total pixels used to retrieve data efficacy
     total_pixels = raster.size
     if mask['bits']:
@@ -1290,7 +1309,7 @@ def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, fl
                               clear_data=mask['clear_data'],
                               not_clear_data=mask['not_clear_data'],
                               nodata=mask['nodata'],
-                              confidence=mask.get('confidence'))
+                              confidence=confidence)
         clear_pixels = qa_mask[numpy.invert(qa_mask.mask)].size
         # Since the nodata values is already masked, we should remove the difference
         not_clear_pixels = qa_mask[qa_mask.mask].size - nodata_pixels
