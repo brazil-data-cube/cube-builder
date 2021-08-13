@@ -275,6 +275,8 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
                 link = prepare_asset_url(asset['link'])
 
                 dataset = asset['dataset']
+                min_value = asset.get('min_value')
+                max_value = asset.get('max_value')
 
                 _check_rio_file_access(link, access_token=kwargs.get('token'))
 
@@ -310,8 +312,17 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
                             if shape:
                                 raster = src.read(1)
                             else:
+                                source_array = rasterio.band(src, 1)
+
+                                # Apply valid range. Try to remove negative reflectances
+                                if min_value is not None:
+                                    source_array[source_array < min_value] = source_nodata
+
+                                if max_value is not None:
+                                    source_array[source_array > max_value] = source_nodata
+
                                 reproject(
-                                    source=rasterio.band(src, 1),
+                                    source=source_array,
                                     destination=raster,
                                     src_transform=src.transform,
                                     src_crs=src.crs,
