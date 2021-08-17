@@ -958,7 +958,6 @@ def concat_path(*entries) -> Path:
 
 def _item_prefix(absolute_path: Path) -> Path:
     relative_path = Path(absolute_path).relative_to(Config.DATA_DIR)
-    relative_path = relative_path.relative_to('Repository')
 
     return concat_path(Config.ITEM_PREFIX, relative_path)
 
@@ -1275,7 +1274,7 @@ def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, fl
 
 def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band: str = None, suffix: Union[str, None] = '.tif') -> Path:
     """Retrieve the path to the Data cube file in Brazil Data Cube Cluster."""
-    folder = 'Warped'
+    folder = 'identity'
     date = period
 
     fragments = DataCubeFragments(datacube)
@@ -1293,9 +1292,9 @@ def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band
     file_name = f'{file_name}{suffix}'
 
     if fragments.composite_function != 'IDT':  # For cube with temporal composition
-        folder = 'Mosaic'
+        folder = 'composed'
 
-    return Path(Config.DATA_DIR) / 'Repository' / folder / datacube / version_str / tile_id / date / file_name
+    return Path(Config.DATA_DIR) / folder / datacube / version_str / tile_id / date / file_name
 
 
 def create_asset_definition(href: str, mime_type: str, role: List[str], absolute_path: str,
