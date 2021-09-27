@@ -154,9 +154,7 @@ class DataCubeFragments(list):
         if len(self) < 4:
             return 'IDT'
 
-        return self[-1
-
-        ]
+        return self[-1]
 
 
 def get_cube_parts(datacube: str) -> DataCubeFragments:
@@ -312,14 +310,14 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
                             if shape:
                                 raster = src.read(1)
                             else:
-                                source_array = rasterio.band(src, 1)
+                                source_array = src.read(1)
 
                                 # Apply valid range. Try to remove negative reflectances
                                 if min_value is not None:
-                                    source_array[source_array < min_value] = source_nodata
+                                    source_array[source_array < min_value] = float(source_nodata)
 
                                 if max_value is not None:
-                                    source_array[source_array > max_value] = source_nodata
+                                    source_array[source_array > max_value] = float(source_nodata)
 
                                 reproject(
                                     source=source_array,
@@ -551,7 +549,7 @@ def compute_data_set_stats(file_path: str, mask: dict, compute: bool = True) -> 
     return efficacy, cloud_ratio
 
 
-def blend(activity, band_map, quality_band, build_clear_observation=False, block_size=None):
+def blend(activity, band_map, quality_band, build_clear_observation=False, block_size=None, reuse_data_cube=None):
     """Apply blend and generate raster from activity.
 
     Basically, the blend operation consists in stack all the images (merges) in period. The stack is based in
@@ -710,6 +708,10 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     tile_id = activity.get('tile_id')
 
     is_combined_collection = len(activity['datasets']) > 1
+
+    if reuse_data_cube:
+        datacube = reuse_data_cube['name']
+        version = reuse_data_cube['version']
 
     cube_file = build_cube_path(datacube, period, tile_id, version=version, band=band, suffix='.tif')
 
@@ -973,22 +975,26 @@ def _item_prefix(absolute_path: Path) -> Path:
     return concat_path(Config.ITEM_PREFIX, relative_path)
 
 
-def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map, **kwargs):
+def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map, reuse_data_cube=None, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
 
     datacube = cube.name
+    version = cube.version
+    if reuse_data_cube:
+        datacube = reuse_data_cube['name']
+        version = reuse_data_cube['version']
 
     cube_parts = get_cube_parts(datacube)
 
     for composite_function in [cube_parts.composite_function]:
         item_datacube = get_cube_id(datacube, composite_function)
 
-        item_id = get_item_id(item_datacube, cube.version, tile_id, period)
+        item_id = get_item_id(item_datacube, version, tile_id, period)
 
         cube_bands = cube.bands
 
-        quick_look_file = build_cube_path(item_datacube, period, tile_id, version=cube.version, suffix=None)
+        quick_look_file = build_cube_path(item_datacube, period, tile_id, version=version, suffix=None)
 
         ql_files = []
         for band in bands:
@@ -997,12 +1003,12 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
         quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
         if kwargs.get('with_rgb'):
-            rgb_file = build_cube_path(item_datacube, period, tile_id, version=cube.version, band='RGB')
+            rgb_file = build_cube_path(item_datacube, period, tile_id, version=version, band='RGB')
             generate_rgb(rgb_file, ql_files)
 
         map_band_scene = {name: composite_map[composite_function] for name, composite_map in scenes.items()}
 
-        custom_bands = generate_band_indexes(cube, map_band_scene, period, tile_id)
+        custom_bands = generate_band_indexes(cube, map_band_scene, period, tile_id, reuse_data_cube=reuse_data_cube)
         for name, file in custom_bands.items():
             scenes[name] = {composite_function: str(file)}
 
@@ -1068,14 +1074,21 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
     return quick_look_file
 
 
-def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
+def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_cube=None):
     """Generate quicklook and catalog warped datacube on database.
 
     TODO: Review it with publish_datacube
     """
-    item_id = get_item_id(datacube.name, datacube.version, tile_id, date)
+    cube_name = datacube.name
+    cube_version = datacube.version
+    if reuse_data_cube:
+        cube_name = get_cube_id(reuse_data_cube['name'])
+        cube_version = reuse_data_cube['version']
+        reuse_data_cube['name'] = cube_name
 
-    quick_look_file = build_cube_path(datacube.name, date, tile_id, version=datacube.version, suffix=None)
+    item_id = get_item_id(cube_name, cube_version, tile_id, date)
+
+    quick_look_file = build_cube_path(cube_name, date, tile_id, version=cube_version, suffix=None)
 
     cube_bands = datacube.bands
 
@@ -1086,7 +1099,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
     quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
     # Generate VI
-    custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id)
+    custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id, reuse_data_cube=reuse_data_cube)
     scenes['ARDfiles'].update(custom_bands)
 
     tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == datacube.grid_ref_sys_id).first()
@@ -1094,6 +1107,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
     with db.session.begin_nested():
         item_data = dict(
             name=item_id,
+            # Ensure that data cube id belongs to the original cube, not reused cube.
             collection_id=datacube.id,
             tile_id=tile.id,
             start_date=date,

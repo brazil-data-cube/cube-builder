@@ -38,7 +38,20 @@ class CubeParameters(BaseModel):
             raise RuntimeError(f'Missing property "{prop}" in data cube parameters {self.id} '
                                f'for data cube "{self.cube.id}"')
 
+    def _check_reuse_cube(self):
+        self._reuse_cube = None
+
+        if self.metadata_.get('reuse_data_cube'):
+            self._reuse_cube = Collection.query().get(self.metadata_['reuse_data_cube'])
+            # TODO: Check bands and band resolution should be equal
+
     def validate(self):
         """Validate minimal properties for metadata field."""
         self._require_property('mask')
         self._require_property('quality_band')
+        self._check_reuse_cube()
+
+    @property
+    def reuse_cube(self):
+        """Retrieve the data cube reference to reuse."""
+        return self._reuse_cube

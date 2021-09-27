@@ -485,14 +485,14 @@ class CubeController:
         return response, 200
 
     @classmethod
-    def list_grs_schemas(self):
+    def list_grs_schemas(cls):
         """Retrieve a list of available Grid Schema on Brazil Data Cube database."""
         schemas = GridRefSys.query().all()
 
         return [dict(**Serializer.serialize(schema), crs=schema.crs) for schema in schemas], 200
 
     @classmethod
-    def get_grs_schema(self, grs_id):
+    def get_grs_schema(cls, grs_id):
         """Retrieve a Grid Schema definition with tiles associated."""
         schema = GridRefSys.query().filter(GridRefSys.id == grs_id).first()
 

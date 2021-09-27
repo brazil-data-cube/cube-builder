@@ -20,7 +20,7 @@ BandMapFile = Dict[str, str]
 """Type which a key (represented as data cube band name) points to generated file in disk."""
 
 
-def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: str) -> BandMapFile:
+def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: str, reuse_data_cube: Collection = None) -> BandMapFile:
     """Generate data cube custom bands based in string-expression on table `band_indexes`.
 
     This method seeks for custom bands on Collection Band definition. A custom band must have
@@ -61,6 +61,11 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
         raise RuntimeError('Can\t generate band indexes since profile/blocks is None.')
 
     output = dict()
+    cube_name = cube.name
+    cube_version = cube.version
+    if reuse_data_cube:
+        cube_name = reuse_data_cube['name']
+        cube_version = reuse_data_cube['version']
 
     for band_index in cube_band_indexes:
         band_name = band_index.name
@@ -76,10 +81,10 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
 
         profile['dtype'] = band_data_type
 
-        custom_band_path = build_cube_path(cube.name, period, tile_id, version=cube.version, band=band_name)
+        custom_band_path = build_cube_path(cube_name, period, tile_id, version=cube_version, band=band_name)
 
         output_dataset = SmartDataSet(str(custom_band_path), mode='w', **profile)
-        logging.info(f'Generating band {band_name} for cube {cube.name} - {custom_band_path.stem}...')
+        logging.info(f'Generating band {band_name} for cube {cube_name} - {custom_band_path.stem}...')
 
         for _, window in blocks:
             machine_context = {

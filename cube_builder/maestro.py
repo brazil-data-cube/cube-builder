@@ -11,6 +11,7 @@
 # Python
 import json
 import logging
+import warnings
 from contextlib import contextmanager
 from time import time
 from typing import List
@@ -203,6 +204,10 @@ class Maestro:
         self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
 
         if self.properties.get('reuse_from'):
+            warnings.warn(
+                'The parameter `reuse_from` is deprecated and will be removed in next version. '
+                'Use `reuse_data_cube` instead.'
+            )
             common_bands = _common_bands()
             collection_bands = [b.name for b in self.datacube.bands if b.name not in common_bands]
 
@@ -216,6 +221,9 @@ class Maestro:
 
             # Extra filter to only use bands of Input data cube.
             self.bands = [b for b in self.bands if b.name in collection_bands]
+
+        if cube_parameters.reuse_cube:
+            self.reused_datacube = cube_parameters.reuse_cube
 
         for tile in self.tiles:
             tile_name = tile.name
@@ -246,7 +254,6 @@ class Maestro:
                     continue
 
                 period = f'{startdate}_{enddate}'
-                cube_relative_path = f'{self.datacube.name}/v{self.datacube.version:03d}/{tile_name}/{period}'
 
                 self.mosaics[tile_name]['periods'][period] = {}
                 self.mosaics[tile_name]['periods'][period]['start'] = startdate.strftime('%Y-%m-%d')
@@ -255,7 +262,6 @@ class Maestro:
                 self.mosaics[tile_name]['periods'][period]['dist_y'] = tile_stats.dist_y
                 self.mosaics[tile_name]['periods'][period]['min_x'] = tile_stats.min_x
                 self.mosaics[tile_name]['periods'][period]['max_y'] = tile_stats.max_y
-                self.mosaics[tile_name]['periods'][period]['dirname'] = cube_relative_path
                 self.mosaics[tile_name]['periods'][period]['feature'] = json.loads(tile_stats.feature)
                 if self.properties.get('shape', None):
                     self.mosaics[tile_name]['periods'][period]['shape'] = self.properties['shape']
@@ -341,6 +347,12 @@ class Maestro:
             quality = next(filter(lambda b: b.name == quality_band, bands))
             self.properties['mask']['nodata'] = float(quality.nodata)
 
+            if self.reused_datacube:
+                self.properties['reuse_data_cube'] = dict(
+                    name=self.reused_datacube.name,
+                    version=self.reused_datacube.version,
+                )
+
             for tileid in self.mosaics:
                 blends = []
 
@@ -423,8 +435,8 @@ class Maestro:
                                 **merge_opts
                             )
 
-                            if self.reused_datacube:
-                                properties['reuse_datacube'] = self.reused_datacube.id
+                            # if self.reused_datacube:
+                            #     properties['reuse_datacube'] = self.reused_datacube.id
 
                             activity = get_or_create_activity(
                                 cube=self.datacube.name,
