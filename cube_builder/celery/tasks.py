@@ -13,8 +13,6 @@ import logging
 import traceback
 from collections.abc import Iterable
 from copy import deepcopy
-
-# 3rdparty
 from pathlib import Path
 
 from bdc_catalog.models import Collection, db
@@ -25,9 +23,9 @@ from ..config import Config
 from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from ..models import Activity
 from ..utils.image import create_empty_raster, match_histogram_with_merges
-from ..utils.processing import DataCubeFragments, get_cube_id
+from ..utils.processing import DataCubeFragments
 from ..utils.processing import blend as blend_processing
-from ..utils.processing import build_cube_path, compute_data_set_stats, get_or_create_model
+from ..utils.processing import build_cube_path, compute_data_set_stats, get_cube_id, get_or_create_model
 from ..utils.processing import merge as merge_processing
 from ..utils.processing import post_processing_quality, publish_datacube, publish_merge
 from ..utils.timeline import temporal_priority_timeline
@@ -96,11 +94,10 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
 
     if kwargs.get('reuse_data_cube'):
         ref_cube_idt = get_cube_id(kwargs['reuse_data_cube']['name'])
-        if not force:
-            # TODO: Should we search in Activity instead?
-            merge_file_path = build_cube_path(ref_cube_idt, merge_date, tile_id,
-                                              version=kwargs['reuse_data_cube']['version'], band=record.band,
-                                              prefix=Config.DATA_DIR)  # check published dir
+        # TODO: Should we search in Activity instead?
+        merge_file_path = build_cube_path(ref_cube_idt, merge_date, tile_id,
+                                          version=kwargs['reuse_data_cube']['version'], band=record.band,
+                                          prefix=Config.DATA_DIR)  # check published dir
 
     if merge_file_path is None:
         merge_file_path = build_cube_path(record.warped_collection_id, merge_date,
@@ -112,8 +109,15 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
 
     reused = False
 
+    is_valid_or_exists = not force and merge_file_path.exists() and merge_file_path.is_file()
+
+    # When is false, we must change to Work_dir context
+    if not is_valid_or_exists:
+        merge_file_path = Path(Config.WORK_DIR) / merge_file_path.relative_to(Config.DATA_DIR)
+        is_valid_or_exists = not force and merge_file_path.exists() and merge_file_path.is_file()
+
     # Reuse merges already done. Rebuild only with flag ``--force``
-    if not force and merge_file_path.exists() and merge_file_path.is_file():
+    if is_valid_or_exists:
         efficacy = cloudratio = 0
 
         if activity['band'] == quality_band:
@@ -135,8 +139,6 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
         record.args = args
         record.save()
     else:
-        merge_file_path = Path(Config.WORK_DIR) / merge_file_path.relative_to(Config.DATA_DIR)
-
         record.status = 'STARTED'
         record.save()
 
@@ -204,7 +206,7 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
 
 
 @celery_app.task(queue='prepare-cube')
-def prepare_blend(merges, band_map: dict, **kwargs):
+def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
     """Receive merges by period and prepare task blend.
 
     This task aims to prepare celery task definition for blend.
@@ -223,6 +225,12 @@ def prepare_blend(merges, band_map: dict, **kwargs):
     }
 
     version = merges[0]['args']['version']
+    identity_cube = merges[0]['warped_collection_id']
+
+    if reuse_data_cube:
+        identity_cube = get_cube_id(reuse_data_cube['name'])
+        version = reuse_data_cube['version']
+
     bands = [b for b in band_map.keys() if b != kwargs['mask'].get('saturated_band')]
 
     if 'no_post_process' not in kwargs:
@@ -232,7 +240,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
             # Do not apply post-processing on reused data cube since it may be already processed.
             if not was_reused:
                 logging.info(f'Applying post-processing in {str(quality_file)}')
-                post_processing_quality(quality_file, bands, merges[0]['warped_collection_id'],
+                post_processing_quality(quality_file, bands, identity_cube,
                                         period, merges[0]['tile_id'], quality_band, band_map,
                                         version=version, block_size=block_size)
             else:
@@ -332,7 +340,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
 
     # For IDENTITY data cube trigger, just publish
     if DataCubeFragments(datacube).composite_function == 'IDENTITY':
-        task = publish.s(list(activities.values()))
+        task = publish.s(list(activities.values()), reuse_data_cube=reuse_data_cube, **kwargs)
         return task.apply_async()
 
     logging.warning('Scheduling blend....')
@@ -347,12 +355,12 @@ def prepare_blend(merges, band_map: dict, **kwargs):
     # Trigger all except the last
     for activity in activity_list[:-1]:
         # TODO: Persist
-        blends.append(blend.s(activity, band_map, **kwargs))
+        blends.append(blend.s(activity, band_map, reuse_data_cube=reuse_data_cube, **kwargs))
 
     # Trigger last blend to execute Clear Observation
-    blends.append(blend.s(last_activity, band_map, build_clear_observation=True, **kwargs))
+    blends.append(blend.s(last_activity, band_map, build_clear_observation=True, reuse_data_cube=reuse_data_cube, **kwargs))
 
-    task = chain(group(blends), publish.s(band_map, **kwargs))
+    task = chain(group(blends), publish.s(band_map, reuse_data_cube=reuse_data_cube, **kwargs))
     task.apply_async()
 
 

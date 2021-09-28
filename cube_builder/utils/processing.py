@@ -1062,7 +1062,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
             relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
             target_publish_dir = Path(Config.DATA_DIR) / relative_work_dir_file.parent
             # Ensure file is writable
-            target_publish_dir.parent.mkdir(exist_ok=True)
+            target_publish_dir.mkdir(exist_ok=True)
 
             files_to_move.append((
                 str(quick_look_file),  # origin
@@ -1118,7 +1118,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                 shutil.move(origin_file, destination_file)
 
         # Remove the parent ctx directory in WORK_DIR
-        Path(quick_look_file).parent.rmdir()
+        cleanup(Path(quick_look_file).parent)
 
     return quick_look_file
 
@@ -1186,7 +1186,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
         relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
         target_publish_dir = Path(Config.DATA_DIR) / relative_work_dir_file.parent
         # Ensure file is writable
-        target_publish_dir.parent.mkdir(exist_ok=True)
+        target_publish_dir.mkdir(exist_ok=True, parents=True)
 
         files_to_move.append((
             str(quick_look_file),  # origin
@@ -1238,9 +1238,26 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
         if str(origin_file) != str(destination_file):
             shutil.move(origin_file, destination_file)
 
-    Path(quick_look_file).parent.rmdir()
+    cleanup(Path(quick_look_file).parent)
 
     return quick_look_file
+
+
+def cleanup(directory: Union[str, Path]):
+    """Cleanup a directory.
+
+    Note:
+        Only remove temporary files and rmdir when dir is empty.
+    """
+    directory = Path(directory)
+    for entry in directory.iterdir():
+        # Remove any file inside that are temp file
+        if entry.is_file() and entry.name.startswith('tmp') and entry.suffix.lower() == '.tif':
+            entry.unlink()
+    try:
+        directory.rmdir()
+    except OSError:
+        pass
 
 
 def generate_quick_look(file_path, qlfiles):
