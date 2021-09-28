@@ -10,6 +10,7 @@
 
 # Python Native
 import logging
+import shutil
 import warnings
 from contextlib import contextmanager
 from copy import deepcopy
@@ -969,8 +970,28 @@ def concat_path(*entries) -> Path:
     return base
 
 
+def is_relative_to(absolute_path: Union[str, Path], *other) -> bool:
+    """Return True if the given another path is relative to absolute path.
+
+    Note:
+        Adapted from Python 3.9
+    """
+    try:
+        Path(absolute_path).relative_to(*other)
+        return True
+    except ValueError:
+        return False
+
+
 def _item_prefix(absolute_path: Path) -> Path:
-    relative_path = Path(absolute_path).relative_to(Config.DATA_DIR)
+    if is_relative_to(absolute_path, Config.WORK_DIR):
+        relative_prefix = Config.WORK_DIR
+    elif is_relative_to(absolute_path, Config.DATA_DIR):
+        relative_prefix = Config.DATA_DIR
+    else:
+        raise ValueError(f'Invalid file prefix for {str(absolute_path)}')
+
+    relative_path = Path(absolute_path).relative_to(relative_prefix)
 
     return concat_path(Config.ITEM_PREFIX, relative_path)
 
@@ -1014,6 +1035,8 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
 
         tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == cube.grid_ref_sys_id).first()
 
+        files_to_move = []
+
         with db.session.begin_nested():
             item_data = dict(
                 name=item_id,
@@ -1035,6 +1058,17 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                     absolute_path=str(quick_look_file)
                 )
             )
+
+            relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
+            target_publish_dir = Path(Config.DATA_DIR) / relative_work_dir_file.parent
+            # Ensure file is writable
+            target_publish_dir.parent.mkdir(exist_ok=True)
+
+            files_to_move.append((
+                str(quick_look_file),  # origin
+                str(target_publish_dir / relative_work_dir_file.name)  # target
+            ))
+
             item.start_date = start_date
             item.end_date = end_date
 
@@ -1063,6 +1097,14 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                     is_raster=True
                 )
 
+                destination_file = target_publish_dir / Path(scenes[band][composite_function]).name
+
+                # Move to DATA_DIR
+                files_to_move.append((
+                    str(scenes[band][composite_function]), # origin
+                    str(destination_file) # target
+                ))
+
             item.assets = assets
             item.srid = SRID_ALBERS_EQUAL_AREA
             if min_convex_hull.area > 0.0:
@@ -1070,6 +1112,13 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
             item.geom = from_shape(extent, srid=4326)
 
         db.session.commit()
+
+        for origin_file, destination_file in files_to_move:
+            if str(origin_file) != str(destination_file):
+                shutil.move(origin_file, destination_file)
+
+        # Remove the parent ctx directory in WORK_DIR
+        Path(quick_look_file).parent.rmdir()
 
     return quick_look_file
 
@@ -1096,6 +1145,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
     for band in bands:
         ql_files.append(scenes['ARDfiles'][band])
 
+    quick_look_file.parent.mkdir(exist_ok=True, parents=True)
     quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
     # Generate VI
@@ -1103,6 +1153,8 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
     scenes['ARDfiles'].update(custom_bands)
 
     tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == datacube.grid_ref_sys_id).first()
+
+    files_to_move = []
 
     with db.session.begin_nested():
         item_data = dict(
@@ -1130,6 +1182,17 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
                 absolute_path=str(quick_look_file)
             )
         )
+
+        relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
+        target_publish_dir = Path(Config.DATA_DIR) / relative_work_dir_file.parent
+        # Ensure file is writable
+        target_publish_dir.parent.mkdir(exist_ok=True)
+
+        files_to_move.append((
+            str(quick_look_file),  # origin
+            str(target_publish_dir / relative_work_dir_file.name)  # target
+        ))
+
         item.start_date = date
         item.end_date = date
 
@@ -1155,6 +1218,14 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
                 is_raster=True
             )
 
+            destination_file = target_publish_dir / Path(scenes['ARDfiles'][band]).name
+
+            # Move to DATA_DIR
+            files_to_move.append((
+                str(scenes['ARDfiles'][band]),  # origin
+                str(destination_file)  # target
+            ))
+
         item.srid = SRID_ALBERS_EQUAL_AREA
         item.geom = from_shape(extent, srid=4326)
         if min_convex_hull.area > 0.0:
@@ -1162,6 +1233,12 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
         item.assets = assets
 
     db.session.commit()
+
+    for origin_file, destination_file in files_to_move:
+        if str(origin_file) != str(destination_file):
+            shutil.move(origin_file, destination_file)
+
+    Path(quick_look_file).parent.rmdir()
 
     return quick_look_file
 
@@ -1297,8 +1374,10 @@ def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, fl
     return efficacy, not_clear_ratio
 
 
-def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band: str = None, suffix: Union[str, None] = '.tif') -> Path:
+def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band: str = None, suffix: Union[str, None] = '.tif', prefix=None) -> Path:
     """Retrieve the path to the Data cube file in Brazil Data Cube Cluster."""
+    # Default prefix path is WORK_DIR
+    prefix = prefix or Config.WORK_DIR
     folder = 'identity'
     date = period
 
@@ -1319,7 +1398,7 @@ def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band
     if fragments.composite_function != 'IDT':  # For cube with temporal composition
         folder = 'composed'
 
-    return Path(Config.DATA_DIR) / folder / datacube / version_str / tile_id / date / file_name
+    return Path(prefix) / folder / datacube / version_str / tile_id / date / file_name
 
 
 def create_asset_definition(href: str, mime_type: str, role: List[str], absolute_path: str,

@@ -15,10 +15,13 @@ from collections.abc import Iterable
 from copy import deepcopy
 
 # 3rdparty
+from pathlib import Path
+
 from bdc_catalog.models import Collection, db
 from celery import chain, group
 
 # Cube Builder
+from ..config import Config
 from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from ..models import Activity
 from ..utils.image import create_empty_raster, match_histogram_with_merges
@@ -96,11 +99,13 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
         if not force:
             # TODO: Should we search in Activity instead?
             merge_file_path = build_cube_path(ref_cube_idt, merge_date, tile_id,
-                                              version=kwargs['reuse_data_cube']['version'], band=record.band)
+                                              version=kwargs['reuse_data_cube']['version'], band=record.band,
+                                              prefix=Config.DATA_DIR)  # check published dir
 
     if merge_file_path is None:
         merge_file_path = build_cube_path(record.warped_collection_id, merge_date,
-                                          tile_id, version=version, band=record.band)
+                                          tile_id, version=version, band=record.band,
+                                          prefix=Config.DATA_DIR)
 
         if activity['band'] == quality_band and len(activity['args']['datasets']):
             kwargs['build_provenance'] = True
@@ -130,6 +135,8 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
         record.args = args
         record.save()
     else:
+        merge_file_path = Path(Config.WORK_DIR) / merge_file_path.relative_to(Config.DATA_DIR)
+
         record.status = 'STARTED'
         record.save()
 
