@@ -336,7 +336,8 @@ class Maestro:
                 band.name for band in bands if band.name not in common_bands
             ]
 
-            band_map = {b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata) for b in bands}
+            band_map = {b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata,
+                                     min_value=b.min_value, max_value=b.max_value) for b in bands}
 
             warped_datacube = self.warped_datacube.name
 
@@ -505,6 +506,7 @@ class Maestro:
                     if feature['type'] == 'Feature':
                         date = feature['properties']['datetime'][0:10]
                         identifier = feature['id']
+                        stac_bands = feature['properties'].get('eo:bands', [])
 
                         for band in bands:
                             band_name_href = band.name
@@ -517,11 +519,16 @@ class Maestro:
                                 else:
                                     band_name_href = f'sr_{band.name}'
 
+                            feature_band = list(filter(lambda b: b['name'] == band_name_href,stac_bands))
+                            feature_band = feature_band[0] if len(feature_band) > 0 else dict()
+
                             scenes[band.name].setdefault(date, dict())
 
                             link = feature['assets'][band_name_href]['href']
 
                             scene = dict(**collection_bands[band.name])
+                            scene.update(**feature_band)
+
                             scene['sceneid'] = identifier
                             scene['band'] = band.name
                             scene['dataset'] = dataset

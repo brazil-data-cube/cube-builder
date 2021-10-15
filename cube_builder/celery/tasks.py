@@ -62,7 +62,7 @@ def create_execution(activity: dict) -> Activity:
     return model
 
 
-@celery_app.task(queue='merge-cube')
+@celery_app.task(queue=Config.QUEUE_IDENTITY_CUBE)
 def warp_merge(activity, band_map, mask, force=False, **kwargs):
     """Execute datacube merge task.
 
@@ -205,7 +205,7 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
     return activity
 
 
-@celery_app.task(queue='prepare-cube')
+@celery_app.task(queue=Config.QUEUE_PREPARE_CUBE)
 def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
     """Receive merges by period and prepare task blend.
 
@@ -242,7 +242,8 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
                 logging.info(f'Applying post-processing in {str(quality_file)}')
                 post_processing_quality(quality_file, bands, identity_cube,
                                         period, merges[0]['tile_id'], quality_band, band_map,
-                                        version=version, block_size=block_size)
+                                        version=version, block_size=block_size,
+                                        datasets=merges[0]['args']['datasets'])
             else:
                 logging.info(f'Skipping post-processing {str(quality_file)}')
 
@@ -364,7 +365,7 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
     task.apply_async()
 
 
-@celery_app.task(queue='blend-cube')
+@celery_app.task(queue=Config.QUEUE_BLEND_CUBE)
 def blend(activity, band_map, build_clear_observation=False, reuse_data_cube=None, **kwargs):
     """Execute datacube blend task.
 
@@ -380,10 +381,12 @@ def blend(activity, band_map, build_clear_observation=False, reuse_data_cube=Non
 
     logging.warning('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
 
-    return blend_processing(activity, band_map, kwargs['quality_band'], build_clear_observation, block_size=block_size, reuse_data_cube=reuse_data_cube)
+    return blend_processing(activity, band_map, kwargs['quality_band'], build_clear_observation,
+                            block_size=block_size, reuse_data_cube=reuse_data_cube,
+                            apply_valid_range=kwargs.get('apply_valid_range'))
 
 
-@celery_app.task(queue='publish-cube')
+@celery_app.task(queue=Config.QUEUE_PUBLISH_CUBE)
 def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs):
     """Execute publish task and catalog datacube result.
 

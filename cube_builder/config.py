@@ -67,6 +67,11 @@ class Config:
 
     REDOC = {'title': 'Cube Builder API Doc', 'version': __version__}
 
+    QUEUE_IDENTITY_CUBE = os.getenv('QUEUE_IDENTITY_CUBE', 'merge-cube')
+    QUEUE_PREPARE_CUBE = os.getenv('QUEUE_PREPARE_CUBE', 'prepare-cube')
+    QUEUE_BLEND_CUBE = os.getenv('QUEUE_BLEND_CUBE', 'blend-cube')
+    QUEUE_PUBLISH_CUBE = os.getenv('QUEUE_PUBLISH_CUBE', 'publish-cube')
+
 
 class ProductionConfig(Config):
     """Production Mode."""
