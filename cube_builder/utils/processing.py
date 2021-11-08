@@ -1080,7 +1080,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
             relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
             target_publish_dir = Path(Config.DATA_DIR) / relative_work_dir_file.parent
             # Ensure file is writable
-            target_publish_dir.mkdir(exist_ok=True)
+            target_publish_dir.mkdir(exist_ok=True, parents=True)
 
             files_to_move.append((
                 str(quick_look_file),  # origin
