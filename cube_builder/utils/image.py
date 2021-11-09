@@ -77,6 +77,12 @@ def validate(row: RowProxy):
 
 def _file_name(url: str) -> str:
     parsed = urlparse(url)
+    # IF SAFE: parent
+    if '.SAFE' in parsed.path:
+        safe_pos = parsed.path.index('.SAFE') + 5
+        abs_safe_folder = parsed.path[:safe_pos]
+        scene_id = os.path.basename(os.path.dirname(abs_safe_folder))
+        return scene_id
 
     return os.path.basename(parsed.path)
 

@@ -14,12 +14,12 @@ from cube_builder.config import Config
 from cube_builder.utils.processing import build_cube_path
 
 
-def assert_data_cube_path(datacube, period, tile_id, version, expected_base_path, band=None):
+def assert_data_cube_path(datacube, period, tile_id, version, expected_base_path, band=None, prefix=Config.DATA_DIR):
     """Assert directive to validate data cube paths."""
-    absolute_datacube_path = build_cube_path(datacube, period, tile_id, version, band=band)
+    absolute_datacube_path = build_cube_path(datacube, period, tile_id, version, band=band, prefix=prefix)
     version_str = 'v{0:03d}'.format(version)
 
-    expected_path = os.path.join(Config.DATA_DIR, expected_base_path, datacube, version_str, tile_id, period)
+    expected_path = os.path.join(prefix, expected_base_path, datacube, version_str, tile_id, period)
     expected_file_name = f'{datacube}_{version_str}_{tile_id}_{period}_{band}.tif'
 
     assert str(absolute_datacube_path.parent) == expected_path
@@ -35,7 +35,8 @@ def test_datacube_paths():
     band = 'b001'
     datacube = 'MyCube_10'
 
-    # Identity
-    assert_data_cube_path(datacube, date, tile_id, version, 'identity', band=band)
-    # Composed
-    assert_data_cube_path(f'{datacube}_1M_MED', period, tile_id, version, 'composed', band=band)
+    for prefix in [Config.DATA_DIR, Config.WORK_DIR]:
+        # Identity
+        assert_data_cube_path(datacube, date, tile_id, version, 'identity', band=band, prefix=prefix)
+        # Composed
+        assert_data_cube_path(f'{datacube}_1M_MED', period, tile_id, version, 'composed', band=band, prefix=prefix)
