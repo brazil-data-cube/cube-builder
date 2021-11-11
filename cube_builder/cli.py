@@ -97,7 +97,7 @@ def worker(ctx: click.Context):
 @click.option('--stac-url', type=click.STRING, help='STAC to search')
 @click.option('--force', '-f', is_flag=True, help='Build data cube without cache')
 @click.option('--token', type=click.STRING, help='Token to access data from STAC.')
-@click.option('--export-files', type=click.Path(writable=True), help='Export Identity Merges in TXT')
+@click.option('--export-files', type=click.Path(writable=True), help='Export Identity Merges in file')
 @with_appcontext
 def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None,
           stac_url: str = None, force=False, with_rgb=False, shape=None, export_files=None, **kwargs):
