@@ -13,6 +13,7 @@ import json
 import logging
 import warnings
 from contextlib import contextmanager
+from pathlib import Path
 from time import time
 from typing import List
 
@@ -105,6 +106,7 @@ class Maestro:
         self.cached_stacs = dict()
         self.bands = []
         self.tiles = []
+        self.export_files = self.properties.pop('export_files', None)
 
     def get_stac(self, collection: str) -> STAC:
         """Retrieve STAC client which provides the given collection.
@@ -331,6 +333,7 @@ class Maestro:
         with timing('Time total to dispatch'):
             bands = self.datacube_bands
             common_bands = _common_bands()
+            export = dict()
 
             band_str_list = [
                 band.name for band in bands if band.name not in common_bands
@@ -356,6 +359,7 @@ class Maestro:
 
             for tileid in self.mosaics:
                 blends = []
+                export.setdefault(tileid, dict())
 
                 tile = next(filter(lambda t: t.name == tileid, self.tiles))
 
@@ -387,15 +391,16 @@ class Maestro:
                     start_date = self.mosaics[tileid]['periods'][period]['start']
                     end_date = self.mosaics[tileid]['periods'][period]['end']
                     period_start_end = '{}_{}'.format(start_date, end_date)
+                    export[tileid].setdefault(period_start_end, dict())
+                    merge_opts = dict()
 
                     for band in bands:
                         # Skip trigger/search for Vegetation Index
                         if _has_default_or_index_bands(band):
                             continue
 
+                        export[tileid][period_start_end].setdefault(band.name, [])
                         merges = assets_by_period[band.name]
-
-                        merge_opts = dict()
 
                         if not merges:
                             for _b in bands:
@@ -407,6 +412,7 @@ class Maestro:
                                         f'Unexpected Error: The band {_b.name} has scenes, however '
                                         f'there any bands ({band.name}) that don\'t have any scenes on provider.'
                                     )
+                                _m[start_date] = dict()
 
                             # Adapt to make the merge function to generate empty raster
                             merges[start_date] = dict()
@@ -417,6 +423,8 @@ class Maestro:
                             # Preserve collections order
                             for values in collections.values():
                                 assets.extend(values)
+
+                            export[tileid][period_start_end][band.name].extend(assets)
 
                             properties = dict(
                                 date=merge_date,
@@ -435,9 +443,6 @@ class Maestro:
                                 version=self.datacube.version,
                                 **merge_opts
                             )
-
-                            # if self.reused_datacube:
-                            #     properties['reuse_datacube'] = self.reused_datacube.id
 
                             activity = get_or_create_activity(
                                 cube=self.datacube.name,
@@ -460,6 +465,15 @@ class Maestro:
                 if len(blends) > 0:
                     task = group(blends)
                     task.apply_async()
+
+            if self.export_files:
+                file_path = Path(self.export_files)
+                for tile, period_map in export.items():
+                    for period, assets in period_map.items():
+                        file_path_period = file_path.parent / f'{file_path.stem}-{tile}-{period}.json'
+                        file_path_period.parent.mkdir(exist_ok=True, parents=True)
+                        with open(file_path_period, 'w') as f:
+                            f.write(json.dumps(assets, indent=4))
 
         return self.mosaics
 
