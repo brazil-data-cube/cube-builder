@@ -97,9 +97,10 @@ def worker(ctx: click.Context):
 @click.option('--stac-url', type=click.STRING, help='STAC to search')
 @click.option('--force', '-f', is_flag=True, help='Build data cube without cache')
 @click.option('--token', type=click.STRING, help='Token to access data from STAC.')
+@click.option('--export-files', type=click.Path(writable=True), help='Export Identity Merges in file')
 @with_appcontext
 def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None,
-          stac_url: str = None, force=False, with_rgb=False, shape=None, **kwargs):
+          stac_url: str = None, force=False, with_rgb=False, shape=None, export_files=None, **kwargs):
     """Build data cube through command line.
 
     Args:
@@ -145,6 +146,7 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
 
     parser = DataCubeProcessForm()
     parsed_data = parser.load(data)
+    parsed_data['export_files'] = export_files
 
     click.secho('Triggering data cube generation...', fg='green')
     res = CubeController.maestro(**parsed_data)
