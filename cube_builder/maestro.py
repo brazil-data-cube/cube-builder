@@ -13,6 +13,7 @@ import json
 import logging
 import warnings
 from contextlib import contextmanager
+from copy import deepcopy
 from pathlib import Path
 from time import time
 from typing import List
@@ -189,7 +190,9 @@ class Maestro:
         cube_parameters.validate()
 
         # Pass the cube parameters to the data cube functions arguments
-        self.properties.update(cube_parameters.metadata_)
+        props = deepcopy(cube_parameters.metadata_)
+        props.update(self.properties)
+        self.properties = props
 
         dstart = self.params['start_date']
         dend = self.params['end_date']

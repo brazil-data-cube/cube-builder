@@ -347,6 +347,10 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
                                     if len(intersect_ravel):
                                         where_intersec = numpy.unravel_index(intersect_ravel, raster.shape)
                                         raster_merge[where_intersec] = raster[where_intersec]
+
+                                        if build_provenance:
+                                            # TODO: Improve way to get fixed Value instead. Use GUI mapping?
+                                            raster_provenance[where_intersec] = datasets.index(dataset)
                             else:
                                 valid_data_scene = raster[raster != nodata]
                                 raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
@@ -1420,7 +1424,7 @@ def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band
 
     version_str = 'v{0:03d}'.format(version)
 
-    file_name = f'{datacube}_{version_str}_{tile_id}_{period}'
+    file_name = get_item_id(datacube, version, tile_id, period)
 
     if band is not None:
         file_name = f'{file_name}_{band}'

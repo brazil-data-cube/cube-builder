@@ -59,7 +59,7 @@ install_requires = [
     'numpy>=1.17.2',
     'numpngw>=0.0.8',
     'python-dateutil>=2.8,<3',
-    'rasterio[s3]>=1.1.2,<1.2',
+    'rasterio[s3]==1.2.1',
     'requests>=2.25.1',
     'rio_cogeo>=1.1,<2',
     'shapely>=1.7,<2',
