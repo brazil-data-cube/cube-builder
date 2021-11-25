@@ -10,6 +10,7 @@
 
 import datetime
 
+import pytest
 from dateutil.relativedelta import relativedelta
 
 from cube_builder.utils.timeline import Timeline, temporal_priority_timeline
@@ -181,6 +182,13 @@ class TestTimeline:
         assert timeline[0][0] == datetime.date(year=2019, month=12, day=21)
         # Should match last time instant with next year
         assert timeline[-1][-1] == datetime.date(year=2021, month=3, day=20)
+
+    def test_invalid_date_limit(self):
+        start = datetime.datetime(year=2021, month=9, day=30)
+        end = datetime.datetime(year=2020, month=10, day=15)
+        with pytest.raises(ValueError) as e:
+            self._build_timeline(schema='Continuous', unit='month', step=1, start_date=start, end_date=end)
+        assert ' must not be lower than Start Date ' in str(e.value)
 
 
 class TestTemporalPriorityTimeline:

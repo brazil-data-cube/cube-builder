@@ -7,6 +7,7 @@
 #
 
 """Define a structure component to run celery worker."""
+import os
 
 from celery.signals import celeryd_after_setup
 
@@ -14,7 +15,7 @@ from celery.signals import celeryd_after_setup
 from cube_builder import create_app
 from cube_builder.celery import create_celery_app
 
-app = create_app()
+app = create_app(os.getenv('FLASK_ENV', 'production'))
 celery = create_celery_app(app)
 
 

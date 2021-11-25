@@ -7,10 +7,3 @@
 #
 
 """Define the set of tests for cube-builder."""
-
-import pytest
-
-if __name__ == "__main__":
-    import test_timeline
-
-    pytest.main(["--color=auto", "--no-cov", "-v"])
