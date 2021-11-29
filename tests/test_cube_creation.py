@@ -10,11 +10,15 @@
 
 import datetime
 import os
+from copy import deepcopy
 from unittest.mock import patch
 
 import pytest
+from celery import chain, group
 
+from cube_builder.celery.tasks import publish
 from cube_builder.maestro import Maestro
+from cube_builder.utils.image import check_file_integrity
 
 CUBE_PARAMS = dict(
     datacube='LC8-TESTE_30_16D_STK',
@@ -54,8 +58,47 @@ class TestCubeCreation:
     @patch(f'cube_builder.maestro.group')
     @patch(f'cube_builder.maestro.warp_merge')
     @patch(f'cube_builder.maestro.prepare_blend')
-    def test_mock_dispatch_celery(self, mock_prepare_blend, mock_merge, group, chain, maestro):
+    def test_mock_dispatch_celery(self, mock_prepare_blend, mock_merge, mock_group, mock_chain, maestro):
         maestro.dispatch_celery()
         mock_merge.s.assert_called()
         mock_prepare_blend.s.assert_called_once()
-        group.assert_called_with([chain()])
+        mock_group.assert_called_with([mock_chain()])
+
+    def test_cube_workflow(self, maestro):
+        res = maestro.dispatch_celery()
+        band_map = maestro.band_map
+
+        for period in res['blends'].values():
+            blend_bands_result = period.apply()
+            blend_bands = blend_bands_result.get()
+
+            publish_result = chain(group(blend_bands), publish.s(band_map, **maestro.properties)).apply()
+
+            blend_files, merge_files = publish_result.get()
+
+            # Validate Rasters
+            for entry in blend_files:
+                assert check_file_integrity(entry, read_bytes=True)
+
+    def test_cube_workflow_empty_timeline(self, app):
+        params = deepcopy(CUBE_PARAMS)
+        params['tiles'] = ['035060']
+        maestro = Maestro(**params)
+        maestro.orchestrate()
+        res = maestro.dispatch_celery()
+        band_map = maestro.band_map
+
+        for period in res['blends'].values():
+            blend_bands_result = period.apply()
+            blend_bands = blend_bands_result.get()
+
+            publish_result = chain(group(blend_bands), publish.s(band_map, **maestro.properties)).apply()
+
+            blend_files, merge_files = publish_result.get()
+
+            # Empty timeline must not have published Identity Files
+            assert len(merge_files) == 0
+
+            # Validate Rasters
+            for entry in blend_files:
+                assert check_file_integrity(entry, read_bytes=True)

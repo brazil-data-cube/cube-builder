@@ -267,14 +267,17 @@ def radsat_extract_bits(bit_value: Union[int, numpy.ndarray], bit_start: int, bi
     return res
 
 
-def check_file_integrity(file_path: Union[str, Path]) -> bool:
+def check_file_integrity(file_path: Union[str, Path], read_bytes: bool = False) -> bool:
     """Check Raster File integrity.
 
     Args:
         file_path (str|Path): Path to the raster file
+        read_bytes (bool): Read raster band entire. Default is False
     """
     try:
         with rasterio.open(file_path) as data_set:
+            if read_bytes:
+                _ = data_set.read(1)
             return True
     except (rasterio.RasterioIOError, Exception):
         return False

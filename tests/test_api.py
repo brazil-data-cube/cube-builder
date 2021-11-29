@@ -32,11 +32,6 @@ def test_get_grid(client, json_data):
 
     assert len(grids) > 0
 
-    response = client.get('/grids/1')
-    grid = _assert_json_request(response)
-    assert grid['name'] == json_data['grid-bdc-md.json']['name']
-    assert len(grid['tiles']) == 273
-
 
 def test_create_cube(client, json_data):
     json_cube = json_data['lc8-16d-stk.json']

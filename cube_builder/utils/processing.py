@@ -1029,6 +1029,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
         version = reuse_data_cube['version']
 
     cube_parts = get_cube_parts(datacube)
+    output = []
 
     for composite_function in [cube_parts.composite_function]:
         item_datacube = get_cube_id(datacube, composite_function)
@@ -1136,13 +1137,14 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
         db.session.commit()
 
         for origin_file, destination_file in files_to_move:
+            output.append(str(destination_file))
             if str(origin_file) != str(destination_file):
                 shutil.move(origin_file, destination_file)
 
         # Remove the parent ctx directory in WORK_DIR
         cleanup(Path(quick_look_file).parent)
 
-    return quick_look_file
+    return output
 
 
 def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_cube=None):
@@ -1162,6 +1164,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
     quick_look_file = build_cube_path(cube_name, date, tile_id, version=cube_version, suffix=None)
 
     cube_bands = datacube.bands
+    output = []
 
     ql_files = []
     for band in bands:
@@ -1257,12 +1260,13 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
     db.session.commit()
 
     for origin_file, destination_file in files_to_move:
+        output.append(str(destination_file))
         if str(origin_file) != str(destination_file):
             shutil.move(origin_file, destination_file)
 
     cleanup(Path(quick_look_file).parent)
 
-    return quick_look_file
+    return output
 
 
 def cleanup(directory: Union[str, Path]):

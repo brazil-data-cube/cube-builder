@@ -389,6 +389,7 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
 
     task = chain(group(blends), publish.s(band_map, reuse_data_cube=reuse_data_cube, **kwargs))
     task.apply_async()
+    return blends
 
 
 @celery_app.task(queue=Config.QUEUE_BLEND_CUBE)
@@ -478,14 +479,18 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
         if blend_result['band'] == quality_band:
             quality_blend = blend_result
 
+    _blend_result = []
+
     if composite_function != 'IDT':
         cloudratio = quality_blend['cloudratio']
 
         # Generate quick looks for cube scenes
-        publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, reuse_data_cube=reuse_data_cube, **kwargs)
+        _blend_result = publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, reuse_data_cube=reuse_data_cube, **kwargs)
 
     # Generate quick looks of irregular cube
     wcube = Collection.query().filter(Collection.name == warped_datacube, Collection.version == version).first()
+
+    _merge_result = dict()
 
     if not reused_cube:
         for merge_date, definition in merges.items():
@@ -494,9 +499,11 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
                 clear_merge(merge_date, definition)
                 continue
 
-            publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map, reuse_data_cube=reuse_data_cube)
+            _merge_result[merge_date] = publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map, reuse_data_cube=reuse_data_cube)
 
         try:
             db.session.commit()
         except:
             db.session.rollback()
+
+    return _blend_result, _merge_result
