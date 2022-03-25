@@ -98,6 +98,7 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
         futures = executor.map(validate, images)
 
         output = dict()
+        error_map = dict()
 
         for row, errors in futures:
             if row is None:
@@ -112,9 +113,10 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
 
             output[row.date]['file'] = row.file
             output[row.date]['errors'].extend(errors)
-            if row.traceback:
+            if row.traceback and row.date not in error_map:
                 output[row.date]['errors'].append(dict(message=row.traceback, band=row.band,
                                                        filename=_file_name(row.link)))
+                error_map[row.date] = True
 
             output[row.date]['bands'].setdefault(row.band, list())
             output[row.date]['bands'][row.band].append(row.link)

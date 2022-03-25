@@ -13,6 +13,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 import numpy
 import rasterio
 from rasterio.crs import CRS
+from rasterio.warp import Affine
 
 from cube_builder.utils import image
 
@@ -22,7 +23,9 @@ RASTER_OPTIONS = dict(
     crs=CRS.from_epsg(4326),
     driver='GTiff',
     count=1,
-    dtype='int16'
+    dtype='int16',
+    geotransform=Affine(29.999900761648355, 0.0, 4962528.761448536, 0.0,
+                        -29.99952920102161, 9217407.901105449)
 )
 
 RASTER_DATA = numpy.random.randint(100, size=(RASTER_OPTIONS['width'], RASTER_OPTIONS['height'])).astype(numpy.int16)

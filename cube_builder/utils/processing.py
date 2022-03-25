@@ -374,12 +374,6 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
     merge_file = Path(merge_file)
     merge_file.parent.mkdir(parents=True, exist_ok=True)
 
-    template.update({
-        'tiled': True,
-        "interleave": "pixel",
-        'driver': 'GTiff'
-    })
-
     options = dict(
         file=str(merge_file),
         efficacy=efficacy,

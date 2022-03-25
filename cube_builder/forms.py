@@ -36,7 +36,8 @@ class GridRefSysForm(SQLAlchemyAutoSchema):
     meridian = fields.Integer(required=True, load_only=True)
     degreesx = fields.Float(required=True, load_only=True)
     degreesy = fields.Float(required=True, load_only=True)
-    bbox = fields.String(required=True, load_only=True)
+    bbox = fields.List(fields.Float, required=True, load_only=True)
+    srid = fields.Integer(required=True, load_only=True)
 
     class Meta:
         """Internal meta information of form interface."""

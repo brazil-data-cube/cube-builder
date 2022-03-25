@@ -6,27 +6,25 @@
 # under the terms of the MIT License; see LICENSE file for more details.
 #
 
+
 """Define Cube Builder business interface."""
 from copy import deepcopy
 from datetime import datetime
 from typing import Tuple, Union
 
 # 3rdparty
-import rasterio
 import sqlalchemy
 from bdc_catalog.models import (Band, BandSRC, Collection, CompositeFunction, GridRefSys, Item, MimeType, Quicklook,
                                 ResolutionUnit, SpatialRefSys, Tile, db)
 from geoalchemy2 import func
-from geoalchemy2.shape import from_shape
 from rasterio.crs import CRS
-from rasterio.warp import transform
-from shapely.geometry import Polygon
 from werkzeug.exceptions import NotFound, abort
 
 from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
                         PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_ATTRIBUTES,
                         TOTAL_OBSERVATION_NAME)
 from .forms import CollectionForm
+from .grids import create_grids
 from .models import Activity, CubeParameters
 from .utils.image import validate_merges
 from .utils.processing import get_cube_parts, get_or_create_model
@@ -513,114 +511,30 @@ class CubeController:
     @classmethod
     def create_grs_schema(cls, name, description, projection, meridian, degreesx, degreesy, bbox, srid=100001):
         """Create a Brazil Data Cube Grid Schema."""
-        bbox = bbox.split(',')
-        bbox_obj = {
-            "w": float(bbox[0]),
-            "n": float(bbox[1]),
-            "e": float(bbox[2]),
-            "s": float(bbox[3])
-        }
-        tile_srs_p4 = "+proj=longlat +ellps=GRS80 +no_defs"
-        if projection == 'aea':
-            tile_srs_p4 = "+proj=aea +lat_0=-12 +lon_0={} +lat_1=-2 +lat_2=-22 +x_0=5000000 +y_0=10000000 +ellps=GRS80 +units=m +no_defs".format(meridian)
-        elif projection == 'sinu':
-            tile_srs_p4 = "+proj=sinu +lon_0={} +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs".format(meridian)
-
-        # Number of tiles and base tile
-        num_tiles_x = int(360. / degreesx)
-        num_tiles_y = int(180. / degreesy)
-        h_base = num_tiles_x / 2
-        v_base = num_tiles_y / 2
-
-        # Tile size in meters (dx,dy) at center of system (argsmeridian,0.)
-        src_crs = '+proj=longlat +ellps=GRS80 +no_defs'
-        dst_crs = tile_srs_p4
-        xs = [(meridian - degreesx / 2), (meridian + degreesx / 2), meridian, meridian, 0.]
-        ys = [0., 0., -degreesy / 2, degreesy / 2, 0.]
-        out = transform(CRS.from_proj4(src_crs), CRS.from_proj4(dst_crs), xs, ys, zs=None)
-        x1 = out[0][0]
-        x2 = out[0][1]
-        y1 = out[1][2]
-        y2 = out[1][3]
-        dx = x2 - x1
-        dy = y2 - y1
-
-        # Coordinates of WRS center (0.,0.) - top left coordinate of (h_base,v_base)
-        x_center = out[0][4]
-        y_center = out[1][4]
-        # Border coordinates of WRS grid
-        x_min = x_center - dx * h_base
-        y_max = y_center + dy * v_base
-
-        # Upper Left is (xl,yu) Bottom Right is (xr,yb)
-        xs = [bbox_obj['w'], bbox_obj['e'], meridian, meridian]
-        ys = [0., 0., bbox_obj['n'], bbox_obj['s']]
-        out = transform(src_crs, dst_crs, xs, ys, zs=None)
-        xl = out[0][0]
-        xr = out[0][1]
-        yu = out[1][2]
-        yb = out[1][3]
-        h_min = int((xl - x_min) / dx)
-        h_max = int((xr - x_min) / dx)
-        v_min = int((y_max - yu) / dy)
-        v_max = int((y_max - yb) / dy)
-
-        tiles = []
-        features = []
-        dst_crs = '+proj=longlat +ellps=GRS80 +no_defs'
-        src_crs = tile_srs_p4
-
-        for ix in range(h_min, h_max+1):
-            x1 = x_min + ix*dx
-            x2 = x1 + dx
-            for iy in range(v_min, v_max+1):
-                y1 = y_max - iy*dy
-                y2 = y1 - dy
-                # Evaluate the bounding box of tile in longlat
-                xs = [x1, x2, x2, x1]
-                ys = [y1, y1, y2, y2]
-                out = rasterio.warp.transform(src_crs, dst_crs, xs, ys, zs=None)
-
-                polygon = from_shape(
-                    Polygon(
-                        [
-                            (x1, y2),
-                            (x2, y2),
-                            (x2, y1),
-                            (x1, y1),
-                            (x1, y2)
-                        ]
-                    ),
-                    srid=SRID_ALBERS_EQUAL_AREA
-                )
-
-                # Insert tile
-                tile_name = '{0:03d}{1:03d}'.format(ix, iy)
-                tiles.append(dict(
-                    name=tile_name
-                ))
-                features.append(dict(
-                    tile=tile_name,
-                    geom=polygon
-                ))
+        grid_mapping, proj4 = create_grids(names=[name], projection=projection, meridian=meridian,
+                                           degreesx=[degreesx], degreesy=[degreesy],
+                                           bbox=bbox, srid=srid)
+        grid = grid_mapping[name]
 
         with db.session.begin_nested():
-            crs = CRS.from_proj4(tile_srs_p4)
+            crs = CRS.from_proj4(proj4)
             data = dict(
                 auth_name='Albers Equal Area',
                 auth_srid=srid,
                 srid=srid,
                 srtext=crs.to_wkt(),
-                proj4text=tile_srs_p4
+                proj4text=proj4
             )
 
             spatial_index, _ = get_or_create_model(SpatialRefSys, defaults=data, srid=srid)
 
-            grs = GridRefSys.create_geometry_table(table_name=name, features=features, srid=SRID_ALBERS_EQUAL_AREA)
+            grs = GridRefSys.create_geometry_table(table_name=name,
+                                                   features=grid['features'],
+                                                   srid=srid)
             grs.description = description
             db.session.add(grs)
 
-            [db.session.add(Tile(**tile, grs=grs)) for tile in tiles]
+            [db.session.add(Tile(**tile, grs=grs)) for tile in grid['tiles']]
         db.session.commit()
 
         return 'Grid {} created with successfully'.format(name), 201

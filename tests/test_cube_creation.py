@@ -102,3 +102,4 @@ class TestCubeCreation:
             # Validate Rasters
             for entry in blend_files:
                 assert check_file_integrity(entry, read_bytes=True)
+                # check all == nodata

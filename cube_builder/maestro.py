@@ -198,7 +198,10 @@ class Maestro:
         dstart = self.params['start_date']
         dend = self.params['end_date']
 
-        timeline = Timeline(**temporal_schema, start_date=dstart, end_date=dend).mount()
+        if self.datacube.composite_function.alias == 'IDT':
+            timeline = [[dstart, dend]]
+        else:
+            timeline = Timeline(**temporal_schema, start_date=dstart, end_date=dend).mount()
 
         where = [Tile.grid_ref_sys_id == self.datacube.grid_ref_sys_id]
 
@@ -315,23 +318,6 @@ class Maestro:
         if self.params.get('bands'):
             return list(filter(lambda band: band.name in self.params['bands'], self.bands))
         return [b for b in self.bands if b.name != DATASOURCE_NAME]
-
-    @staticmethod
-    def get_bbox(tile_id: str, grs: GridRefSys) -> str:
-        """Retrieve the bounding box representation as string."""
-        geom_table = grs.geom_table
-
-        bbox_result = db.session.query(
-            geom_table.c.tile,
-            func.ST_AsText(func.ST_BoundingDiagonal(func.ST_Transform(geom_table.c.geom, 4326)))
-        ).filter(
-            geom_table.c.tile == tile_id
-        ).first()
-
-        bbox = bbox_result[1][bbox_result[1].find('(') + 1:bbox_result[0].find(')')]
-        bbox = bbox.replace(' ', ',')
-
-        return bbox
 
     def dispatch_celery(self):
         """Dispatch datacube generation on celery workers.
