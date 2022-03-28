@@ -47,6 +47,7 @@ class Config:
     # rasterio
     RASTERIO_ENV = dict(
         GDAL_DISABLE_READDIR_ON_OPEN=True,
+        GDAL_HTTP_UNSAFESSL=os.getenv('GDAL_HTTP_UNSAFESSL', 'NO')
     )
     # Access Token
     FLASK_ACCESS_TOKEN = os.getenv('FLASK_ACCESS_TOKEN', None)

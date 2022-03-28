@@ -533,8 +533,9 @@ class CubeController:
                                                    srid=srid)
             grs.description = description
             db.session.add(grs)
-
-            [db.session.add(Tile(**tile, grs=grs)) for tile in grid['tiles']]
+            for tile_obj in grid['tiles']:
+                tile = Tile(**tile_obj, grs=grs)
+                db.session.add(tile)
         db.session.commit()
 
         return 'Grid {} created with successfully'.format(name), 201
