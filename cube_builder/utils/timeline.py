@@ -176,6 +176,9 @@ class Timeline:
 
     def mount(self):
         """Mount a time line using the Timeline constructor parameters."""
+        if self.start_date > self.end_date:
+            raise ValueError(f'The End date "{self.end_date}" must not be lower than Start Date "{self.start_date}"')
+
         if self.schema.lower() == 'cyclic':
             intervals = Intervals(self.cycle['intervals']) if self.cycle.get('intervals') else None
             periods = self._decode_period_cyclic(self.start_date, self.end_date, self.unit, self.step, 

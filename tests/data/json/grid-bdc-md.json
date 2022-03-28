@@ -1,0 +1,15 @@
+{
+    "bbox": [
+        -82.41734947394671,
+        12.726084296948196,
+        -33.35743163172737,
+        -56.365250136856076
+    ],
+    "name": "BDC_MD_TESTE2",
+    "projection": "aea",
+    "description": "",
+    "meridian": 54,
+    "degreesx": 3,
+    "degreesy": 2,
+    "srid": 100009
+}

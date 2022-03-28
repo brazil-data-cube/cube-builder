@@ -80,6 +80,7 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
         data_type_min_value = data_type_info.min
 
         profile['dtype'] = band_data_type
+        profile['nodata'] = float(band_index.nodata)
 
         custom_band_path = build_cube_path(cube_name, period, tile_id, version=cube_version, band=band_name)
 

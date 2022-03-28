@@ -14,7 +14,12 @@ steps:
   - pip install --upgrade pip
   - pip install --upgrade setuptools
   - pip install -e.[all]
+  - ./deploy/configure-db.sh
   - ./run-tests.sh
+  environment:
+    SQLALCHEMY_DATABASE_URI: postgresql://postgres:mysecretpassword@pg_database:5432/bdc_catalog
+    STAC_URL:
+      from_secret: stac_url
 
 - name: discord-notify
   image: brazildatacube/bdc-drone-discord
@@ -50,4 +55,10 @@ steps:
     repo: registry.dpi.inpe.br/${DRONE_REPO}
     custom_dns: 150.163.2.4
 
-...
+services:
+- name: pg_database
+  image: postgis/postgis:13-3.1
+  environment:
+    POSTGRES_PASSWORD: mysecretpassword
+    POSTGRES_USER: postgres
+

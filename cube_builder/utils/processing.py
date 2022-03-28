@@ -347,6 +347,10 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
                                     if len(intersect_ravel):
                                         where_intersec = numpy.unravel_index(intersect_ravel, raster.shape)
                                         raster_merge[where_intersec] = raster[where_intersec]
+
+                                        if build_provenance:
+                                            # TODO: Improve way to get fixed Value instead. Use GUI mapping?
+                                            raster_provenance[where_intersec] = datasets.index(dataset)
                             else:
                                 valid_data_scene = raster[raster != nodata]
                                 raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
@@ -369,12 +373,6 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
     # Ensure file tree is created
     merge_file = Path(merge_file)
     merge_file.parent.mkdir(parents=True, exist_ok=True)
-
-    template.update({
-        'tiled': True,
-        "interleave": "pixel",
-        'driver': 'GTiff'
-    })
 
     options = dict(
         file=str(merge_file),
@@ -1025,6 +1023,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
         version = reuse_data_cube['version']
 
     cube_parts = get_cube_parts(datacube)
+    output = []
 
     for composite_function in [cube_parts.composite_function]:
         item_datacube = get_cube_id(datacube, composite_function)
@@ -1132,13 +1131,14 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
         db.session.commit()
 
         for origin_file, destination_file in files_to_move:
+            output.append(str(destination_file))
             if str(origin_file) != str(destination_file):
                 shutil.move(origin_file, destination_file)
 
         # Remove the parent ctx directory in WORK_DIR
         cleanup(Path(quick_look_file).parent)
 
-    return quick_look_file
+    return output
 
 
 def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_cube=None):
@@ -1158,6 +1158,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
     quick_look_file = build_cube_path(cube_name, date, tile_id, version=cube_version, suffix=None)
 
     cube_bands = datacube.bands
+    output = []
 
     ql_files = []
     for band in bands:
@@ -1253,12 +1254,13 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
     db.session.commit()
 
     for origin_file, destination_file in files_to_move:
+        output.append(str(destination_file))
         if str(origin_file) != str(destination_file):
             shutil.move(origin_file, destination_file)
 
     cleanup(Path(quick_look_file).parent)
 
-    return quick_look_file
+    return output
 
 
 def cleanup(directory: Union[str, Path]):
@@ -1420,7 +1422,7 @@ def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band
 
     version_str = 'v{0:03d}'.format(version)
 
-    file_name = f'{datacube}_{version_str}_{tile_id}_{period}'
+    file_name = get_item_id(datacube, version, tile_id, period)
 
     if band is not None:
         file_name = f'{file_name}_{band}'

@@ -98,6 +98,7 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
         futures = executor.map(validate, images)
 
         output = dict()
+        error_map = dict()
 
         for row, errors in futures:
             if row is None:
@@ -112,9 +113,10 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
 
             output[row.date]['file'] = row.file
             output[row.date]['errors'].extend(errors)
-            if row.traceback:
+            if row.traceback and row.date not in error_map:
                 output[row.date]['errors'].append(dict(message=row.traceback, band=row.band,
                                                        filename=_file_name(row.link)))
+                error_map[row.date] = True
 
             output[row.date]['bands'].setdefault(row.band, list())
             output[row.date]['bands'][row.band].append(row.link)
@@ -265,3 +267,19 @@ def radsat_extract_bits(bit_value: Union[int, numpy.ndarray], bit_start: int, bi
     res = (bit_value >> bit_start) & mask
 
     return res
+
+
+def check_file_integrity(file_path: Union[str, Path], read_bytes: bool = False) -> bool:
+    """Check Raster File integrity.
+
+    Args:
+        file_path (str|Path): Path to the raster file
+        read_bytes (bool): Read raster band entire. Default is False
+    """
+    try:
+        with rasterio.open(file_path) as data_set:
+            if read_bytes:
+                _ = data_set.read(1)
+            return True
+    except (rasterio.RasterioIOError, Exception):
+        return False

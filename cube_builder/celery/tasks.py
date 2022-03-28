@@ -22,10 +22,10 @@ from celery import chain, group
 from ..config import Config
 from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from ..models import Activity
-from ..utils.image import create_empty_raster, match_histogram_with_merges
+from ..utils.image import check_file_integrity, create_empty_raster, match_histogram_with_merges
 from ..utils.processing import DataCubeFragments
 from ..utils.processing import blend as blend_processing
-from ..utils.processing import build_cube_path, compute_data_set_stats, get_cube_id, get_or_create_model
+from ..utils.processing import build_cube_path, compute_data_set_stats, get_cube_id, get_item_id, get_or_create_model
 from ..utils.processing import merge as merge_processing
 from ..utils.processing import post_processing_quality, publish_datacube, publish_merge
 from ..utils.timeline import temporal_priority_timeline
@@ -120,79 +120,105 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
     if is_valid_or_exists:
         efficacy = cloudratio = 0
 
-        if activity['band'] == quality_band:
-            # When file exists, compute the file statistics
-            efficacy, cloudratio = compute_data_set_stats(str(merge_file_path), mask=mask, compute=True)
-
-        reused = True
-
-        activity['args']['file'] = str(merge_file_path)
-        activity['args']['efficacy'] = efficacy
-        activity['args']['cloudratio'] = cloudratio
-        record.traceback = ''
-
-        args = deepcopy(record.args)
-        args.update(activity['args'])
-
-        activity['args'] = args
-
-        record.args = args
-        record.save()
-    else:
-        record.status = 'STARTED'
-        record.save()
-
-        record.args = activity['args']
-
         try:
-            args = deepcopy(activity.get('args'))
-            args.pop('period', None)
-            args['tile_id'] = tile_id
-            args['date'] = record.date.strftime('%Y-%m-%d')
-            args['cube'] = record.warped_collection_id
+            if not check_file_integrity(merge_file_path):
+                raise IOError('Invalid Merge File')
 
-            empty = args.get('empty', False)
+            if activity['band'] == quality_band:
+                # When file exists, compute the file statistics
+                efficacy, cloudratio = compute_data_set_stats(str(merge_file_path), mask=mask, compute=True)
+                datasets = activity['args']['datasets']
+                if len(datasets) > 1:
+                    # prepare datasource. TODO: Check with reuse data cube
+                    item_id = get_item_id(record.warped_collection_id, version, tile_id, merge_date)
+                    datasource_file = merge_file_path.parent / f'{item_id}_DATASOURCE.tif'
+                    if not datasource_file.exists():
+                        # remove cloud mask file
+                        merge_file_path.unlink()
+                        prefix = Config.DATA_DIR if merge_file_path.is_relative_to(Config.DATA_DIR) else Config.WORK_DIR
+                        # Reset to workdir
+                        merge_file_path = Path(Config.WORK_DIR) / merge_file_path.relative_to(prefix)
+                        raise IOError('Missing Datasource')
 
-            # Create base directory
-            merge_file_path.parent.mkdir(parents=True, exist_ok=True)
+            reused = True
 
-            if empty:
-                # create empty raster
-                file_path = create_empty_raster(str(merge_file_path),
-                                                proj4=args['srs'],
-                                                cog=True,
-                                                nodata=args['nodata'],
-                                                dtype='int16',  # TODO: Pass through args
-                                                dist=[args['dist_x'], args['dist_y']],
-                                                resolution=[args['resx'], args['resy']],
-                                                xmin=args['xmin'],
-                                                ymax=args['ymax'])
-                res = dict(
-                    file=str(file_path),
-                    efficacy=100,
-                    cloudratio=0,
-                    resolution=args['resx'],
-                    nodata=args['nodata']
-                )
-            else:
-                res = merge_processing(str(merge_file_path), mask, band_map=band_map, band=record.band, compute=True, **args, **kwargs)
-
-            merge_args = deepcopy(activity['args'])
-            merge_args.update(res)
-
+            activity['args']['file'] = str(merge_file_path)
+            activity['args']['efficacy'] = efficacy
+            activity['args']['cloudratio'] = cloudratio
             record.traceback = ''
-            record.status = 'SUCCESS'
-            record.args = merge_args
 
-            activity['args'].update(merge_args)
-        except BaseException as e:
-            record.status = 'FAILURE'
-            record.traceback = capture_traceback(e)
-            logging.error('Error in merge. Activity {}'.format(record.id), exc_info=True)
+            args = deepcopy(record.args)
+            args.update(activity['args'])
 
-            raise e
-        finally:
+            activity['args'] = args
+
+            record.args = args
             record.save()
+
+            logging.warning(f"Merge {str(merge_file_path)} executed successfully. "
+                            f"Efficacy={activity['args']['efficacy']}, "
+                            f"cloud_ratio={activity['args']['cloudratio']}")
+
+            activity['args']['reused'] = reused
+
+            return activity
+        except Exception as e:
+            logging.warning(f'{merge_file_path.name} not valid due {str(e)}. Recreating...')
+
+    record.status = 'STARTED'
+    record.save()
+
+    record.args = activity['args']
+
+    try:
+        args = deepcopy(activity.get('args'))
+        args.pop('period', None)
+        args['tile_id'] = tile_id
+        args['date'] = record.date.strftime('%Y-%m-%d')
+        args['cube'] = record.warped_collection_id
+
+        empty = args.get('empty', False)
+
+        # Create base directory
+        merge_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if empty:
+            # create empty raster
+            file_path = create_empty_raster(str(merge_file_path),
+                                            proj4=args['srs'],
+                                            cog=True,
+                                            nodata=args['nodata'],
+                                            dtype='int16',  # TODO: Pass through args
+                                            dist=[args['dist_x'], args['dist_y']],
+                                            resolution=[args['resx'], args['resy']],
+                                            xmin=args['xmin'],
+                                            ymax=args['ymax'])
+            res = dict(
+                file=str(file_path),
+                efficacy=100,
+                cloudratio=0,
+                resolution=args['resx'],
+                nodata=args['nodata']
+            )
+        else:
+            res = merge_processing(str(merge_file_path), mask, band_map=band_map, band=record.band, compute=True, **args, **kwargs)
+
+        merge_args = deepcopy(activity['args'])
+        merge_args.update(res)
+
+        record.traceback = ''
+        record.status = 'SUCCESS'
+        record.args = merge_args
+
+        activity['args'].update(merge_args)
+    except BaseException as e:
+        record.status = 'FAILURE'
+        record.traceback = capture_traceback(e)
+        logging.error('Error in merge. Activity {}'.format(record.id), exc_info=True)
+
+        raise e
+    finally:
+        record.save()
 
     logging.warning('Merge {} executed successfully. Efficacy={}, cloud_ratio={}'.format(
         str(merge_file_path),
@@ -363,6 +389,7 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
 
     task = chain(group(blends), publish.s(band_map, reuse_data_cube=reuse_data_cube, **kwargs))
     task.apply_async()
+    return blends
 
 
 @celery_app.task(queue=Config.QUEUE_BLEND_CUBE)
@@ -452,14 +479,18 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
         if blend_result['band'] == quality_band:
             quality_blend = blend_result
 
+    _blend_result = []
+
     if composite_function != 'IDT':
         cloudratio = quality_blend['cloudratio']
 
         # Generate quick looks for cube scenes
-        publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, reuse_data_cube=reuse_data_cube, **kwargs)
+        _blend_result = publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, reuse_data_cube=reuse_data_cube, **kwargs)
 
     # Generate quick looks of irregular cube
     wcube = Collection.query().filter(Collection.name == warped_datacube, Collection.version == version).first()
+
+    _merge_result = dict()
 
     if not reused_cube:
         for merge_date, definition in merges.items():
@@ -468,9 +499,11 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
                 clear_merge(merge_date, definition)
                 continue
 
-            publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map, reuse_data_cube=reuse_data_cube)
+            _merge_result[merge_date] = publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map, reuse_data_cube=reuse_data_cube)
 
         try:
             db.session.commit()
         except:
             db.session.rollback()
+
+    return _blend_result, _merge_result

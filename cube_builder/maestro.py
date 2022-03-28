@@ -13,6 +13,7 @@ import json
 import logging
 import warnings
 from contextlib import contextmanager
+from copy import deepcopy
 from pathlib import Path
 from time import time
 from typing import List
@@ -83,6 +84,7 @@ class Maestro:
     tiles = None
     mosaics = None
     cached_stacs = None
+    band_map = None
 
     def __init__(self, datacube: str, collections: List[str], tiles: List[str], start_date: str, end_date: str, **properties):
         """Build Maestro interface."""
@@ -189,12 +191,17 @@ class Maestro:
         cube_parameters.validate()
 
         # Pass the cube parameters to the data cube functions arguments
-        self.properties.update(cube_parameters.metadata_)
+        props = deepcopy(cube_parameters.metadata_)
+        props.update(self.properties)
+        self.properties = props
 
         dstart = self.params['start_date']
         dend = self.params['end_date']
 
-        timeline = Timeline(**temporal_schema, start_date=dstart, end_date=dend).mount()
+        if self.datacube.composite_function.alias == 'IDT':
+            timeline = [[dstart, dend]]
+        else:
+            timeline = Timeline(**temporal_schema, start_date=dstart, end_date=dend).mount()
 
         where = [Tile.grid_ref_sys_id == self.datacube.grid_ref_sys_id]
 
@@ -204,6 +211,10 @@ class Maestro:
         self.tiles = db.session.query(Tile).filter(*where).all()
 
         self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
+
+        bands = self.datacube_bands
+        self.band_map = {b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata,
+                                      min_value=b.min_value, max_value=b.max_value) for b in bands}
 
         if self.properties.get('reuse_from'):
             warnings.warn(
@@ -308,23 +319,6 @@ class Maestro:
             return list(filter(lambda band: band.name in self.params['bands'], self.bands))
         return [b for b in self.bands if b.name != DATASOURCE_NAME]
 
-    @staticmethod
-    def get_bbox(tile_id: str, grs: GridRefSys) -> str:
-        """Retrieve the bounding box representation as string."""
-        geom_table = grs.geom_table
-
-        bbox_result = db.session.query(
-            geom_table.c.tile,
-            func.ST_AsText(func.ST_BoundingDiagonal(func.ST_Transform(geom_table.c.geom, 4326)))
-        ).filter(
-            geom_table.c.tile == tile_id
-        ).first()
-
-        bbox = bbox_result[1][bbox_result[1].find('(') + 1:bbox_result[0].find(')')]
-        bbox = bbox.replace(' ', ',')
-
-        return bbox
-
     def dispatch_celery(self):
         """Dispatch datacube generation on celery workers.
 
@@ -339,9 +333,6 @@ class Maestro:
                 band.name for band in bands if band.name not in common_bands
             ]
 
-            band_map = {b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata,
-                                     min_value=b.min_value, max_value=b.max_value) for b in bands}
-
             warped_datacube = self.warped_datacube.name
 
             quality_band = self.properties['quality_band']
@@ -350,6 +341,8 @@ class Maestro:
 
             quality = next(filter(lambda b: b.name == quality_band, bands))
             self.properties['mask']['nodata'] = float(quality.nodata)
+
+            output = dict(merges=dict(), blends=dict())
 
             if self.reused_datacube:
                 self.properties['reuse_data_cube'] = dict(
@@ -369,6 +362,8 @@ class Maestro:
                 for period in self.mosaics[tileid]['periods']:
                     start = self.mosaics[tileid]['periods'][period]['start']
                     end = self.mosaics[tileid]['periods'][period]['end']
+
+                    output['merges'].setdefault(period, dict())
 
                     feature = self.mosaics[tileid]['periods'][period]['feature']
 
@@ -425,6 +420,7 @@ class Maestro:
                                 assets.extend(values)
 
                             export[tileid][period_start_end][band.name].extend(assets)
+                            output['merges'][period].setdefault(merge_date, [])
 
                             properties = dict(
                                 date=merge_date,
@@ -455,12 +451,15 @@ class Maestro:
                                 **properties
                             )
 
-                            task = warp_merge.s(activity, band_map, **self.properties)
+                            output['merges'][period][merge_date].append(activity)
+
+                            task = warp_merge.s(activity, self.band_map, **self.properties)
                             merges_tasks.append(task)
 
                     if len(merges_tasks) > 0:
-                        task = chain(group(merges_tasks), prepare_blend.s(band_map, **self.properties))
+                        task = chain(group(merges_tasks), prepare_blend.s(self.band_map, **self.properties))
                         blends.append(task)
+                        output['blends'][period] = task
 
                 if len(blends) > 0:
                     task = group(blends)
@@ -475,7 +474,7 @@ class Maestro:
                         with open(file_path_period, 'w') as f:
                             f.write(json.dumps(assets, indent=4))
 
-        return self.mosaics
+        return output
 
     def search_images(self, feature: str, start: str, end: str, tile_id: str, **kwargs):
         """Search and prepare images on STAC."""
