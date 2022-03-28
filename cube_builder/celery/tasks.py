@@ -17,6 +17,7 @@ from pathlib import Path
 
 from bdc_catalog.models import Collection, db
 from celery import chain, group
+from geoalchemy2 import func
 
 # Cube Builder
 from ..config import Config
@@ -480,12 +481,17 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
             quality_blend = blend_result
 
     _blend_result = []
+    cube_geom_table = cube.grs.geom_table
+    srid = None
+    result = db.session.query(func.ST_SRID(cube_geom_table.c.geom).label('srid')).first()
+    if result is not None:
+        srid = result.srid
 
     if composite_function != 'IDT':
         cloudratio = quality_blend['cloudratio']
 
         # Generate quick looks for cube scenes
-        _blend_result = publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, reuse_data_cube=reuse_data_cube, **kwargs)
+        _blend_result = publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, reuse_data_cube=reuse_data_cube, srid=srid, **kwargs)
 
     # Generate quick looks of irregular cube
     wcube = Collection.query().filter(Collection.name == warped_datacube, Collection.version == version).first()
@@ -499,7 +505,7 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
                 clear_merge(merge_date, definition)
                 continue
 
-            _merge_result[merge_date] = publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map, reuse_data_cube=reuse_data_cube)
+            _merge_result[merge_date] = publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map, reuse_data_cube=reuse_data_cube, srid=srid)
 
         try:
             db.session.commit()

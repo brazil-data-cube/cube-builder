@@ -1012,7 +1012,7 @@ def _item_prefix(absolute_path: Path) -> Path:
     return concat_path(Config.ITEM_PREFIX, relative_path)
 
 
-def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map, reuse_data_cube=None, **kwargs):
+def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map, reuse_data_cube=None, srid=SRID_ALBERS_EQUAL_AREA, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
 
@@ -1123,7 +1123,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                 ))
 
             item.assets = assets
-            item.srid = SRID_ALBERS_EQUAL_AREA
+            item.srid = srid
             if min_convex_hull.area > 0.0:
                 item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
             item.geom = from_shape(extent, srid=4326)
@@ -1141,7 +1141,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
     return output
 
 
-def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_cube=None):
+def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_cube=None, srid=SRID_ALBERS_EQUAL_AREA):
     """Generate quicklook and catalog warped datacube on database.
 
     TODO: Review it with publish_datacube
@@ -1245,7 +1245,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
                 str(destination_file)  # target
             ))
 
-        item.srid = SRID_ALBERS_EQUAL_AREA
+        item.srid = srid
         item.geom = from_shape(extent, srid=4326)
         if min_convex_hull.area > 0.0:
             item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
