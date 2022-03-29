@@ -14,6 +14,7 @@ from copy import deepcopy
 from unittest.mock import patch
 
 import pytest
+import rasterio
 from celery import chain, group
 
 from cube_builder.celery.tasks import publish
@@ -76,9 +77,23 @@ class TestCubeCreation:
 
             blend_files, merge_files = publish_result.get()
 
+            cube_stats = set()
+            cube_proj4 = set()
+
             # Validate Rasters
             for entry in blend_files:
                 assert check_file_integrity(entry, read_bytes=True)
+                if str(entry).endswith('.tif'):
+                    with rasterio.open(str(entry)) as ds:
+                        # check resolution
+                        transform = ds.transform
+                        resx, resy, xmin, ymax = transform.a, transform.e, transform.c, transform.f
+                        cube_stats.add((resx, resy, xmin, ymax))
+                        cube_proj4.add(ds.crs.to_wkt())
+            # All files must have same pixel origin and resolution
+            assert len(cube_stats) == 1
+            # All files must have same proj4
+            assert len(cube_proj4) == 1
 
     def test_cube_workflow_empty_timeline(self, app):
         params = deepcopy(CUBE_PARAMS)
