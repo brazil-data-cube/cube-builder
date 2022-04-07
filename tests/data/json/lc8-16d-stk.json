@@ -1,6 +1,6 @@
 {
     "datacube": "LC8-TESTE",
-    "grs": "BDC_MD",
+    "grs": "BDC_MD_TESTE",
     "title": "Landsat-8 OLI Data Cube",
     "resolution": 30,
     "version": 1,
@@ -13,7 +13,7 @@
             "step": 1
         }
     },
-    "composite_function": "STK",
+    "composite_function": "LCF",
     "bands_quicklook": [
         "sr_band4",
         "sr_band3",

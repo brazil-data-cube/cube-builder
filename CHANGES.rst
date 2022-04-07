@@ -11,6 +11,19 @@ Changes
 =======
 
 
+Version 0.8.0 (2022-04-11)
+--------------------------
+
+- Add tests for cube builder and workflow.
+- Fix deprecated git protocol in pip for bdc-catalog package (`#211 <https://github.com/brazil-data-cube/cube-builder/issues/211>`_).
+- Fix rasterio version for reading GeoTIFF or JP2 files (`#203 <https://github.com/brazil-data-cube/cube-builder/issues/203>`_).
+- Review directory structure for data cubes (`#199 <https://github.com/brazil-data-cube/cube-builder/issues/199>`_).
+- Set rio-cogeo version to 3 due GeoTransform bit precision casting (`#209 <https://github.com/brazil-data-cube/cube-builder/issues/209>`).
+- Apply band valid ranges in cube identity (`#198 <https://github.com/brazil-data-cube/cube-builder/issues/203>`_).
+- Fix bit precision error in grid generation (`#210 <https://github.com/brazil-data-cube/cube-builder/issues/203>`_).
+- Add support to generate data cube Identity without Mask band (`#142 <https://github.com/brazil-data-cube/cube-builder/issues/142>`_).
+- Rename Stack composite function to Least CC First (LCF) (`#213 <https://github.com/brazil-data-cube/cube-builder/issues/213>`_).
+
 Version 0.6.3 (2021-07-19)
 --------------------------
 

@@ -47,8 +47,9 @@ class CubeParameters(BaseModel):
 
     def validate(self):
         """Validate minimal properties for metadata field."""
-        self._require_property('mask')
-        self._require_property('quality_band')
+        if self.cube.composite_function.alias != 'IDT':
+            self._require_property('mask')
+            self._require_property('quality_band')
         self._check_reuse_cube()
 
     @property

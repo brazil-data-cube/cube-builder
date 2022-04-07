@@ -17,11 +17,13 @@ from pathlib import Path
 
 from bdc_catalog.models import Collection, db
 from celery import chain, group
+from geoalchemy2 import func
 
 # Cube Builder
 from ..config import Config
 from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from ..models import Activity
+from ..utils import get_srid_column
 from ..utils.image import check_file_integrity, create_empty_raster, match_histogram_with_merges
 from ..utils.processing import DataCubeFragments
 from ..utils.processing import blend as blend_processing
@@ -90,7 +92,8 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
     version = activity['args']['version']
 
     merge_file_path = None
-    quality_band = kwargs['quality_band']
+    quality_band = kwargs.get('quality_band')
+    collection_id = f'{record.collection_id}-{version}'
 
     if kwargs.get('reuse_data_cube'):
         ref_cube_idt = get_cube_id(kwargs['reuse_data_cube']['name'])
@@ -201,7 +204,8 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
                 nodata=args['nodata']
             )
         else:
-            res = merge_processing(str(merge_file_path), mask, band_map=band_map, band=record.band, compute=True, **args, **kwargs)
+            res = merge_processing(str(merge_file_path), mask, band_map=band_map, band=record.band, compute=True,
+                                   collection=collection_id, **args, **kwargs)
 
         merge_args = deepcopy(activity['args'])
         merge_args.update(res)
@@ -247,7 +251,7 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
     # Prepare map of efficacy/cloud_ratio based in quality merge result
     quality_date_stats = {
         m['date']: (m['args']['efficacy'], m['args']['cloudratio'], m['args']['file'], m['args']['reused'])
-        for m in merges if m['band'] == quality_band
+        for m in merges if m['band'] == quality_band or quality_band is None  # Quality None means IDT without Mask
     }
 
     version = merges[0]['args']['version']
@@ -257,6 +261,7 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
         identity_cube = get_cube_id(reuse_data_cube['name'])
         version = reuse_data_cube['version']
 
+    kwargs['mask'] = kwargs['mask'] or dict()
     bands = [b for b in band_map.keys() if b != kwargs['mask'].get('saturated_band')]
 
     if 'no_post_process' not in kwargs:
@@ -278,7 +283,9 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
 
         This function is a utility to dispatch the cloud mask generation only for STK data cubes.
         """
-        return _merge['band'] == quality_band and not _merge['collection_id'].endswith('STK')
+        collection_id = _merge['collection_id']
+        fragments = DataCubeFragments(collection_id)
+        return _merge['band'] == quality_band and fragments.composite_function not in ('STK', 'LCF')
 
     for _merge in merges:
         # Skip quality generation for MEDIAN, AVG
@@ -309,9 +316,10 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
             activity['reuse_datacube'] = _merge['args']['reuse_datacube']
 
         activity['scenes'][_merge['args']['date']]['ARDfiles'] = {
-            quality_band: quality_file,
             _merge['band']: _merge['args']['file']
         }
+        if quality_band is not None:
+            activity['scenes'][_merge['args']['date']]['ARDfiles'][quality_band] = quality_file
 
         if _merge['args'].get(DATASOURCE_NAME):
             activity['scenes'][_merge['args']['date']]['ARDfiles'][DATASOURCE_NAME] = _merge['args'][DATASOURCE_NAME]
@@ -366,8 +374,8 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
     datacube = activity_list[0]['datacube']
 
     # For IDENTITY data cube trigger, just publish
-    if DataCubeFragments(datacube).composite_function == 'IDENTITY':
-        task = publish.s(list(activities.values()), reuse_data_cube=reuse_data_cube, **kwargs)
+    if DataCubeFragments(datacube).composite_function == 'IDT':
+        task = publish.s(list(activities.values()), reuse_data_cube=reuse_data_cube, band_map=band_map, **kwargs)
         return task.apply_async()
 
     logging.warning('Scheduling blend....')
@@ -454,7 +462,7 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
     quality_blend = dict(efficacy=100, cloudratio=0)
 
     for blend_result in blends:
-        if composite_function != 'IDENTITY':
+        if composite_function != 'IDT':
             blend_files[blend_result['band']] = blend_result['blends']
 
         if blend_result.get('clear_observation_file'):
@@ -480,12 +488,18 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
             quality_blend = blend_result
 
     _blend_result = []
+    cube_geom_table = cube.grs.geom_table
+    srid_column = get_srid_column(cube_geom_table.c)
+    srid = None
+    result = db.session.query(srid_column.label('srid')).first()
+    if result is not None:
+        srid = result.srid
 
     if composite_function != 'IDT':
         cloudratio = quality_blend['cloudratio']
 
         # Generate quick looks for cube scenes
-        _blend_result = publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, reuse_data_cube=reuse_data_cube, **kwargs)
+        _blend_result = publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, reuse_data_cube=reuse_data_cube, srid=srid, **kwargs)
 
     # Generate quick looks of irregular cube
     wcube = Collection.query().filter(Collection.name == warped_datacube, Collection.version == version).first()
@@ -499,7 +513,7 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
                 clear_merge(merge_date, definition)
                 continue
 
-            _merge_result[merge_date] = publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map, reuse_data_cube=reuse_data_cube)
+            _merge_result[merge_date] = publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map, reuse_data_cube=reuse_data_cube, srid=srid)
 
         try:
             db.session.commit()

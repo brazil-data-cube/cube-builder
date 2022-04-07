@@ -219,7 +219,7 @@ class CubeController:
             _ = cls.get_or_create_band(cube.id, **TOTAL_OBSERVATION_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
                                        resolution_x=params['resolution'], resolution_y=params['resolution'])
 
-            if function == 'STK':
+            if function in ('STK', 'LCF'):
                 _ = cls.get_or_create_band(cube.id, **PROVENANCE_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
                                            resolution_x=params['resolution'], resolution_y=params['resolution'])
 
@@ -533,8 +533,9 @@ class CubeController:
                                                    srid=srid)
             grs.description = description
             db.session.add(grs)
-
-            [db.session.add(Tile(**tile, grs=grs)) for tile in grid['tiles']]
+            for tile_obj in grid['tiles']:
+                tile = Tile(**tile_obj, grs=grs)
+                db.session.add(tile)
         db.session.commit()
 
         return 'Grid {} created with successfully'.format(name), 201
