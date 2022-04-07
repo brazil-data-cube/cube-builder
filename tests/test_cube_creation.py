@@ -22,7 +22,7 @@ from cube_builder.maestro import Maestro
 from cube_builder.utils.image import check_file_integrity
 
 CUBE_PARAMS = dict(
-    datacube='LC8-TESTE_30_16D_STK',
+    datacube='LC8-TESTE_30_16D_LCF',
     tiles=['007011'],
     collections=['LC8_SR-1'],
     start_date=datetime.date(year=2020, month=1, day=1),

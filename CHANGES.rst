@@ -21,6 +21,8 @@ Version 0.6.4 (2022-03-29)
 - Set rio-cogeo version to 3 due GeoTransform bit precision casting (`#209 <https://github.com/brazil-data-cube/cube-builder/issues/209>`).
 - Apply band valid ranges in cube identity (`#198 <https://github.com/brazil-data-cube/cube-builder/issues/203>`_).
 - Fix bit precision error in grid generation (`#210 <https://github.com/brazil-data-cube/cube-builder/issues/203>`_).
+- Add support to generate data cube Identity without Mask band (`#142 <https://github.com/brazil-data-cube/cube-builder/issues/142>`_).
+- Rename Stack composite function to Least CC First (LCF) (`#213 <https://github.com/brazil-data-cube/cube-builder/issues/213>`_).
 
 Version 0.6.3 (2021-07-19)
 --------------------------

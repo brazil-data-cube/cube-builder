@@ -117,7 +117,7 @@ In order to create data cube Landsat-8 monthly using the composite function ``St
             "step": 1,
             "unit": "month"
         },
-        "composite_function": "STK",
+        "composite_function": "LCF",
         "bands_quicklook": [
             "sr_band7",
             "sr_band5",
@@ -192,7 +192,7 @@ In order to trigger a data cube, we are going to use a collection `LC8SR-1` made
 
 To trigger a data cube, use the following command::
 
-    cube-builder build LC8_30_1M_STK \
+    cube-builder build LC8_30_1M_LCF \
         --collections=LC8SR-1 \
         --tiles=044048 \
         --start=2019-01-01 \
@@ -203,7 +203,7 @@ To trigger a data cube, use the following command::
          --request POST '127.0.0.1:5000/start-cube' \
          --header 'Content-Type: application/json' \
          --data-raw '{
-            "datacube": "LC8_30_1M_STK",
+            "datacube": "LC8_30_1M_LCF",
             "collections": ["LC8SR-1"],
             "tiles": ["044048"],
             "start_date": "2019-01-01",
@@ -253,7 +253,7 @@ In order to create data cube Sentinel 2, use the following command to create dat
                 "step": 1
             }
         },
-        "composite_function": "STK",
+        "composite_function": "LCF",
         "bands_quicklook": [
             "sr_band12",
             "sr_band8a",
@@ -319,7 +319,7 @@ In order to create data cube Sentinel 2, use the following command to create dat
 In order to trigger a data cube, we are going to use a collection `S2_MSI_L2_SR_LASRC-1` made with Surface Reflectance using LaSRC 2.0 with cloud masking Fmask 4.2::
 
     # Using cube-builder command line
-    cube-builder build S2_10_16D_STK \
+    cube-builder build S2_10_16D_LCF \
         --collections=S2_MSI_L2_SR_LASRC-1 \
         --tiles=089098 \
         --start=2019-01-01 \
@@ -358,7 +358,7 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
                 "step": 1
             }
         },
-        "composite_function": "STK",
+        "composite_function": "LCF",
         "bands_quicklook": [
             "sr_band12",
             "sr_band8a",
@@ -419,7 +419,7 @@ Trigger data cube generation with following command:
 .. code-block:: shell
 
     # Using cube-builder command line
-    cube-builder build CB4_64_16D_STK \
+    cube-builder build CB4_64_16D_LCF \
         --collections=CBERS4_AWFI_L4_SR \
         --tiles=022024 \
         --start=2019-01-01 \
@@ -432,7 +432,7 @@ Restarting or Reprocessing a Data Cube
 When the ``Cube-Builder`` could not generate data cube for any unknown issue, you may restarting the entire process
 with the same command you have dispatched::
 
-    cube-builder build CB4_64_16D_STK \
+    cube-builder build CB4_64_16D_LCF \
         --collections=CBERS4_AWFI_L4_SR \
         --tiles=022024 \
         --start=2019-01-01 \
@@ -440,7 +440,7 @@ with the same command you have dispatched::
 
 It will reuse most of files that were already processed, executing only the failed tasks. If you notice anything suspicious or want to re-create theses files again, use the option ``--force``::
 
-    cube-builder build CB4_64_16D_STK \
+    cube-builder build CB4_64_16D_LCF \
         --collections=CBERS4_AWFI_L4_SR \
         --tiles=022024 \
         --start=2019-01-01 \
@@ -455,7 +455,7 @@ The ``Cube-Builder`` supports a few parameters to be set during the data cube ex
 
 In order to check the parameters associated with data cube ``CB4_64_16D_STK-1``, use the command::
 
-    cube-builder show-parameters CB4_64_16D_STK-1
+    cube-builder show-parameters CB4_64_16D_LCF-1
 
 
 The following output represents all the parameters related with the given data cube::
@@ -468,5 +468,5 @@ The following output represents all the parameters related with the given data c
 
 You can change any parameter with the command ``cube-builder configure`` with ``DataCubeName-Version``::
 
-    cube-builder configure CB4_64_16D_STK-1 --stac-url=AnySTAC
+    cube-builder configure CB4_64_16D_LCF-1 --stac-url=AnySTAC
 

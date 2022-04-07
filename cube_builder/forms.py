@@ -9,7 +9,7 @@
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
 from bdc_catalog.models import Band, Collection, GridRefSys, db
-from marshmallow import Schema, fields, pre_load, validate
+from marshmallow import Schema, fields, pre_load, validate, validates_schema
 from marshmallow.validate import OneOf, Regexp, ValidationError
 from marshmallow_sqlalchemy import auto_field
 from marshmallow_sqlalchemy.schema import SQLAlchemyAutoSchema
@@ -93,7 +93,7 @@ class CustomMaskDefinition(Schema):
 class CubeParametersSchema(Schema):
     """Represent the data cube parameters used to be attached to the cube execution."""
 
-    mask = fields.Nested(CustomMaskDefinition, required=True, allow_none=False, many=False)
+    mask = fields.Nested(CustomMaskDefinition, required=False, allow_none=False, many=False)
     reference_day = fields.Integer(required=False, allow_none=False)
     histogram_matching = fields.Bool(required=False, allow_none=False)
     no_post_process = fields.Bool(required=False, allow_none=False)
@@ -109,7 +109,7 @@ class DataCubeForm(Schema):
     bands_quicklook = fields.List(fields.String, required=True, allow_none=False)
     composite_function = fields.String(required=True, allow_none=False)
     bands = fields.Nested(BandDefinition, required=True, allow_none=False, many=True)
-    quality_band = fields.String(required=True, allow_none=False)
+    quality_band = fields.String(required=False, allow_none=False)
     indexes = fields.Nested(BandDefinition, many=True)
     metadata = fields.Dict(required=True, allow_none=True)
     description = fields.String(required=True, allow_none=False)
@@ -122,7 +122,7 @@ class DataCubeForm(Schema):
     parameters = fields.Nested(CubeParametersSchema, required=True, allow_none=False, many=False)
 
     @pre_load
-    def validate_indexes(self, data, **kwargs):
+    def validate_fields(self, data, **kwargs):
         """Ensure that both indexes and quality band is present in attribute 'bands'.
 
         Seeks for quality_band in attribute 'bands' and set as `common_name`.
@@ -145,6 +145,9 @@ class DataCubeForm(Schema):
             band = next(filter(lambda band: band['name'] == data['quality_band'], data['bands']))
             band['common_name'] = 'quality'
 
+        if data['composite_function'] != 'IDT' and data.get('quality_band') is None:
+            raise ValidationError(f'Quality band is required for {data["composite_function"]}.')
+
         if 'temporal_schema' in data:
             import json
             import pkgutil
@@ -157,7 +160,6 @@ class DataCubeForm(Schema):
                 schema['$id'] = schema['$id'].replace('#', '')
                 validate(instance=data['temporal_schema'], schema=schema, format_checker=draft7_format_checker)
             except Exception as e:
-                print(e)
                 raise
 
         return data

@@ -47,7 +47,7 @@ def test_list_composite_functions(client):
 
     data = _assert_json_request(response, status_code=200)
     for fn in data:
-        assert fn['alias'] in ['STK', 'MED', 'IDT']
+        assert fn['alias'] in ['STK', 'MED', 'IDT', 'LCF']
 
 
 def test_list_periods_continuous_month(client):

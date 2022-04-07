@@ -23,12 +23,14 @@ from typing import List, Tuple, Union
 import numpy
 import rasterio
 import rasterio.features
+import rasterio.windows
 import requests
 import shapely
 import shapely.geometry
-from bdc_catalog.models import Item, Tile, db
+from bdc_catalog.models import Collection, Item, SpatialRefSys, Tile, db
 from bdc_catalog.utils import multihash_checksum_sha256
 from flask import abort
+from geoalchemy2 import func
 from geoalchemy2.shape import from_shape, to_shape
 from numpngw import write_png
 from rasterio import Affine, MemoryFile
@@ -42,6 +44,7 @@ from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, C
                          DATASOURCE_NAME, PNG_MIME_TYPE, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA,
                          TOTAL_OBSERVATION_NAME)
 # Builder
+from . import get_srid_column
 from .index_generator import generate_band_indexes
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
@@ -201,7 +204,9 @@ def prepare_asset_url(url: str) -> str:
     return urljoin(url, parsed_url.path)
 
 
-def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: dict, quality_band: str, build_provenance=False, compute=False, **kwargs):
+def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
+          band_map: dict, quality_band: str, collection: str, build_provenance=False, compute=False,
+          native_grid: bool = False, **kwargs):
     """Apply datacube merge scenes.
 
     The Merge or Warp consists in a procedure that cropping and mosaicking all imagens that superimpose a target tile
@@ -227,7 +232,34 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
     block_size = kwargs.get('block_size')
     shape = kwargs.get('shape', None)
 
-    if shape:
+    if native_grid:
+        tile_id = kwargs['tile_id']
+        cname, collection_version = collection.rsplit('-', 1)
+        collection = Collection.query().filter(
+            Collection.name == cname,
+            Collection.version == collection_version
+        ).first_or_404(f'Collection {collection} not found')
+        geom_table = collection.grs.geom_table
+        if geom_table is None:
+            raise RuntimeError(f'The Grid {collection.grs.name} not found.')
+
+        srid_column = get_srid_column(geom_table.c)
+        query = db.session.query(
+            func.ST_SetSRID(geom_table.c.geom, srid_column).label('geom'),
+            SpatialRefSys.proj4text.label('crs'),
+        ).join(SpatialRefSys, SpatialRefSys.srid == srid_column).filter(geom_table.c.tile == tile_id).first()
+        if query is None:
+            raise RuntimeError(f'Tile {tile_id} not found')
+        geom = to_shape(query.geom)
+        xmin, ymin, xmax, ymax = geom.bounds
+        transform = Affine(resx, 0, xmin, 0, -resy, ymax)
+        cols = int((xmax - xmin) / resx)
+        rows = int((ymax - ymin) / resy)
+        shape = None
+
+        kwargs['srs'] = query.crs
+
+    elif shape:
         cols = shape[0]
         rows = shape[1]
     else:
@@ -262,7 +294,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
     if quality_band == band:
         source_nodata = nodata = float(mask['nodata'])
         # Only apply bilinear (change pixel values) for band values
-    elif mask.get('saturated_band') != band:
+    elif (mask and mask.get('saturated_band') != band) or quality_band is None:
         resampling = Resampling.bilinear
 
     raster = numpy.zeros((rows, cols,), dtype=data_type)
@@ -584,7 +616,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     According to Brazil Data Cube User Guide, the best image is 15/1 (clear ratio ~83%) and worst as 10/1 (50%).
     The result data cube will be::
 
-        Landsat-8_30_16D_STK
+        Landsat-8_30_16D_LCF
         Quality        Nir                     Provenance (Day of Year)
 
         0 0 2 4       854 756 7000 9000      15 15 10 10
@@ -895,7 +927,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     efficacy, cloudcover = _qa_statistics(stack_raster, mask=mask_values, compute=False)
 
     profile.update({
-        'compress': 'LZW',
         'tiled': True,
         'interleave': 'pixel',
     })

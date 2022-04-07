@@ -13,7 +13,7 @@
             "step": 1
         }
     },
-    "composite_function": "STK",
+    "composite_function": "LCF",
     "bands_quicklook": [
         "sr_band4",
         "sr_band3",

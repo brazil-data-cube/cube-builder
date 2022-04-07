@@ -20,9 +20,12 @@ from typing import List
 
 # 3rdparty
 import numpy
+import shapely.geometry
+import sqlalchemy
 from bdc_catalog.models import Band, Collection, GridRefSys, Tile, db
 from celery import chain, group
 from geoalchemy2 import func
+from geoalchemy2.shape import to_shape
 from stac import STAC
 
 # Cube Builder
@@ -30,6 +33,7 @@ from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
 from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from .models import CubeParameters
+from .utils import get_srid_column
 from .utils.processing import get_cube_id, get_or_create_activity
 from .utils.timeline import Timeline
 
@@ -201,6 +205,10 @@ class Maestro:
         if self.datacube.composite_function.alias == 'IDT':
             timeline = [[dstart, dend]]
         else:
+            if self.datacube.composite_function.alias == 'STK':
+                warnings.warn('The composite function STK is deprecated. Use LCF (Least Cloud Cover First) instead.',
+                              DeprecationWarning, stacklevel=2)
+
             timeline = Timeline(**temporal_schema, start_date=dstart, end_date=dend).mount()
 
         where = [Tile.grid_ref_sys_id == self.datacube.grid_ref_sys_id]
@@ -243,14 +251,21 @@ class Maestro:
 
             grs: GridRefSys = tile.grs
 
-            grid_geom = grs.geom_table
+            grid_geom: sqlalchemy.Table = grs.geom_table
+
+            srid_column = get_srid_column(grid_geom.c)
+
+            # TODO: Raise exception when using a native grid argument
+            #  Use bands resolution and match with SRID context (degree x degree) etc.
 
             tile_stats = db.session.query(
                 (func.ST_XMin(grid_geom.c.geom)).label('min_x'),
                 (func.ST_YMax(grid_geom.c.geom)).label('max_y'),
                 (func.ST_XMax(grid_geom.c.geom) - func.ST_XMin(grid_geom.c.geom)).label('dist_x'),
                 (func.ST_YMax(grid_geom.c.geom) - func.ST_YMin(grid_geom.c.geom)).label('dist_y'),
-                (func.ST_AsGeoJSON(func.ST_Transform(grid_geom.c.geom, 4326))).label('feature')
+                (func.ST_Transform(
+                    func.ST_SetSRID(grid_geom.c.geom, srid_column), 4326
+                )).label('feature')
             ).filter(grid_geom.c.tile == tile_name).first()
 
             self.mosaics[tile_name] = dict(
@@ -275,7 +290,7 @@ class Maestro:
                 self.mosaics[tile_name]['periods'][period]['dist_y'] = tile_stats.dist_y
                 self.mosaics[tile_name]['periods'][period]['min_x'] = tile_stats.min_x
                 self.mosaics[tile_name]['periods'][period]['max_y'] = tile_stats.max_y
-                self.mosaics[tile_name]['periods'][period]['feature'] = json.loads(tile_stats.feature)
+                self.mosaics[tile_name]['periods'][period]['feature'] = tile_stats.feature
                 if self.properties.get('shape', None):
                     self.mosaics[tile_name]['periods'][period]['shape'] = self.properties['shape']
 
@@ -335,12 +350,16 @@ class Maestro:
 
             warped_datacube = self.warped_datacube.name
 
-            quality_band = self.properties['quality_band']
-
+            quality_band = None
             stac_kwargs = self.properties.get('stac_kwargs', dict())
+            if self.datacube.composite_function.alias != 'IDT':
+                quality_band = self.properties['quality_band']
 
-            quality = next(filter(lambda b: b.name == quality_band, bands))
-            self.properties['mask']['nodata'] = float(quality.nodata)
+                quality = next(filter(lambda b: b.name == quality_band, bands))
+                self.properties['mask']['nodata'] = float(quality.nodata)
+            else:
+                self.properties['quality_band'] = None
+                self.properties['mask'] = None
 
             output = dict(merges=dict(), blends=dict())
 
@@ -365,12 +384,14 @@ class Maestro:
 
                     output['merges'].setdefault(period, dict())
 
-                    feature = self.mosaics[tileid]['periods'][period]['feature']
+                    feature = to_shape(self.mosaics[tileid]['periods'][period]['feature'])
 
-                    assets_by_period = self.search_images(feature, start, end, tileid, **stac_kwargs)
+                    assets_by_period = self.search_images(shapely.geometry.mapping(feature), start, end, tileid, **stac_kwargs)
 
                     if self.datacube.composite_function.alias == 'IDT':
-                        stats_bands = (TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME)
+                        stats_bands = [TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME]
+
+                        stats_bands.extend([b.name for b in bands if b.name not in stats_bands and _has_default_or_index_bands(b)])
                         # Mount list of True/False values
                         is_any_empty = list(map(lambda k: k not in stats_bands and len(assets_by_period[k]) == 0, assets_by_period.keys()))
                         # When no asset found in this period, skip it.
@@ -476,7 +497,7 @@ class Maestro:
 
         return output
 
-    def search_images(self, feature: str, start: str, end: str, tile_id: str, **kwargs):
+    def search_images(self, feature: dict, start: str, end: str, tile_id: str, **kwargs):
         """Search and prepare images on STAC."""
         scenes = {}
         options = dict(
