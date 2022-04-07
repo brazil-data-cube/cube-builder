@@ -11,7 +11,7 @@ Changes
 =======
 
 
-Version 0.6.4 (2022-03-29)
+Version 0.8.0 (2022-04-11)
 --------------------------
 
 - Add tests for cube builder and workflow.
