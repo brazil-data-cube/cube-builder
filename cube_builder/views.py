@@ -208,7 +208,13 @@ def list_merges(**kwargs):
 def list_grs_schemas(grs_id, **kwargs):
     """List all data cube Grids."""
     if grs_id is not None:
-        result, status_code = CubeController.get_grs_schema(grs_id)
+        args = request.args.to_dict()
+        bbox = args.get('bbox')
+        if bbox:
+            bbox = [float(elm) for elm in bbox.split(',')]
+        tiles = args.get('tiles')
+        tiles = tiles.split(',') if tiles else None
+        result, status_code = CubeController.get_grs_schema(grs_id, bbox=bbox, tiles=tiles)
     else:
         result, status_code = CubeController.list_grs_schemas()
 
