@@ -138,15 +138,15 @@ class DataCubeForm(Schema):
             if band_index['name'] in band_names:
                 raise ValidationError(f'Duplicated band name in indices {band_index["name"]}')
 
-        if 'quality_band' in data:
+        if data['composite_function'] != 'IDT' and data.get('quality_band') is None:
+            raise ValidationError(f'Quality band is required for {data["composite_function"]}.')
+
+        if 'quality_band' in data and data.get('quality_band') is not None:
             if data['quality_band'] not in band_names:
                 raise ValidationError(f'Quality band "{data["quality_band"]}" not found in key "bands"')
 
             band = next(filter(lambda band: band['name'] == data['quality_band'], data['bands']))
             band['common_name'] = 'quality'
-
-        if data['composite_function'] != 'IDT' and data.get('quality_band') is None:
-            raise ValidationError(f'Quality band is required for {data["composite_function"]}.')
 
         if 'temporal_schema' in data:
             import json

@@ -23,6 +23,8 @@ Version 0.8.0 (2022-04-11)
 - Fix bit precision error in grid generation (`#210 <https://github.com/brazil-data-cube/cube-builder/issues/203>`_).
 - Add support to generate data cube Identity without Mask band (`#142 <https://github.com/brazil-data-cube/cube-builder/issues/142>`_).
 - Rename Stack composite function to Least CC First (LCF) (`#213 <https://github.com/brazil-data-cube/cube-builder/issues/213>`_).
+- Add support to retrieve GRID tiles GeoJSON through API (`#215 <https://github.com/brazil-data-cube/cube-builder/issues/215>`_)
+
 
 Version 0.6.3 (2021-07-19)
 --------------------------

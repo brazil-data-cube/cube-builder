@@ -26,6 +26,7 @@ from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, CO
 from .forms import CollectionForm
 from .grids import create_grids
 from .models import Activity, CubeParameters
+from .utils import get_srid_column
 from .utils.image import validate_merges
 from .utils.processing import get_cube_parts, get_or_create_model
 from .utils.serializer import Serializer
@@ -162,12 +163,9 @@ class CubeController:
                 if name in default_bands:
                     continue
 
-                is_not_cloud = params['quality_band'] != band['name']
+                is_not_cloud = params['quality_band'] != band['name'] if params.get('quality_band') is not None else False
 
-                if band['name'] == params['quality_band']:
-                    data_type = 'uint8'
-                else:
-                    data_type = band['data_type']
+                data_type = band['data_type']
 
                 band_model = Band(
                     name=name,
@@ -490,18 +488,37 @@ class CubeController:
         return [dict(**Serializer.serialize(schema), crs=schema.crs) for schema in schemas], 200
 
     @classmethod
-    def get_grs_schema(cls, grs_id):
+    def get_grs_schema(cls, grs_id, bbox: Tuple[float, float, float, float] = None, tiles=None):
         """Retrieve a Grid Schema definition with tiles associated."""
-        schema = GridRefSys.query().filter(GridRefSys.id == grs_id).first()
+        schema: GridRefSys = GridRefSys.query().filter(GridRefSys.id == grs_id).first()
 
         if schema is None:
             return 'GRS {} not found.'.format(grs_id), 404
 
         geom_table = schema.geom_table
+        srid_column = get_srid_column(geom_table.c, default_srid=4326)
+        where = []
+        if bbox is not None:
+            x_min, y_min, x_max, y_max = bbox
+            where.append(
+                func.ST_Intersects(
+                    func.ST_MakeEnvelope(x_min, y_min, x_max, y_max, 4326),
+                    func.ST_Transform(func.ST_SetSRID(geom_table.c.geom, srid_column), 4326)
+                )
+            )
+
+        if tiles:
+            where.append(geom_table.c.tile.in_(tiles))
+
         tiles = db.session.query(
             geom_table.c.tile,
-            func.ST_AsGeoJSON(func.ST_Transform(geom_table.c.geom, 4326), 6, 3).cast(sqlalchemy.JSON).label('geom_wgs84')
-        ).all()
+            func.ST_AsGeoJSON(
+                func.ST_Transform(
+                    func.ST_SetSRID(geom_table.c.geom, srid_column),
+                    4326
+                ), 6, 3
+            ).cast(sqlalchemy.JSON).label('geom_wgs84')
+        ).filter(*where).all()
 
         dump_grs = Serializer.serialize(schema)
         dump_grs['tiles'] = [dict(id=t.tile, geom_wgs84=t.geom_wgs84) for t in tiles]
