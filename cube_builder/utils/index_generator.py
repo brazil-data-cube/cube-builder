@@ -97,7 +97,6 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
 
             result = execute(expr, context=machine_context)
             raster = result[band_name]
-            raster[raster == numpy.ma.masked] = profile['nodata']
 
             # Persist the expected band data type to cast value safely.
             # TODO: Should we use consider band min_value/max_value?
