@@ -1156,8 +1156,8 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
             item.assets = assets
             item.srid = srid
             if min_convex_hull.area > 0.0:
-                item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
-            item.geom = from_shape(extent, srid=4326)
+                item.min_convex_hull = from_shape(min_convex_hull, srid=4326, extended=True)
+            item.geom = from_shape(extent, srid=4326, extended=True)
 
         db.session.commit()
 
@@ -1277,9 +1277,9 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
             ))
 
         item.srid = srid
-        item.geom = from_shape(extent, srid=4326)
+        item.geom = from_shape(extent, srid=4326, extended=True)
         if min_convex_hull.area > 0.0:
-            item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
+            item.min_convex_hull = from_shape(min_convex_hull, srid=4326, extended=True)
         item.assets = assets
 
     db.session.commit()
