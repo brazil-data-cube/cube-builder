@@ -17,7 +17,6 @@ from pathlib import Path
 
 from bdc_catalog.models import Collection, db
 from celery import chain, group
-from geoalchemy2 import func
 
 # Cube Builder
 from ..config import Config
@@ -65,14 +64,14 @@ def create_execution(activity: dict) -> Activity:
 
 
 @celery_app.task(queue=Config.QUEUE_IDENTITY_CUBE)
-def warp_merge(activity, band_map, mask, force=False, **kwargs):
+def warp_merge(activity, band_map, mask, force=False, data_dir=None, **kwargs):
     """Execute datacube merge task.
 
     This task consists in the following steps:
 
         - Prepare a raster using dimensions of datacube GRS schema.
         - Open collection dataset with RasterIO and reproject to datacube GRS Schema.
-        - Fill the respective pathrow into raster
+        - Fill the respective path row into raster
 
     Args:
         activity - Datacube Activity Model
@@ -84,6 +83,8 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
     logging.warning('Executing merge {} - {}'.format(activity.get('warped_collection_id'), activity['band']))
 
     record = create_execution(activity)
+
+    data_dir = data_dir or Config.DATA_DIR
 
     record.warped_collection_id = activity['warped_collection_id']
     merge_date = activity['date']
@@ -100,12 +101,12 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
         # TODO: Should we search in Activity instead?
         merge_file_path = build_cube_path(ref_cube_idt, merge_date, tile_id,
                                           version=kwargs['reuse_data_cube']['version'], band=record.band,
-                                          prefix=Config.DATA_DIR)  # check published dir
+                                          prefix=data_dir)  # check published dir
 
     if merge_file_path is None:
         merge_file_path = build_cube_path(record.warped_collection_id, merge_date,
                                           tile_id, version=version, band=record.band,
-                                          prefix=Config.DATA_DIR)
+                                          prefix=data_dir)
 
         if activity['band'] == quality_band and len(activity['args']['datasets']):
             kwargs['build_provenance'] = True
@@ -116,7 +117,7 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
 
     # When is false, we must change to Work_dir context
     if not is_valid_or_exists:
-        merge_file_path = Path(Config.WORK_DIR) / merge_file_path.relative_to(Config.DATA_DIR)
+        merge_file_path = Path(Config.WORK_DIR) / merge_file_path.relative_to(data_dir)
         is_valid_or_exists = not force and merge_file_path.exists() and merge_file_path.is_file()
 
     # Reuse merges already done. Rebuild only with flag ``--force``
@@ -138,7 +139,7 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
                     if not datasource_file.exists():
                         # remove cloud mask file
                         merge_file_path.unlink()
-                        prefix = Config.DATA_DIR if merge_file_path.is_relative_to(Config.DATA_DIR) else Config.WORK_DIR
+                        prefix = data_dir if merge_file_path.is_relative_to(data_dir) else Config.WORK_DIR
                         # Reset to workdir
                         merge_file_path = Path(Config.WORK_DIR) / merge_file_path.relative_to(prefix)
                         raise IOError('Missing Datasource')
@@ -499,7 +500,7 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
         cloudratio = quality_blend['cloudratio']
 
         # Generate quick looks for cube scenes
-        _blend_result = publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, reuse_data_cube=reuse_data_cube, srid=srid, **kwargs)
+        _blend_result = publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, reuse_data_cube=reuse_data_cube, srid=srid, **kwargs)
 
     # Generate quick looks of irregular cube
     wcube = Collection.query().filter(Collection.name == warped_datacube, Collection.version == version).first()
@@ -513,7 +514,8 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
                 clear_merge(merge_date, definition)
                 continue
 
-            _merge_result[merge_date] = publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map, reuse_data_cube=reuse_data_cube, srid=srid)
+            _merge_result[merge_date] = publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition,
+                                                      reuse_data_cube=reuse_data_cube, srid=srid, data_dir=kwargs.get('data_dir'))
 
         try:
             db.session.commit()

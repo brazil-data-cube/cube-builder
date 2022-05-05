@@ -1030,22 +1030,25 @@ def is_relative_to(absolute_path: Union[str, Path], *other) -> bool:
         return False
 
 
-def _item_prefix(absolute_path: Path) -> Path:
+def _item_prefix(absolute_path: Path, data_dir: str = None) -> Path:
+    data_dir = data_dir or Config.DATA_DIR
     if is_relative_to(absolute_path, Config.WORK_DIR):
         relative_prefix = Config.WORK_DIR
-    elif is_relative_to(absolute_path, Config.DATA_DIR):
-        relative_prefix = Config.DATA_DIR
+    elif is_relative_to(absolute_path, data_dir):
+        relative_prefix = data_dir
     else:
-        raise ValueError(f'Invalid file prefix for {str(absolute_path)}')
+        raise ValueError(f'Invalid file prefix for {str(absolute_path)} - ({Config.WORK_DIR}, {data_dir})')
 
     relative_path = Path(absolute_path).relative_to(relative_prefix)
 
     return concat_path(Config.ITEM_PREFIX, relative_path)
 
 
-def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map, reuse_data_cube=None, srid=SRID_ALBERS_EQUAL_AREA, **kwargs):
+def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_data_cube=None,
+                     srid=SRID_ALBERS_EQUAL_AREA, data_dir=None, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
+    data_dir = data_dir or Config.DATA_DIR
 
     datacube = cube.name
     version = cube.version
@@ -1100,7 +1103,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
             assets = deepcopy(item.assets) or dict()
             assets.update(
                 thumbnail=create_asset_definition(
-                    href=str(_item_prefix(Path(quick_look_file))),
+                    href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)),
                     mime_type=PNG_MIME_TYPE,
                     role=['thumbnail'],
                     absolute_path=str(quick_look_file)
@@ -1108,7 +1111,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
             )
 
             relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
-            target_publish_dir = Path(Config.DATA_DIR) / relative_work_dir_file.parent
+            target_publish_dir = Path(data_dir) / relative_work_dir_file.parent
             # Ensure file is writable
             target_publish_dir.mkdir(exist_ok=True, parents=True)
 
@@ -1138,7 +1141,7 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                     min_convex_hull = raster_convexhull(str(scenes[band][composite_function]))
 
                 assets[band_model[0].name] = create_asset_definition(
-                    href=str(_item_prefix(scenes[band][composite_function])),
+                    href=str(_item_prefix(scenes[band][composite_function], data_dir=data_dir)),
                     mime_type=COG_MIME_TYPE,
                     role=['data'],
                     absolute_path=str(scenes[band][composite_function]),
@@ -1172,11 +1175,12 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
     return output
 
 
-def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_cube=None, srid=SRID_ALBERS_EQUAL_AREA):
+def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, srid=SRID_ALBERS_EQUAL_AREA, data_dir=None):
     """Generate quicklook and catalog warped datacube on database.
 
     TODO: Review it with publish_datacube
     """
+    data_dir = data_dir or Config.DATA_DIR
     cube_name = datacube.name
     cube_version = datacube.version
     if reuse_data_cube:
@@ -1226,7 +1230,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
 
         assets.update(
             thumbnail=create_asset_definition(
-                href=str(_item_prefix(Path(quick_look_file))),
+                href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)),
                 mime_type=PNG_MIME_TYPE,
                 role=['thumbnail'],
                 absolute_path=str(quick_look_file)
@@ -1234,7 +1238,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
         )
 
         relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
-        target_publish_dir = Path(Config.DATA_DIR) / relative_work_dir_file.parent
+        target_publish_dir = Path(data_dir) / relative_work_dir_file.parent
         # Ensure file is writable
         target_publish_dir.mkdir(exist_ok=True, parents=True)
 
@@ -1261,7 +1265,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map, reuse_data_c
                 min_convex_hull = raster_convexhull(str(scenes['ARDfiles'][band]))
 
             assets[band_model[0].name] = create_asset_definition(
-                href=str(_item_prefix(scenes['ARDfiles'][band])),
+                href=str(_item_prefix(scenes['ARDfiles'][band], data_dir=data_dir)),
                 mime_type=COG_MIME_TYPE,
                 role=['data'],
                 absolute_path=str(scenes['ARDfiles'][band]),
@@ -1620,7 +1624,7 @@ def raster_convexhull(imagepath: str, epsg='EPSG:4326') -> dict:
         geoms = []
         res = {'val': []}
         for geom, val in rasterio.features.shapes(mask, mask=mask, transform=dataset.transform):
-            geom = rasterio.warp.transform_geom(dataset.crs, epsg, geom, precision=6)
+            geom = rasterio.warp.transform_geom(dataset.crs, epsg, geom)
 
             res['val'].append(val)
             geoms.append(shapely.geometry.shape(geom))
@@ -1644,4 +1648,4 @@ def raster_extent(imagepath: str, epsg = 'EPSG:4326') -> shapely.geometry.Polygo
     """
     with rasterio.open(imagepath) as dataset:
         _geom = shapely.geometry.mapping(shapely.geometry.box(*dataset.bounds))
-        return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom, precision=6))
+        return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom))
