@@ -11,7 +11,7 @@ Changes
 =======
 
 
-Version 0.8.0 (2022-04-11)
+Version 0.8.0 (2022-05-05)
 --------------------------
 
 - Add tests for cube builder and workflow.
@@ -24,6 +24,7 @@ Version 0.8.0 (2022-04-11)
 - Add support to generate data cube Identity without Mask band (`#142 <https://github.com/brazil-data-cube/cube-builder/issues/142>`_).
 - Rename Stack composite function to Least CC First (LCF) (`#213 <https://github.com/brazil-data-cube/cube-builder/issues/213>`_).
 - Add support to retrieve GRID tiles GeoJSON through API (`#215 <https://github.com/brazil-data-cube/cube-builder/issues/215>`_)
+- Add flag "data_dir" to customize data cube location (`#205 <https://github.com/brazil-data-cube/cube-builder/issues/205>`_)
 
 
 Version 0.6.3 (2021-07-19)

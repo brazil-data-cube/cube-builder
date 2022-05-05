@@ -35,7 +35,8 @@ The grid ``BRAZIL_LG`` will be used by collections `CBERS4` which has resolution
             "meridian": -54,
             "degreesx": 6,
             "degreesy": 4,
-            "bbox": "-73.9872354804,5.24448639569,-34.7299934555,-33.7683777809"
+            "bbox": [-73.9872354804, -33.7683777809, -34.7299934555, 5.24448639569],
+            "srid": 100001
          }'
 
 The response will have status code ``201`` and the body::
@@ -55,7 +56,8 @@ The grid ``BRAZIL_MD`` will be used by collection `Landsat-8` which has resoluti
             "meridian": -54,
             "degreesx": 3,
             "degreesy": 2,
-            "bbox": "-73.9872354804,5.24448639569,-34.7299934555,-33.7683777809"
+            "bbox": [-73.9872354804, -33.7683777809, -34.7299934555, 5.24448639569],
+            "srid": 100001
          }'
 
 The response will have status code ``201`` and the body::
@@ -75,7 +77,8 @@ The grid ``BRAZIL_SM`` will be used by collection `Sentinel-2` which has resolut
             "meridian": -54,
             "degreesx": 1.5,
             "degreesy": 1,
-            "bbox": "-73.9872354804,5.24448639569,-34.7299934555,-33.7683777809"
+            "bbox": [-73.9872354804, -33.7683777809, -34.7299934555, 5.24448639569],
+            "srid": 100001
          }'
 
 The response will have status code ``201`` and the body::
