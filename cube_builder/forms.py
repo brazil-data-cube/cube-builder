@@ -9,7 +9,7 @@
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
 from bdc_catalog.models import Band, Collection, GridRefSys, db
-from marshmallow import Schema, fields, pre_load, validate, validates_schema
+from marshmallow import Schema, fields, pre_load, validate
 from marshmallow.validate import OneOf, Regexp, ValidationError
 from marshmallow_sqlalchemy import auto_field
 from marshmallow_sqlalchemy.schema import SQLAlchemyAutoSchema
@@ -24,7 +24,7 @@ class CollectionForm(SQLAlchemyAutoSchema):
 
         model = Collection
         sqla_session = db.session
-        exclude = ('extent', )
+        exclude = ('spatial_extent', )
 
 
 class GridRefSysForm(SQLAlchemyAutoSchema):

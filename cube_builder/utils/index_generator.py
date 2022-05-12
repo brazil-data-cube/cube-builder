@@ -40,7 +40,7 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
     cube_band_indexes: List[Band] = []
 
     for band in cube.bands:
-        if band._metadata and band._metadata.get('expression') and band._metadata['expression'].get('value'):
+        if band.metadata_ and band.metadata_.get('expression') and band.metadata_['expression'].get('value'):
             cube_band_indexes.append(band)
 
     if not cube_band_indexes:
@@ -70,7 +70,7 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
     for band_index in cube_band_indexes:
         band_name = band_index.name
 
-        band_expression = band_index._metadata['expression']['value']
+        band_expression = band_index.metadata_['expression']['value']
 
         band_data_type = band_index.data_type
 

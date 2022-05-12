@@ -21,8 +21,7 @@ from rasterio.crs import CRS
 from werkzeug.exceptions import NotFound, abort
 
 from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
-                        PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_ATTRIBUTES,
-                        TOTAL_OBSERVATION_NAME)
+                        PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_ATTRIBUTES, TOTAL_OBSERVATION_NAME)
 from .forms import CollectionForm
 from .grids import create_grids
 from .models import Activity, CubeParameters
@@ -37,23 +36,14 @@ class CubeController:
     """Define Cube Builder interface for data cube creation."""
 
     @staticmethod
-    def get_cube_or_404(cube_id: Union[int, str] = None, cube_full_name: str = '-'):
+    def get_cube_or_404(cube_id: Union[int, str] = None):
         """Try to retrieve a data cube on database and raise 404 when not found."""
-        if cube_id:
-            return Collection.query().filter(Collection.id == cube_id).first_or_404()
-        else:
-            cube_fragments = cube_full_name.split('-')
-            cube_name = '-'.join(cube_fragments[:-1])
-            cube_version = cube_fragments[-1]
-            return Collection.query().filter(
-                Collection.name == cube_name,
-                Collection.version == cube_version
-            ).first_or_404()
+        return Collection.get_by_id(cube_id)
 
     @classmethod
     def get_or_create_band(cls, cube, name, common_name, min_value, max_value,
                            nodata, data_type, resolution_x, resolution_y, scale,
-                           resolution_unit_id, description=None) -> Band:
+                           resolution_unit_id, mime_type_id, description=None, scale_add=0) -> Band:
         """Get or try to create a data cube band on database.
 
         Notes:
@@ -74,14 +64,16 @@ class CubeController:
             nodata=nodata,
             data_type=data_type,
             description=description,
-            scale=scale,
+            scale_mult=scale,
+            scale_add=scale_add,
+            mime_type_id=mime_type_id,
             common_name=common_name,
-            resolution_x=resolution_x,
-            resolution_y=resolution_y,
             resolution_unit_id=resolution_unit_id
         )
 
-        band, _ = get_or_create_model(Band, defaults=defaults, **where)
+        band, created = get_or_create_model(Band, defaults=defaults, **where)
+        if created:
+            band.add_eo_meta(resolution_x=resolution_x, resolution_y=resolution_y)
 
         return band
 
@@ -118,7 +110,7 @@ class CubeController:
 
         cube_id = cube_parts.datacube
 
-        cube = Collection.query().filter(Collection.name == cube_id, Collection.version == params['version']).first()
+        cube = Collection.query().filter(Collection.name == cube_id, Collection.version == str(params['version'])).first()
 
         grs = GridRefSys.query().filter(GridRefSys.name == params['grs']).first()
 
@@ -142,11 +134,15 @@ class CubeController:
                 temporal_composition_schema=params['temporal_composition'] if function != 'IDT' else None,
                 composite_function_id=cube_function.id,
                 grs=grs,
-                _metadata=params['metadata'],
+                metadata_=params['metadata'],
+                category=params.get('category') or 'eo',
                 description=params['description'],
                 collection_type='cube',
-                is_public=params.get('public', True),
-                version=params['version']
+                is_public=params.get('public', False),
+                is_available=params.get('public', False),
+                version=params['version'],
+                keywords=params.get('keywords'),
+                summaries=params.get('summaries'),
             )
 
             cube.save(commit=False)
@@ -171,28 +167,29 @@ class CubeController:
                     name=name,
                     common_name=band['common_name'],
                     collection=cube,
-                    min_value=0,
-                    max_value=10000 if is_not_cloud else 4,
+                    min_value=-10000 if band.get('metadata') else 0,
+                    max_value=10000,
                     nodata=band['nodata'],
-                    scale=0.0001 if is_not_cloud else 1,
+                    scale_add=0.0001 if is_not_cloud else 1,
+                    scale_mult=params.get('scale_mult'),
                     data_type=data_type,
-                    resolution_x=params['resolution'],
-                    resolution_y=params['resolution'],
                     resolution_unit_id=resolution_meter.id,
                     description='',
                     mime_type_id=mime_type.id
                 )
 
+                band_model.add_eo_meta(resolution_x=params['resolution'], resolution_y=params['resolution'])
+
                 if band.get('metadata'):
-                    band_model._metadata = cls._validate_band_metadata(deepcopy(band['metadata']), band_map)
+                    band_model.metadata_.update(cls._validate_band_metadata(deepcopy(band['metadata']), band_map))
 
                 band_model.save(commit=False)
                 bands.append(band_model)
 
                 band_map[name] = band_model
 
-                if band_model._metadata:
-                    for _band_origin_id in band_model._metadata['expression']['bands']:
+                if band_model.metadata_ and band_model.metadata_.get('expression'):
+                    for _band_origin_id in band_model.metadata_['expression']['bands']:
                         band_provenance = BandSRC(band_src_id=_band_origin_id, band_id=band_model.id)
                         band_provenance.save(commit=False)
 
@@ -206,23 +203,30 @@ class CubeController:
         default_params = dict(
             metadata_=params['parameters']
         )
+
+        cube.item_assets = _make_item_assets(cube)
+
         default_params['metadata_']['quality_band'] = params['quality_band']
         cube_parameters, _ = get_or_create_model(CubeParameters, defaults=default_params, collection_id=cube.id)
         db.session.add(cube_parameters)
 
         # Create default Cube Bands
         if function != 'IDT':
-            _ = cls.get_or_create_band(cube.id, **CLEAR_OBSERVATION_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
+            _ = cls.get_or_create_band(cube.id, **CLEAR_OBSERVATION_ATTRIBUTES, mime_type_id=mime_type.id,
+                                       resolution_unit_id=resolution_meter.id,
                                        resolution_x=params['resolution'], resolution_y=params['resolution'])
-            _ = cls.get_or_create_band(cube.id, **TOTAL_OBSERVATION_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
+            _ = cls.get_or_create_band(cube.id, **TOTAL_OBSERVATION_ATTRIBUTES, mime_type_id=mime_type.id,
+                                       resolution_unit_id=resolution_meter.id,
                                        resolution_x=params['resolution'], resolution_y=params['resolution'])
 
             if function in ('STK', 'LCF'):
-                _ = cls.get_or_create_band(cube.id, **PROVENANCE_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
+                _ = cls.get_or_create_band(cube.id, **PROVENANCE_ATTRIBUTES, mime_type_id=mime_type.id,
+                                           resolution_unit_id=resolution_meter.id,
                                            resolution_x=params['resolution'], resolution_y=params['resolution'])
 
         if params.get('is_combined') and function != 'MED':
-            _ = cls.get_or_create_band(cube.id, **DATASOURCE_ATTRIBUTES, resolution_unit_id=resolution_meter.id,
+            _ = cls.get_or_create_band(cube.id, **DATASOURCE_ATTRIBUTES, mime_type_id=mime_type.id,
+                                       resolution_unit_id=resolution_meter.id,
                                        resolution_x=params['resolution'], resolution_y=params['resolution'])
 
         return CollectionForm().dump(cube)
@@ -245,7 +249,7 @@ class CubeController:
 
         params['bands'].extend(params['indexes'])
 
-        with db.session.begin_nested():
+        with db.session.begin_nested(), db.session.no_autoflush:
             # Create data cube Identity
             cube = cls._create_cube_definition(cube_name, params)
 
@@ -338,7 +342,7 @@ class CubeController:
     @classmethod
     def get_cube_status(cls, cube_name: str) -> Tuple[dict, int]:
         """Retrieve a data cube status, which includes total items, tiles, etc."""
-        cube = cls.get_cube_or_404(cube_full_name=cube_name)
+        cube = cls.get_cube_or_404(cube_name)
 
         dates = db.session.query(
             sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
@@ -649,3 +653,22 @@ class CubeController:
         db.session.commit()
 
         return Serializer.serialize(cube_parameters)
+
+
+def _make_item_assets(cube: Collection) -> dict:
+    definition = {}
+    for band in cube.bands:
+        definition[band.name] = dict(
+            type=band.mime_type.name,
+            title=band.description,
+            roles=['data'],
+        )
+
+    if cube.quicklook:
+        definition['thumbnail'] = dict(
+            type='image/png',
+            title='Thumbnail',
+            roles=['thumbnail']
+        )
+
+    return definition

@@ -14,7 +14,7 @@ from typing import Union
 from bdc_catalog.models.base_sql import BaseModel, db
 # 3rdparty
 from sqlalchemy import ARRAY, JSON, Column, Date, Integer, String, Text
-from sqlalchemy.engine.result import ResultProxy
+from sqlalchemy.engine import ResultProxy
 
 from ..config import Config
 

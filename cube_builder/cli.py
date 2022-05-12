@@ -9,7 +9,7 @@
 """Create a python click context and inject it to the global flask commands."""
 
 import click
-from bdc_catalog.models import Application, CompositeFunction, db
+from bdc_catalog.models import CompositeFunction, Processor, db
 from flask.cli import FlaskGroup, with_appcontext
 
 from . import create_app
@@ -50,12 +50,15 @@ def load_data():
 
         where = dict(
             name=__package__,
+            facility='BDC - INPE',
+            level="",  # TODO: Should it have a level processor?
+            uri='https://github.com/brazil-data-cube/cube-builder.git',
             version=__version__
         )
 
         # Cube-Builder application
         application, _ = get_or_create_model(
-            Application,
+            Processor,
             defaults=dict(),
             **where
         )

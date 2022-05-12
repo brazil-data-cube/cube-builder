@@ -75,7 +75,7 @@ def _common_bands():
 
 
 def _has_default_or_index_bands(band: Band) -> bool:
-    return band.common_name.lower() in ('ndvi', 'evi',) or (band._metadata and band._metadata.get('expression'))
+    return band.common_name.lower() in ('ndvi', 'evi',) or (band.metadata_ and band.metadata_.get('expression'))
 
 
 class Maestro:
@@ -418,6 +418,8 @@ class Maestro:
                         export[tileid][period_start_end].setdefault(band.name, [])
                         merges = assets_by_period[band.name]
 
+                        resolutions = band.eo_resolutions or self.params.get('resolutions')[band.name]
+
                         if not merges:
                             for _b in bands:
                                 if _b.name == band.name or _has_default_or_index_bands(_b):
@@ -448,8 +450,8 @@ class Maestro:
                                 datasets=self.params['collections'],
                                 xmin=min_x,
                                 ymax=max_y,
-                                resx=float(band.resolution_x),
-                                resy=float(band.resolution_y),
+                                resx=float(resolutions[0]),
+                                resy=float(resolutions[1]),
                                 dist_x=dist_x,
                                 dist_y=dist_y,
                                 srs=grid_crs,

@@ -187,7 +187,7 @@ def get_cube_id(datacube: str, func=None):
 
 def get_item_id(datacube: str, version: int, tile: str, date: str) -> str:
     """Prepare a data cube item structure."""
-    version_str = '{0:03d}'.format(version)
+    version_str = '{0:03d}'.format(int(version))
 
     return f'{datacube}_v{version_str}_{tile}_{date}'
 
@@ -1095,6 +1095,8 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
                 tile_id=tile.id,
                 start_date=start_date,
                 end_date=end_date,
+                is_public=False,  # TODO: Review this flag
+                is_available=False
             )
 
             item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=cube.id)
@@ -1123,8 +1125,8 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
             item.start_date = start_date
             item.end_date = end_date
 
-            extent = to_shape(item.geom) if item.geom else None
-            min_convex_hull = to_shape(item.min_convex_hull) if item.min_convex_hull else None
+            bbox = to_shape(item.bbox) if item.bbox else None
+            footprint = to_shape(item.footprint) if item.footprint else None
 
             for band in scenes:
                 band_model = list(filter(lambda b: b.name == band, cube_bands))
@@ -1134,11 +1136,11 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
                     logging.warning('Band {} of {} does not exist on database. Skipping'.format(band, cube.id))
                     continue
 
-                if extent is None:
-                    extent = raster_extent(str(scenes[band][composite_function]))
+                if bbox is None:
+                    bbox = raster_extent(str(scenes[band][composite_function]))
 
-                if min_convex_hull is None:
-                    min_convex_hull = raster_convexhull(str(scenes[band][composite_function]))
+                if footprint is None:
+                    footprint = raster_convexhull(str(scenes[band][composite_function]))
 
                 assets[band_model[0].name] = create_asset_definition(
                     href=str(_item_prefix(scenes[band][composite_function], data_dir=data_dir)),
@@ -1158,9 +1160,9 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
 
             item.assets = assets
             item.srid = srid
-            if min_convex_hull.area > 0.0:
-                item.min_convex_hull = from_shape(min_convex_hull, srid=4326, extended=True)
-            item.geom = from_shape(extent, srid=4326, extended=True)
+            if footprint.area > 0.0:
+                item.footprint = from_shape(footprint, srid=4326, extended=True)
+            item.bbox = from_shape(bbox, srid=4326, extended=True)
 
         db.session.commit()
 
@@ -1218,13 +1220,15 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
             tile_id=tile.id,
             start_date=date,
             end_date=date,
+            is_public=False,  # TODO: Review this flag
+            is_available=False
         )
 
         item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=datacube.id)
         item.cloud_cover = scenes.get('cloudratio', 0)
 
-        extent = to_shape(item.geom) if item.geom else None
-        min_convex_hull = to_shape(item.min_convex_hull) if item.min_convex_hull else None
+        bbox = to_shape(item.bbox) if item.bbox else None
+        footprint = to_shape(item.footprint) if item.footprint else None
 
         assets = deepcopy(item.assets) or dict()
 
@@ -1258,11 +1262,11 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
                 logging.warning('Band {} of {} does not exist on database'.format(band, datacube.id))
                 continue
 
-            if extent is None:
-                extent = raster_extent(str(scenes['ARDfiles'][band]))
+            if bbox is None:
+                bbox = raster_extent(str(scenes['ARDfiles'][band]))
 
-            if min_convex_hull is None:
-                min_convex_hull = raster_convexhull(str(scenes['ARDfiles'][band]))
+            if footprint is None:
+                footprint = raster_convexhull(str(scenes['ARDfiles'][band]))
 
             assets[band_model[0].name] = create_asset_definition(
                 href=str(_item_prefix(scenes['ARDfiles'][band], data_dir=data_dir)),
@@ -1281,9 +1285,9 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
             ))
 
         item.srid = srid
-        item.geom = from_shape(extent, srid=4326, extended=True)
-        if min_convex_hull.area > 0.0:
-            item.min_convex_hull = from_shape(min_convex_hull, srid=4326, extended=True)
+        item.bbox = from_shape(bbox, srid=4326, extended=True)
+        if footprint.area > 0.0:
+            item.footprint = from_shape(footprint, srid=4326, extended=True)
         item.assets = assets
 
     db.session.commit()
@@ -1455,7 +1459,7 @@ def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band
 
     fragments = DataCubeFragments(datacube)
 
-    version_str = 'v{0:03d}'.format(version)
+    version_str = 'v{0:03d}'.format(int(version))
 
     file_name = get_item_id(datacube, version, tile_id, period)
 

@@ -12,13 +12,13 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 from urllib.parse import urlparse
 
 import numpy
 import rasterio
 from rasterio._warp import Affine
-from sqlalchemy.engine.result import ResultProxy, RowProxy
+from sqlalchemy.engine import ResultProxy
 
 from ..config import Config
 from .processing import SmartDataSet, generate_cogs, save_as_cog
@@ -29,7 +29,7 @@ LANDSAT_BANDS = dict(
 )
 
 
-def validate(row: RowProxy):
+def validate(row: Any):
     """Validate each merge result."""
     url = row.link.replace('chronos.dpi.inpe.br:8089/datastore', 'www.dpi.inpe.br/newcatalog/tmp')
 
