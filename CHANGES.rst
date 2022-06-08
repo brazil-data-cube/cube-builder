@@ -10,6 +10,11 @@
 Changes
 =======
 
+Version 0.8.1 (2022-06-09)
+--------------------------
+
+- Fix search images using temporal dimension `#221 <https://github.com/brazil-data-cube/cube-builder/issues/221> `_.
+
 
 Version 0.8.0 (2022-05-05)
 --------------------------

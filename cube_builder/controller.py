@@ -342,7 +342,7 @@ class CubeController:
 
         dates = db.session.query(
             sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
-        ).first()
+        ).filter(Activity.collection_id == cube.name).first()
 
         count_items = Item.query().filter(Item.collection_id == cube.id).count()
 
