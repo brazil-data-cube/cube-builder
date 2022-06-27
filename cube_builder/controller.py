@@ -346,12 +346,10 @@ class CubeController:
 
         dates = db.session.query(
             sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
-        ).first()
+        ).filter(Activity.collection_id == cube.name).first()
 
         count_items = Item.query().filter(Item.collection_id == cube.id).count()
 
-        # list_tasks = list_pending_tasks() + list_running_tasks()
-        # count_tasks = len(list(filter(lambda t: t['collection_id'] == cube_name, list_tasks)))
         count_tasks = 0
 
         count_acts_errors = Activity.query().filter(

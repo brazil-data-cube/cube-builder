@@ -504,7 +504,7 @@ class Maestro:
         scenes = {}
         options = dict(
             intersects=feature,
-            datetime='{}/{}'.format(start, end),
+            datetime='{}T00:00:00/{}T23:59:59'.format(start, end),
             limit=1000
         )
         options.update(kwargs)
