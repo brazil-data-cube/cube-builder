@@ -46,6 +46,7 @@ from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, C
 # Builder
 from . import get_srid_column
 from .index_generator import generate_band_indexes
+from ..datasets import dataset_from_uri
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 
@@ -317,7 +318,9 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
 
                 _check_rio_file_access(link, access_token=kwargs.get('token'))
 
-                with rasterio.open(link) as src:
+                src = dataset_from_uri(link, band=band)
+
+                with src.open():
                     meta = src.meta.copy()
                     meta.update({
                         'width': cols,
@@ -349,7 +352,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
                             if shape:
                                 raster = src.read(1)
                             else:
-                                source_array = rasterio.band(src, 1)  # src.read(1)
+                                source_array = rasterio.band(src.dataset, 1)  # src.read(1)
 
                                 reproject(
                                     source=source_array,
