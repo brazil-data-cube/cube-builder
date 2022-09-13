@@ -1,6 +1,6 @@
 #
 # This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# Copyright (C) 2019-2022 INPE.
 #
 # Cube Builder free software; you can redistribute it and/or modify it
 # under the terms of the MIT License; see LICENSE file for more details.
@@ -46,17 +46,18 @@ services:
     environment:
       - "RABBIT_MQ_URL=pyamqp://guest@cube-builder-rabbitmq"
       - "SQLALCHEMY_DATABASE_URI=postgresql://postgres:postgres@cube-builder-pg:5432/bdc"
-      - "DATA_DIR=/gfs"
+      - "DATA_DIR=/data"
+      - "WORK_DIR=/workdir"
       - "LC_ALL=C.UTF-8"
       - "LANG=C.UTF-8"
       - "FLASK_ENV=production"
-
     networks:
       - cube_builder_net
     ports:
       - "5000:5000"
     volumes:
-      - /gfs:/gfs
+      - ./volumes/data:/data
+      - ./volumes/workdir/workdir
     command: >
       bash -c "cube-builder run --host 0.0.0.0"
     depends_on:
@@ -72,11 +73,13 @@ services:
       - mq
       - cube-builder
     volumes:
-      - /gfs:/gfs
+      - ./volumes/data:/data
+      - ./volumes/workdir/workdir
     environment:
       - "RABBIT_MQ_URL=pyamqp://guest@cube-builder-rabbitmq"
       - "SQLALCHEMY_DATABASE_URI=postgresql://postgres:postgres@cube-builder-pg:5432/bdc"
-      - "DATA_DIR=/gfs"
+      - "DATA_DIR=/data"
+      - "WORK_DIR=/workdir"
       - "LC_ALL=C.UTF-8"
       - "LANG=C.UTF-8"
       - "FLASK_ENV=production"

@@ -31,11 +31,11 @@ class GridRefSysForm(SQLAlchemyAutoSchema):
     """Form definition for the model GrsSchema."""
 
     id = fields.String(dump_only=True)
-    name = fields.String(required=True, load_only=True)
+    names = fields.List(fields.String, load_only=True)
     projection = fields.String(required=True, load_only=True)
     meridian = fields.Integer(required=True, load_only=True)
-    degreesx = fields.Float(required=True, load_only=True)
-    degreesy = fields.Float(required=True, load_only=True)
+    shape = fields.List(fields.Integer, required=True)
+    resolutions = fields.List(fields.List(fields.Integer), required=True)
     bbox = fields.List(fields.Float, required=True, load_only=True)
     srid = fields.Integer(required=True, load_only=True)
 

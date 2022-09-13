@@ -6,14 +6,27 @@
     under the terms of the MIT License; see LICENSE file for more details.
 
 
-Using Cube Builder
-==================
+Usage
+=====
 
-This section explains how to use the Cube Builder application to generate data cubes from Sentinel 2, Landsat 8 and CBERS collections.
+This section explains how to use the Cube Builder application to generate data cubes from Sentinel 2,
+Landsat 8 and CBERS collections.
 
 
-If you have not read yet how to install or deploy the system, please refer to `INSTALL.rst <./INSTALL.rst>`_ or `DEPLOY.rst <DEPLOY.rst>`_ documentation.
+If you have not read yet how to install or deploy the system, please refer to :doc:`installation` or :doc:`deploy` documentation.
 You may also read the `Brazil Data Cube Documentation <https://brazil-data-cube.github.io/>`_ for further details about Brazil Data Cube Project.
+
+
+Temporal Compositing Functions
+------------------------------
+
+Before create any data cube, we strongly recommend you to read the `Temporal Compositing <https://brazil-data-cube.github.io/products/specifications/processing-flow.html#temporal-compositing>`_
+to understand how these functions are defined in ``Cube-Builder``. In short, we have the following functions supported:
+
+- ``Average`` (``AVG``): consist in the average of the observed values.
+- ``Median`` (``MED``): consist in the median value of the observations.
+- ``Least Cloud Cover First`` (``LCF``): consists in aggregating pixels from all images in the time interval
+  according to each image quantity of valid pixels considering the image cloud cover efficacy.
 
 
 Creating a Grid for the Data Cubes
@@ -21,82 +34,89 @@ Creating a Grid for the Data Cubes
 
 
 A Data Cube must have an associated grid as mentioned in `BDC Grid <https://brazil-data-cube.github.io/products/specifications/bdc-grid.html?highlight=grid>`_.
-For this example, we will create 3 grids for different data cubes `BRAZIL_LG`, `BRAZIL_MD` and `BRAZIL_SM`.
+For this example, we will create 3 hierarchical grids for different data cubes:
 
-The grid ``BRAZIL_LG`` will be used by collections `CBERS4` which has resolution `64 meters`::
+- ``BRAZIL_LG``: used by collection ``Sentinel-2`` which has resolution ``10 meters``;
+- ``BRAZIL_MD``: used by collection ``Landsat-8`` which has resolution ``30 meters``;
+- ``BRAZIL_SM``: used by collection ``CBERS`` which has resolution ``64 meters`` (or  ``55 meters`` for ``CBERS4A``).
 
-    curl --location \
-         --request POST '127.0.0.1:5000/create-grids' \
-         --header 'Content-Type: application/json' \
-         --data-raw '{
-            "name": "BRAZIL_LG",
-            "description": "Brazil Large Grid - Albers Equal Area",
-            "projection": "aea",
-            "meridian": -54,
-            "degreesx": 6,
-            "degreesy": 4,
-            "bbox": [-73.9872354804, -33.7683777809, -34.7299934555, 5.24448639569],
-            "srid": 100001
-         }'
+In order to do this, we must understand a few concepts:
 
-The response will have status code ``201`` and the body::
-
-    "Grid BRAZIL_LG created."
-
-
-The grid ``BRAZIL_MD`` will be used by collection `Landsat-8` which has resolution `30 meters`::
-
-    curl --location \
-         --request POST '127.0.0.1:5000/create-grids' \
-         --header 'Content-Type: application/json' \
-         --data-raw '{
-            "name": "BRAZIL_MD",
-            "description": "Brazil Medium Grid - Albers Equal Area",
-            "projection": "aea",
-            "meridian": -54,
-            "degreesx": 3,
-            "degreesy": 2,
-            "bbox": [-73.9872354804, -33.7683777809, -34.7299934555, 5.24448639569],
-            "srid": 100001
-         }'
-
-The response will have status code ``201`` and the body::
-
-    "Grid BRAZIL_MD created."
-
-
-The grid ``BRAZIL_SM`` will be used by collection `Sentinel-2` which has resolution `10 meters`::
-
-    curl --location \
-         --request POST '127.0.0.1:5000/create-grids' \
-         --header 'Content-Type: application/json' \
-         --data-raw '{
-            "name": "BRAZIL_SM",
-            "description": "Brazil Medium Grid - Albers Equal Area",
-            "projection": "aea",
-            "meridian": -54,
-            "degreesx": 1.5,
-            "degreesy": 1,
-            "bbox": [-73.9872354804, -33.7683777809, -34.7299934555, 5.24448639569],
-            "srid": 100001
-         }'
-
-The response will have status code ``201`` and the body::
-
-    "Grid BRAZIL_SM created."
+- ``names``: A list consisting the Grid names to generate.
+- ``tile_factor``: An ordered list of tile factor for the hierarchical grid scaling.
+  We recommend you to use divisible values like `10`, `20` and `40`.
+- ``shape``: A pivot shape to represent the tile factor. It usually consists in a desirable image shape for grid.
+- ``meridian``: The central pivot for first grid. This will be reference/center value used to scale the other grids.
 
 
 .. note::
 
-    Remember that the bounding box ``bbox`` order is defined by: ``west,north,east,south``.
+    Keep in mind that the values ``shape`` and ``tile_factor`` are ``int`` values representing in meters.
 
-    You may also change ``degreesx`` and ``degreesy`` if you would like to increase or decrease the Grid Tile size.
+
+.. note::
+
+    Make sure that ``names`` and ``tile_factor`` **MUST HAVE** the same dimension. Each entry consists in
+    a individual grid.
+
+
+To create the new ``grids`` use the API Resource ``/create-grids`` as following::
+
+    curl --location \
+         --request POST '127.0.0.1:5000/create-grids' \
+         --header 'Content-Type: application/json' \
+         --data-raw '{
+            "names": [
+                "BRAZIL_SM",
+                "BRAZIL_MD",
+                "BRAZIL_LG"
+            ],
+            "description": "Brazil Grids - Albers Equal Area",
+            "projection": "aea",
+            "meridian": -54,
+            "tile_factor": [
+                [10, 10],
+                [20, 20],
+                [40, 40]
+            ],
+            "shape": [10560, 10560],
+            "bbox": [-73.98318215899995, -33.75117799399993, -28.847770352999916, 5.269580833000035],
+            "srid": 100001
+         }'
+
+The response will have status code ``201`` and the body::
+
+    "Grids ['BRAZIL_SM', 'BRAZIL_MD', 'BRAZIL_LG'] created with successfully"
+
+
+.. note::
+
+    You may create non-hierarchical Grid, just specify your own arguments like shape, bbox, shape and use single name
+    and tile_factor::
+
+        curl --location \
+             --request POST '127.0.0.1:5000/create-grids' \
+             --header 'Content-Type: application/json' \
+             --data-raw '{
+                "names": [
+                    "BRAZIL_SM"
+                ],
+                "description": "Brazil Grids - Albers Equal Area",
+                "projection": "aea",
+                "meridian": -54,
+                "tile_factor": [
+                    [10, 10]
+                ],
+                "shape": [10560, 10560],
+                "bbox": [-73.98318215899995, -33.75117799399993, -28.847770352999916, 5.269580833000035],
+                "srid": 100001
+             }'
 
 
 Creating the Definition of Landsat-8 based Data Cube
 ----------------------------------------------------
 
-In order to create data cube Landsat-8 monthly using the composite function ``Stack`` (`LC8_30_1M_STK`), use the following command to create data cube metadata::
+In order to create data cube ``Landsat-8`` monthly using the composite function ``Least Cloud Cover First`` (`LC8_30_1M_LCF`), use the following command to create data cube metadata::
 
     curl --location \
          --request POST '127.0.0.1:5000/cubes' \
@@ -105,7 +125,7 @@ In order to create data cube Landsat-8 monthly using the composite function ``St
     {
         "datacube": "LC8",
         "grs": "BRAZIL_MD",
-        "title": "Landsat-8 (OLI) Cube Stack Monthly - v001",
+        "title": "Landsat-8 (OLI) Cube Monthly - v001",
         "resolution": 30,
         "version": 1,
         "metadata": {
@@ -122,25 +142,26 @@ In order to create data cube Landsat-8 monthly using the composite function ``St
         },
         "composite_function": "LCF",
         "bands_quicklook": [
-            "sr_band7",
-            "sr_band5",
-            "sr_band4"
+            "sr_band4",
+            "sr_band3",
+            "sr_band2"
         ],
         "bands": [
-            {"name": "sr_band1", "common_name": "coastal", "data_type": "int16"},
-            {"name": "sr_band2", "common_name": "blue", "data_type": "int16"},
-            {"name": "sr_band3", "common_name": "green", "data_type": "int16"},
-            {"name": "sr_band4", "common_name": "red", "data_type": "int16"},
-            {"name": "sr_band5", "common_name": "nir", "data_type": "int16"},
-            {"name": "sr_band6", "common_name": "swir1", "data_type": "int16"},
-            {"name": "sr_band7", "common_name": "swir2", "data_type": "int16"},
-            {"name": "Fmask4", "common_name": "quality", "data_type": "uint8"}
+            {"name": "sr_band1", "common_name": "coastal", "data_type": "int16", "nodata": -9999},
+            {"name": "sr_band2", "common_name": "blue", "data_type": "int16", "nodata": -9999},
+            {"name": "sr_band3", "common_name": "green", "data_type": "int16", "nodata": -9999},
+            {"name": "sr_band4", "common_name": "red", "data_type": "int16", "nodata": -9999},
+            {"name": "sr_band5", "common_name": "nir", "data_type": "int16", "nodata": -9999},
+            {"name": "sr_band6", "common_name": "swir1", "data_type": "int16", "nodata": -9999},
+            {"name": "sr_band7", "common_name": "swir2", "data_type": "int16", "nodata": -9999},
+            {"name": "Fmask4", "common_name": "quality", "data_type": "uint8", "nodata": 255}
         ],
         "indexes": [
             {
                 "name": "EVI",
                 "common_name": "evi",
                 "data_type": "int16",
+                "nodata": -9999,
                 "metadata": {
                     "expression": {
                         "bands": ["sr_band5", "sr_band4", "sr_band2"],
@@ -152,6 +173,7 @@ In order to create data cube Landsat-8 monthly using the composite function ``St
                 "name": "NDVI",
                 "common_name": "ndvi",
                 "data_type": "int16",
+                "nodata": -9999,
                 "metadata": {
                     "expression": {
                         "bands": ["sr_band5", "sr_band4"],
@@ -191,24 +213,30 @@ In order to create data cube Landsat-8 monthly using the composite function ``St
     The property ``mask`` inside ``parameters`` represents how the Cube Builder will deal with ``Clear Data`` and ``Not Clear Data`` pixels.
     The ``Clear Data`` pixels are considered to identify the ``Best Pixel`` (Stack) and it is count on the ``Clear Observation Band`` (``ClearOb``).
 
-In order to trigger a data cube, we are going to use a collection `LC8SR-1` made with Surface Reflectance using LaSRC 2.0 with cloud masking Fmask 4.2.
+In order to trigger a data cube, we are going to use a collection `LC8_SR-1` made with Surface Reflectance using LaSRC 2.0 with cloud masking Fmask 4.2.
+You are use the official `Brazil Data Cube STAC <https://brazildatacube.dpi.inpe.br/stac/>`_. You will need to have an account in
+Brazil Data Cube environment. If you don't have any account, please, refer to `Brazil Data Cube Explorer <https://brazil-data-cube.github.io/applications/dc_explorer/token-module.html>`_.
 
 To trigger a data cube, use the following command::
 
     cube-builder build LC8_30_1M_LCF \
-        --collections=LC8SR-1 \
-        --tiles=044048 \
+        --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
+        --collections=LC8_SR-1 \
+        --tiles=011009 \
         --start=2019-01-01 \
-        --end=2019-01-31
+        --end=2019-01-31 \
+        --token <USER_BDC_TOKEN>
 
     # Using curl (Make sure to execute cube-builder run)
     curl --location \
          --request POST '127.0.0.1:5000/start-cube' \
          --header 'Content-Type: application/json' \
          --data-raw '{
+            "stac_url": "https://brazildatacube.dpi.inpe.br/stac/",
+            "token": "<USER_BDC_TOKEN>",
             "datacube": "LC8_30_1M_LCF",
-            "collections": ["LC8SR-1"],
-            "tiles": ["044048"],
+            "collections": ["LC8_SR-1"],
+            "tiles": ["011009"],
             "start_date": "2019-01-01",
             "end_date": "2019-01-31"
          }'
