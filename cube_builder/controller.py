@@ -310,6 +310,7 @@ class CubeController:
         dump_cube['extent'] = None
         dump_cube['grid'] = cube.grs.name
         dump_cube['composite_function'] = cube.composite_function.name
+        dump_cube['summary'] = cls.summarize(cube)
 
         return dump_cube, 200
 
@@ -336,29 +337,38 @@ class CubeController:
         return list_cubes, 200
 
     @classmethod
-    def get_cube_status(cls, cube_name: str) -> Tuple[dict, int]:
+    def get_cube_status(cls, cube_name: str) -> dict:
         """Retrieve a data cube status, which includes total items, tiles, etc."""
         cube = cls.get_cube_or_404(cube_full_name=cube_name)
 
-        dates = db.session.query(
-            sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
-        ).first()
+        dates = (
+            db.session.query(
+                sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
+            )
+            .filter(Activity.collection_id == cube_name)
+            .first()
+        )
 
         count_items = Item.query().filter(Item.collection_id == cube.id).count()
-
-        # list_tasks = list_pending_tasks() + list_running_tasks()
-        # count_tasks = len(list(filter(lambda t: t['collection_id'] == cube_name, list_tasks)))
         count_tasks = 0
 
-        count_acts_errors = Activity.query().filter(
-            Activity.collection_id == cube.name,
-            Activity.status == 'FAILURE'
-        ).count()
+        count_acts_errors = (
+            db.session.query(Activity.id)
+            .filter(
+                Activity.collection_id == cube.name,
+                Activity.status == 'FAILURE'
+            )
+            .count()
+        )
 
-        count_acts_success = Activity.query().filter(
-            Activity.collection_id == cube.name,
-            Activity.status == 'SUCCESS'
-        ).count()
+        count_acts_success = (
+            db.session.query(Activity.id)
+            .filter(
+                Activity.collection_id == cube.name,
+                Activity.status == 'SUCCESS'
+            )
+            .count()
+        )
 
         if count_tasks > 0:
             return dict(
@@ -386,7 +396,7 @@ class CubeController:
             func.ST_AsGeoJSON(Item.geom, 6, 3).cast(sqlalchemy.JSON).label('geom')
         ).distinct(Item.tile_id).filter(Item.collection_id == cube_id, Item.tile_id == Tile.id).all()
 
-        return [feature.Tile.name if only_ids else feature.geom for feature in features], 200
+        return [feature.Tile.name if only_ids else dict(**feature.geom, properties=dict(tile=feature.Tile.name)) for feature in features], 200
 
     @classmethod
     def maestro(cls, datacube, collections, tiles, start_date, end_date, **properties):
@@ -649,3 +659,24 @@ class CubeController:
         db.session.commit()
 
         return Serializer.serialize(cube_parameters)
+
+    @classmethod
+    def summarize(cls, cube: Union[str, Collection]) -> dict:
+        if isinstance(cube, str):
+            cube = CubeController.get_cube_or_404(cube_id=cube)
+
+        summary_rows = (
+            db.session.query(
+                Tile.name.label('tile'), func.count(Item.name).label('total_items')
+            )
+            .join(Tile, Tile.id == Item.tile_id)
+            .filter(Item.collection_id == cube.id)
+            .group_by(Tile.name)
+            .order_by(Tile.name)
+            .all()
+        )
+
+        return {
+            row.tile: row.total_items
+            for row in summary_rows
+        }
