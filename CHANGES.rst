@@ -10,10 +10,11 @@
 Changes
 =======
 
-Version 0.8.1 (2022-06-09)
+Version 0.8.1 (2022-09-13)
 --------------------------
 
 - Fix search images using temporal dimension `#221 <https://github.com/brazil-data-cube/cube-builder/issues/221> `_.
+- Add way to retrieve total items per tile
 
 
 Version 0.8.0 (2022-05-05)
