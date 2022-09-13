@@ -310,6 +310,7 @@ class CubeController:
         dump_cube['extent'] = None
         dump_cube['grid'] = cube.grs.name
         dump_cube['composite_function'] = cube.composite_function.name
+        dump_cube['summary'] = cls.summarize(cube)
 
         return dump_cube, 200
 
@@ -340,25 +341,34 @@ class CubeController:
         """Retrieve a data cube status, which includes total items, tiles, etc."""
         cube = cls.get_cube_or_404(cube_full_name=cube_name)
 
-        dates = db.session.query(
-            sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
-        ).filter(Activity.collection_id == cube.name).first()
+        dates = (
+            db.session.query(
+                sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
+            )
+            .filter(Activity.collection_id == cube_name)
+            .first()
+        )
 
         count_items = Item.query().filter(Item.collection_id == cube.id).count()
-
-        # list_tasks = list_pending_tasks() + list_running_tasks()
-        # count_tasks = len(list(filter(lambda t: t['collection_id'] == cube_name, list_tasks)))
         count_tasks = 0
 
-        count_acts_errors = Activity.query().filter(
-            Activity.collection_id == cube.name,
-            Activity.status == 'FAILURE'
-        ).count()
+        count_acts_errors = (
+            db.session.query(Activity.id)
+            .filter(
+                Activity.collection_id == cube.name,
+                Activity.status == 'FAILURE'
+            )
+            .count()
+        )
 
-        count_acts_success = Activity.query().filter(
-            Activity.collection_id == cube.name,
-            Activity.status == 'SUCCESS'
-        ).count()
+        count_acts_success = (
+            db.session.query(Activity.id)
+            .filter(
+                Activity.collection_id == cube.name,
+                Activity.status == 'SUCCESS'
+            )
+            .count()
+        )
 
         if count_tasks > 0:
             return dict(
@@ -649,3 +659,28 @@ class CubeController:
         db.session.commit()
 
         return Serializer.serialize(cube_parameters)
+
+    @classmethod
+    def summarize(cls, cube: Union[str, Collection]) -> dict:
+        """Retrieve data cube summarization.
+
+        This method consists in compute the tile statistics like total items per tile, etc.
+        """
+        if isinstance(cube, str):
+            cube = CubeController.get_cube_or_404(cube_id=cube)
+
+        summary_rows = (
+            db.session.query(
+                Tile.name.label('tile'), func.count(Item.name).label('total_items')
+            )
+            .join(Tile, Tile.id == Item.tile_id)
+            .filter(Item.collection_id == cube.id)
+            .group_by(Tile.name)
+            .order_by(Tile.name)
+            .all()
+        )
+
+        return {
+            row.tile: row.total_items
+            for row in summary_rows
+        }
