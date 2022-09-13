@@ -337,7 +337,7 @@ class CubeController:
         return list_cubes, 200
 
     @classmethod
-    def get_cube_status(cls, cube_name: str) -> dict:
+    def get_cube_status(cls, cube_name: str) -> Tuple[dict, int]:
         """Retrieve a data cube status, which includes total items, tiles, etc."""
         cube = cls.get_cube_or_404(cube_full_name=cube_name)
 
@@ -396,7 +396,7 @@ class CubeController:
             func.ST_AsGeoJSON(Item.geom, 6, 3).cast(sqlalchemy.JSON).label('geom')
         ).distinct(Item.tile_id).filter(Item.collection_id == cube_id, Item.tile_id == Tile.id).all()
 
-        return [feature.Tile.name if only_ids else dict(**feature.geom, properties=dict(tile=feature.Tile.name)) for feature in features], 200
+        return [feature.Tile.name if only_ids else feature.geom for feature in features], 200
 
     @classmethod
     def maestro(cls, datacube, collections, tiles, start_date, end_date, **properties):
@@ -662,6 +662,10 @@ class CubeController:
 
     @classmethod
     def summarize(cls, cube: Union[str, Collection]) -> dict:
+        """Retrieve data cube summarization.
+
+        This method consists in compute the tile statistics like total items per tile, etc.
+        """
         if isinstance(cube, str):
             cube = CubeController.get_cube_or_404(cube_id=cube)
 
