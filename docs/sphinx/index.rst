@@ -20,6 +20,7 @@
     :caption: Documentation:
 
     installation
+    configuration
     deploy
     usage
     api

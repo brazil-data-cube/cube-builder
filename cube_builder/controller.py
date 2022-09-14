@@ -536,36 +536,39 @@ class CubeController:
         return dump_grs, 200
 
     @classmethod
-    def create_grs_schema(cls, name, description, projection, meridian, degreesx, degreesy, bbox, srid=100001):
+    def create_grs_schema(cls, names, description, projection, meridian, shape, tile_factor, bbox, srid=100001):
         """Create a Brazil Data Cube Grid Schema."""
-        grid_mapping, proj4 = create_grids(names=[name], projection=projection, meridian=meridian,
-                                           degreesx=[degreesx], degreesy=[degreesy],
-                                           bbox=bbox, srid=srid)
-        grid = grid_mapping[name]
+        grid_mapping, proj4 = create_grids(names=names, projection=projection, meridian=meridian,
+                                           shape=shape,
+                                           bbox=bbox, srid=srid,
+                                           tile_factor=tile_factor)
 
-        with db.session.begin_nested():
-            crs = CRS.from_proj4(proj4)
-            data = dict(
-                auth_name='Albers Equal Area',
-                auth_srid=srid,
-                srid=srid,
-                srtext=crs.to_wkt(),
-                proj4text=proj4
-            )
+        for name in names:
+            grid = grid_mapping[name]
 
-            spatial_index, _ = get_or_create_model(SpatialRefSys, defaults=data, srid=srid)
+            with db.session.begin_nested():
+                crs = CRS.from_proj4(proj4)
+                data = dict(
+                    auth_name='Albers Equal Area',
+                    auth_srid=srid,
+                    srid=srid,
+                    srtext=crs.to_wkt(),
+                    proj4text=proj4
+                )
 
-            grs = GridRefSys.create_geometry_table(table_name=name,
-                                                   features=grid['features'],
-                                                   srid=srid)
-            grs.description = description
-            db.session.add(grs)
-            for tile_obj in grid['tiles']:
-                tile = Tile(**tile_obj, grs=grs)
-                db.session.add(tile)
-        db.session.commit()
+                spatial_index, _ = get_or_create_model(SpatialRefSys, defaults=data, srid=srid)
 
-        return 'Grid {} created with successfully'.format(name), 201
+                grs = GridRefSys.create_geometry_table(table_name=name,
+                                                       features=grid['features'],
+                                                       srid=srid)
+                grs.description = description
+                db.session.add(grs)
+                for tile_obj in grid['tiles']:
+                    tile = Tile(**tile_obj, grs=grs)
+                    db.session.add(tile)
+            db.session.commit()
+
+        return 'Grids {} created with successfully'.format(names), 201
 
     @classmethod
     def list_cube_items(cls, cube_id: str, bbox: str = None, start: str = None,
