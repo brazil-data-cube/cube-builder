@@ -9,7 +9,7 @@
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
 from bdc_catalog.models import Band, Collection, GridRefSys, db
-from marshmallow import Schema, fields, pre_load, validate, validates_schema
+from marshmallow import Schema, fields, pre_load, validate
 from marshmallow.validate import OneOf, Regexp, ValidationError
 from marshmallow_sqlalchemy import auto_field
 from marshmallow_sqlalchemy.schema import SQLAlchemyAutoSchema
@@ -31,13 +31,6 @@ class GridRefSysForm(SQLAlchemyAutoSchema):
     """Form definition for the model GrsSchema."""
 
     id = fields.String(dump_only=True)
-    names = fields.List(fields.String, load_only=True)
-    projection = fields.String(required=True, load_only=True)
-    meridian = fields.Integer(required=True, load_only=True)
-    shape = fields.List(fields.Integer, required=True)
-    resolutions = fields.List(fields.List(fields.Integer), required=True)
-    bbox = fields.List(fields.Float, required=True, load_only=True)
-    srid = fields.Integer(required=True, load_only=True)
 
     class Meta:
         """Internal meta information of form interface."""
@@ -45,6 +38,17 @@ class GridRefSysForm(SQLAlchemyAutoSchema):
         model = GridRefSys
         sqla_session = db.session
         exclude = ('table_id', )
+
+
+class GridForm(Schema):
+    names = fields.List(fields.String(required=True), required=True)
+    description = fields.String()
+    projection = fields.String(required=True, load_only=True)
+    meridian = fields.Integer(required=True, load_only=True)
+    shape = fields.List(fields.Integer, required=True)
+    tile_factor = fields.List(fields.List(fields.Integer), required=True)
+    bbox = fields.List(fields.Float, required=True, load_only=True)
+    srid = fields.Integer(required=True, load_only=True)
 
 
 class BandForm(SQLAlchemyAutoSchema):

@@ -59,6 +59,8 @@ Running the Docker Containers
         - 8 GB RAM
         - 40 GB free space
 
+    It may change according the type/volume size of collections used to generate data cube.
+
 
 .. note::
 

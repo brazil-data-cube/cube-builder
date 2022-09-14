@@ -57,7 +57,7 @@ services:
       - "5000:5000"
     volumes:
       - ./volumes/data:/data
-      - ./volumes/workdir/workdir
+      - ./volumes/workdir:/workdir
     command: >
       bash -c "cube-builder run --host 0.0.0.0"
     depends_on:
@@ -74,7 +74,7 @@ services:
       - cube-builder
     volumes:
       - ./volumes/data:/data
-      - ./volumes/workdir/workdir
+      - ./volumes/workdir:/workdir
     environment:
       - "RABBIT_MQ_URL=pyamqp://guest@cube-builder-rabbitmq"
       - "SQLALCHEMY_DATABASE_URI=postgresql://postgres:postgres@cube-builder-pg:5432/bdc"
@@ -84,6 +84,6 @@ services:
       - "LANG=C.UTF-8"
       - "FLASK_ENV=production"
     command: >
-      cube-builder worker -l INFO --concurrency 8 --max-tasks-per-child=16 -Q default,merge-cube,prepare-cube,blend-cube,publish-cube
+      cube-builder worker -l INFO --concurrency 8 --max-tasks-per-child=4 -Q default,merge-cube,prepare-cube,blend-cube,publish-cube
     networks:
       - cube_builder_net

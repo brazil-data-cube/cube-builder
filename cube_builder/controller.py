@@ -536,12 +536,12 @@ class CubeController:
         return dump_grs, 200
 
     @classmethod
-    def create_grs_schema(cls, names, description, projection, meridian, shape, tile_scale, bbox, srid=100001):
+    def create_grs_schema(cls, names, description, projection, meridian, shape, tile_factor, bbox, srid=100001):
         """Create a Brazil Data Cube Grid Schema."""
         grid_mapping, proj4 = create_grids(names=names, projection=projection, meridian=meridian,
                                            shape=shape,
                                            bbox=bbox, srid=srid,
-                                           tile_scale=tile_scale)
+                                           tile_factor=tile_factor)
 
         for name in names:
             grid = grid_mapping[name]

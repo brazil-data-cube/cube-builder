@@ -67,7 +67,7 @@ def _create_tiles(tile_size: Tuple[float, float],
     return tiles, features
 
 
-def create_grids(names: List[str], projection, meridian, tile_scale: List[Tuple[int, int]],
+def create_grids(names: List[str], projection, meridian, tile_factor: List[Tuple[int, int]],
                  shape: Tuple[int, int], bbox, srid=100001):
     """Create a list of hierarchically grids for Brazil Data Cube.
 
@@ -87,7 +87,7 @@ def create_grids(names: List[str], projection, meridian, tile_scale: List[Tuple[
         names (List[str]): List of grid names
         projection (str): The Grid projection kind - "sinu" for sinusoidal grids and "aea" for Albers Equal Area.
         meridian (float): The center pixel for grid as reference.
-        tile_scale (List[Tuple[int, int]]): List the tile_scale for grids
+        tile_factor (List[Tuple[int, int]]): List the tile_factor for grids
         shape (Tuple[int, int]): The output grid cell size reference between the grids.
         bbox (Tuple[float, float, float, float]): The bounding box limits (minx, miny, maxx, maxy).
         srid (int): The projection SRID to create.
@@ -110,7 +110,7 @@ def create_grids(names: List[str], projection, meridian, tile_scale: List[Tuple[
     grid_crs = pyproj.CRS.from_proj4(tile_srs_p4)
 
     # Ref
-    resolution = tile_scale[0]
+    resolution = tile_factor[0]
 
     tile_width, tile_height = shape
 
@@ -155,7 +155,7 @@ def create_grids(names: List[str], projection, meridian, tile_scale: List[Tuple[
 
     grids = {}
 
-    for grid_name, (res_x, res_y) in zip(names, tile_scale):
+    for grid_name, (res_x, res_y) in zip(names, tile_factor):
         factor_x = res_x / ref_resolution_x
         factor_y = res_y / ref_resolution_y
         grid_tile_size_x = tile_size_x * factor_x

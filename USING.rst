@@ -214,11 +214,12 @@ In order to create data cube ``Landsat-8`` monthly using the composite function 
     The ``Clear Data`` pixels are considered to identify the ``Best Pixel`` (Stack) and it is count on the ``Clear Observation Band`` (``ClearOb``).
 
 In order to trigger a data cube, we are going to use a collection `LC8_SR-1` made with Surface Reflectance using LaSRC 2.0 with cloud masking Fmask 4.2.
-You are use the official `Brazil Data Cube STAC <https://brazildatacube.dpi.inpe.br/stac/>`_. You will need to have an account in
+In this example, we are going to use the official `Brazil Data Cube STAC <https://brazildatacube.dpi.inpe.br/stac/>`_. To do so, you will need to have an account in
 Brazil Data Cube environment. If you don't have any account, please, refer to `Brazil Data Cube Explorer <https://brazil-data-cube.github.io/applications/dc_explorer/token-module.html>`_.
 
 To trigger a data cube, use the following command::
 
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
     cube-builder build LC8_30_1M_LCF \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=LC8_SR-1 \
@@ -265,7 +266,7 @@ In order to create data cube Sentinel 2, use the following command to create dat
     {
         "datacube": "S2",
         "grs": "BRAZIL_SM",
-        "title": "Sentinel-2 SR - LaSRC/Fmask 4.2 - Data Cube Stack 16 days -v001",
+        "title": "Sentinel-2 SR - Cube Stack 16 days -v001",
         "resolution": 10,
         "version": 1,
         "metadata": {
@@ -286,37 +287,38 @@ In order to create data cube Sentinel 2, use the following command to create dat
         },
         "composite_function": "LCF",
         "bands_quicklook": [
-            "sr_band12",
-            "sr_band8a",
-            "sr_band4"
+            "B04",
+            "B03",
+            "B02"
         ],
         "bands": [
-            {"name": "sr_band1", "common_name": "coastal", "data_type": "int16"},
-            {"name": "sr_band2", "common_name": "blue", "data_type": "int16"},
-            {"name": "sr_band3", "common_name": "green", "data_type": "int16"},
-            {"name": "sr_band4", "common_name": "red", "data_type": "int16"},
-            {"name": "sr_band5", "common_name": "rededge", "data_type": "int16"},
-            {"name": "sr_band6", "common_name": "rededge", "data_type": "int16"},
-            {"name": "sr_band7", "common_name": "rededge", "data_type": "int16"},
-            {"name": "sr_band8", "common_name": "nir", "data_type": "int16"},
-            {"name": "sr_band8a", "common_name": "nir08", "data_type": "int16"},
-            {"name": "sr_band11", "common_name": "swir16", "data_type": "int16"},
-            {"name": "sr_band12", "common_name": "swir22", "data_type": "int16"},
-            {"name": "Fmask4", "common_name": "quality","data_type": "uint8"}
+            {"name": "B01", "common_name": "coastal", "data_type": "int16", "nodata": 0},
+            {"name": "B02", "common_name": "blue", "data_type": "int16", "nodata": 0},
+            {"name": "B03", "common_name": "green", "data_type": "int16", "nodata": 0},
+            {"name": "B04", "common_name": "red", "data_type": "int16", "nodata": 0},
+            {"name": "B05", "common_name": "rededge", "data_type": "int16", "nodata": 0},
+            {"name": "B06", "common_name": "rededge", "data_type": "int16", "nodata": 0},
+            {"name": "B07", "common_name": "rededge", "data_type": "int16", "nodata": 0},
+            {"name": "B08", "common_name": "nir", "data_type": "int16", "nodata": 0},
+            {"name": "B8A", "common_name": "nir08", "data_type": "int16", "nodata": 0},
+            {"name": "B11", "common_name": "swir16", "data_type": "int16", "nodata": 0},
+            {"name": "B12", "common_name": "swir22", "data_type": "int16", "nodata": 0},
+            {"name": "SCL", "common_name": "quality","data_type": "uint8", "nodata": 0}
         ],
         "indexes": [
             {
                 "name": "EVI",
                 "common_name": "evi",
                 "data_type": "int16",
+                "nodata": -9999,
                 "metadata": {
                     "expression": {
                         "bands": [
-                            "sr_band8",
-                            "sr_band4",
-                            "sr_band2"
+                            "B8A",
+                            "B04",
+                            "B02"
                         ],
-                        "value": "(10000. * 2.5 * (sr_band8 - sr_band4) / (sr_band8 + 6. * sr_band4 - 7.5 * sr_band2 + 10000.))"
+                        "value": "(10000. * 2.5 * (B8A - B04) / (B8A + 6. * B04 - 7.5 * B02 + 10000.))"
                     }
                 }
             },
@@ -324,37 +326,41 @@ In order to create data cube Sentinel 2, use the following command to create dat
                 "name": "NDVI",
                 "common_name": "ndvi",
                 "data_type": "int16",
+                "nodata": -9999,
                 "metadata": {
                     "expression": {
                         "bands": [
-                            "sr_band8",
-                            "sr_band4"
+                            "B8A",
+                            "B04"
                         ],
-                        "value": "10000. * ((sr_band8 - sr_band4)/(sr_band8 + sr_band4))"
+                        "value": "10000. * ((B8A - B04)/(B8A + B04))"
                     }
                 }
             }
         ],
-        "quality_band": "Fmask4",
+        "quality_band": "SCL",
         "description": "This data cube contains all available images from Sentinel-2, resampled to 10 meters of spatial resolution, reprojected, cropped and mosaicked to BDC_SM grid and time composed each 16 days using stack temporal composition function.",
         "parameters": {
             "mask": {
-                "clear_data": [0, 1],
-                "not_clear_data": [2, 3, 4],
-                "nodata": 255,
-                "saturated_data": []
+                "clear_data": [4, 5, 6],
+                "not_clear_data": [2, 3, 7, 8, 9, 10, 11],
+                "nodata": 0,
+                "saturated_data": [1]
             }
         }
     }'
 
-In order to trigger a data cube, we are going to use a collection `S2_MSI_L2_SR_LASRC-1` made with Surface Reflectance using LaSRC 2.0 with cloud masking Fmask 4.2::
+In order to trigger a data cube, we are going to use a collection `S2_10_16D_LCF-1` made with Surface Reflectance using Sen2Cor::
 
     # Using cube-builder command line
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
     cube-builder build S2_10_16D_LCF \
-        --collections=S2_MSI_L2_SR_LASRC-1 \
-        --tiles=089098 \
+        --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
+        --collections=S2_L2A-1 \
+        --tiles=017019 \
         --start=2019-01-01 \
-        --end=2019-01-31
+        --end=2019-01-31 \
+        --token <USER_BDC_TOKEN>
 
 
 Creating data cube CBERS-4 AWFI
@@ -391,22 +397,23 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
         },
         "composite_function": "LCF",
         "bands_quicklook": [
-            "sr_band12",
-            "sr_band8a",
-            "sr_band4"
+            "BAND15",
+            "BAND14",
+            "BAND13"
         ],
         "bands": [
-            {"name": "BAND13", "common_name": "blue", "data_type": "int16"},
-            {"name": "BAND14", "common_name": "green", "data_type": "int16"},
-            {"name": "BAND15", "common_name": "red", "data_type": "int16"},
-            {"name": "BAND16", "common_name": "nir", "data_type": "int16"},
-            {"name": "CMASK", "common_name": "quality","data_type": "uint8"}
+            {"name": "BAND13", "common_name": "blue", "data_type": "int16", "nodata": -9999},
+            {"name": "BAND14", "common_name": "green", "data_type": "int16", "nodata": -9999},
+            {"name": "BAND15", "common_name": "red", "data_type": "int16", "nodata": -9999},
+            {"name": "BAND16", "common_name": "nir", "data_type": "int16", "nodata": -9999},
+            {"name": "CMASK", "common_name": "quality","data_type": "uint8", "nodata": 0}
         ],
         "indexes": [
             {
                 "name": "EVI",
                 "common_name": "evi",
                 "data_type": "int16",
+                "nodata": -9999,
                 "metadata": {
                     "expression": {
                         "bands": [
@@ -422,6 +429,7 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
                 "name": "NDVI",
                 "common_name": "ndvi",
                 "data_type": "int16",
+                "nodata": -9999,
                 "metadata": {
                     "expression": {
                         "bands": [
@@ -450,11 +458,14 @@ Trigger data cube generation with following command:
 .. code-block:: shell
 
     # Using cube-builder command line
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
     cube-builder build CB4_64_16D_LCF \
+        --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=CBERS4_AWFI_L4_SR \
         --tiles=022024 \
         --start=2019-01-01 \
-        --end=2019-01-31
+        --end=2019-01-31 \
+        --token <USER_BDC_TOKEN>
 
 
 Restarting or Reprocessing a Data Cube
@@ -463,19 +474,25 @@ Restarting or Reprocessing a Data Cube
 When the ``Cube-Builder`` could not generate data cube for any unknown issue, you may restarting the entire process
 with the same command you have dispatched::
 
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
     cube-builder build CB4_64_16D_LCF \
-        --collections=CBERS4_AWFI_L4_SR \
-        --tiles=022024 \
-        --start=2019-01-01 \
-        --end=2019-01-31
-
-It will reuse most of files that were already processed, executing only the failed tasks. If you notice anything suspicious or want to re-create theses files again, use the option ``--force``::
-
-    cube-builder build CB4_64_16D_LCF \
+        --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=CBERS4_AWFI_L4_SR \
         --tiles=022024 \
         --start=2019-01-01 \
         --end=2019-01-31 \
+        --token <USER_BDC_TOKEN>
+
+It will reuse most of files that were already processed, executing only the failed tasks. If you notice anything suspicious or want to re-create theses files again, use the option ``--force``::
+
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
+    cube-builder build CB4_64_16D_LCF \
+        --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
+        --collections=CBERS4_AWFI_L4_SR \
+        --tiles=022024 \
+        --start=2019-01-01 \
+        --end=2019-01-31 \
+        --token <USER_BDC_TOKEN> \
         --force
 
 
@@ -486,6 +503,7 @@ The ``Cube-Builder`` supports a few parameters to be set during the data cube ex
 
 In order to check the parameters associated with data cube ``CB4_64_16D_STK-1``, use the command::
 
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
     cube-builder show-parameters CB4_64_16D_LCF-1
 
 
@@ -499,5 +517,13 @@ The following output represents all the parameters related with the given data c
 
 You can change any parameter with the command ``cube-builder configure`` with ``DataCubeName-Version``::
 
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
     cube-builder configure CB4_64_16D_LCF-1 --stac-url=AnySTAC
 
+
+.. note::
+
+    Once parameter is set, it only be affected in the new execution.
+    Be aware of what you are changing to do not affect the integrity of data cube.
+    For example, changing the masking ``clear_data`` when there is a already area generated.
+    Make sure to re-generate all the periods and tiles again.
