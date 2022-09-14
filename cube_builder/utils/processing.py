@@ -213,7 +213,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
     of common grid, for a specific date.
 
     See also:
-        BDC Warp https://brazil-data-cube.github.io/products/specifications/processing-flow.html#warp-merge-reprojecting-resampling-and-griding
+        `Warp (Merge, Reprojecting, Resampling and Griding) <https://brazil-data-cube.github.io/products/specifications/processing-flow.html#warp-merge-reprojecting-resampling-and-griding>`_
 
     Args:
         merge_file: Path to store data cube merge

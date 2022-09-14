@@ -17,7 +17,7 @@ from .celery.utils import list_queues
 from .config import Config
 from .controller import CubeController
 from .forms import (CubeItemsForm, CubeStatusForm, DataCubeForm, DataCubeMetadataForm, DataCubeProcessForm,
-                    GridRefSysForm, PeriodForm)
+                    GridForm, GridRefSysForm, PeriodForm)
 from .version import __version__
 
 bp = Blueprint('cubes', import_name=__name__)
@@ -225,7 +225,7 @@ def list_grs_schemas(grs_id, **kwargs):
 @oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def create_grs(**kwargs):
     """Create the grid reference system using HTTP Post method."""
-    form = GridRefSysForm()
+    form = GridForm()
 
     args = request.get_json()
 

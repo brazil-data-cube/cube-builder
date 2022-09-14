@@ -310,6 +310,7 @@ class CubeController:
         dump_cube['extent'] = None
         dump_cube['grid'] = cube.grs.name
         dump_cube['composite_function'] = cube.composite_function.name
+        dump_cube['summary'] = cls.summarize(cube)
 
         return dump_cube, 200
 
@@ -340,25 +341,34 @@ class CubeController:
         """Retrieve a data cube status, which includes total items, tiles, etc."""
         cube = cls.get_cube_or_404(cube_full_name=cube_name)
 
-        dates = db.session.query(
-            sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
-        ).first()
+        dates = (
+            db.session.query(
+                sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
+            )
+            .filter(Activity.collection_id == cube_name)
+            .first()
+        )
 
         count_items = Item.query().filter(Item.collection_id == cube.id).count()
-
-        # list_tasks = list_pending_tasks() + list_running_tasks()
-        # count_tasks = len(list(filter(lambda t: t['collection_id'] == cube_name, list_tasks)))
         count_tasks = 0
 
-        count_acts_errors = Activity.query().filter(
-            Activity.collection_id == cube.name,
-            Activity.status == 'FAILURE'
-        ).count()
+        count_acts_errors = (
+            db.session.query(Activity.id)
+            .filter(
+                Activity.collection_id == cube.name,
+                Activity.status == 'FAILURE'
+            )
+            .count()
+        )
 
-        count_acts_success = Activity.query().filter(
-            Activity.collection_id == cube.name,
-            Activity.status == 'SUCCESS'
-        ).count()
+        count_acts_success = (
+            db.session.query(Activity.id)
+            .filter(
+                Activity.collection_id == cube.name,
+                Activity.status == 'SUCCESS'
+            )
+            .count()
+        )
 
         if count_tasks > 0:
             return dict(
@@ -526,36 +536,39 @@ class CubeController:
         return dump_grs, 200
 
     @classmethod
-    def create_grs_schema(cls, name, description, projection, meridian, degreesx, degreesy, bbox, srid=100001):
+    def create_grs_schema(cls, names, description, projection, meridian, shape, tile_factor, bbox, srid=100001):
         """Create a Brazil Data Cube Grid Schema."""
-        grid_mapping, proj4 = create_grids(names=[name], projection=projection, meridian=meridian,
-                                           degreesx=[degreesx], degreesy=[degreesy],
-                                           bbox=bbox, srid=srid)
-        grid = grid_mapping[name]
+        grid_mapping, proj4 = create_grids(names=names, projection=projection, meridian=meridian,
+                                           shape=shape,
+                                           bbox=bbox, srid=srid,
+                                           tile_factor=tile_factor)
 
-        with db.session.begin_nested():
-            crs = CRS.from_proj4(proj4)
-            data = dict(
-                auth_name='Albers Equal Area',
-                auth_srid=srid,
-                srid=srid,
-                srtext=crs.to_wkt(),
-                proj4text=proj4
-            )
+        for name in names:
+            grid = grid_mapping[name]
 
-            spatial_index, _ = get_or_create_model(SpatialRefSys, defaults=data, srid=srid)
+            with db.session.begin_nested():
+                crs = CRS.from_proj4(proj4)
+                data = dict(
+                    auth_name='Albers Equal Area',
+                    auth_srid=srid,
+                    srid=srid,
+                    srtext=crs.to_wkt(),
+                    proj4text=proj4
+                )
 
-            grs = GridRefSys.create_geometry_table(table_name=name,
-                                                   features=grid['features'],
-                                                   srid=srid)
-            grs.description = description
-            db.session.add(grs)
-            for tile_obj in grid['tiles']:
-                tile = Tile(**tile_obj, grs=grs)
-                db.session.add(tile)
-        db.session.commit()
+                spatial_index, _ = get_or_create_model(SpatialRefSys, defaults=data, srid=srid)
 
-        return 'Grid {} created with successfully'.format(name), 201
+                grs = GridRefSys.create_geometry_table(table_name=name,
+                                                       features=grid['features'],
+                                                       srid=srid)
+                grs.description = description
+                db.session.add(grs)
+                for tile_obj in grid['tiles']:
+                    tile = Tile(**tile_obj, grs=grs)
+                    db.session.add(tile)
+            db.session.commit()
+
+        return 'Grids {} created with successfully'.format(names), 201
 
     @classmethod
     def list_cube_items(cls, cube_id: str, bbox: str = None, start: str = None,
@@ -649,3 +662,28 @@ class CubeController:
         db.session.commit()
 
         return Serializer.serialize(cube_parameters)
+
+    @classmethod
+    def summarize(cls, cube: Union[str, Collection]) -> dict:
+        """Retrieve data cube summarization.
+
+        This method consists in compute the tile statistics like total items per tile, etc.
+        """
+        if isinstance(cube, str):
+            cube = CubeController.get_cube_or_404(cube_id=cube)
+
+        summary_rows = (
+            db.session.query(
+                Tile.name.label('tile'), func.count(Item.name).label('total_items')
+            )
+            .join(Tile, Tile.id == Item.tile_id)
+            .filter(Item.collection_id == cube.id)
+            .group_by(Tile.name)
+            .order_by(Tile.name)
+            .all()
+        )
+
+        return {
+            row.tile: row.total_items
+            for row in summary_rows
+        }

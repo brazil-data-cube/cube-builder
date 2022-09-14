@@ -30,6 +30,19 @@ The ``Cube Builder`` depends essentially on:
 - `Brazil Data Cube Catalog Module <https://github.com/brazil-data-cube/bdc-catalog.git>`_
 
 
+Compatibility
+-------------
+
++--------------+-------------+
+| Cube-Builder | BDC-Catalog |
++==============+=============+
+| 0.8.x        | 0.8.2       |
++--------------+-------------+
+| 0.4.x, 0.6.x | 0.8.1       |
++--------------+-------------+
+| 0.2.x        | 0.2.x       |
++--------------+-------------+
+
 Development Installation
 ------------------------
 
@@ -102,10 +115,15 @@ The ``Cube Builder`` uses `BDC-DB <https://github.com/brazil-data-cube/bdc-db/>`
 
     If you already have a database instance with the Brazil Data Cube data model, you can skip this section.
 
+In order to proceed with installation, you will need ``PostgreSQL with PostGIS``. We have already prepared a minimal
+instance in ``docker-compose.yml``. You may use it as following::
+
+    docker-compose up -d postgres
+
 
 We have prepared a script to configure the database model::
 
-    SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" ./deploy/configure-db.sh
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" ./deploy/configure-db.sh
 
 
 
@@ -115,19 +133,22 @@ Launch the ``Cube Builder`` service
 
 In the source code folder, enter the following command::
 
-    $ FLASK_ENV="development" \
-      DATA_DIR="/data" \
-      SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
-      cube-builder run
+    FLASK_ENV="development" \
+    WORK_DIR="/workdir" \
+    DATA_DIR="/data" \
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
+    cube-builder run
 
 
 You may need to replace the definition of some environment variables:
 
 - ``FLASK_ENV="development"``: used to tell Flask to run in ``Debug`` mode.
 
+- ``WORK_DIR="/workdir"``: set path to store temporary cubes/processing.
+
 - ``DATA_DIR="/data"``: set path to store data cubes
 
-- ``SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc"``: set the database URI connection for PostgreSQL.
+- ``SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc"``: set the database URI connection for PostgreSQL.
 
 
 The above command should output some messages in the console as showed below::
@@ -146,8 +167,9 @@ Launch the ``Cube Builder`` worker
 
 Enter the following command to start ``Cube Builder`` worker::
 
+    WORK_DIR="/workdir" \
     DATA_DIR="/data" \
-    SQLALCHEMY_DATABASE_URI="postgresql://postgres:password@host:port/bdc" \
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
     cube-builder worker -l INFO --concurrency 8 -Q default,merge-cube,prepare-cube,blend-cube,publish-cube
 
 
@@ -161,12 +183,15 @@ You may need to replace the definition of some parameters:
 
 .. note::
 
-    The command line ``cube-builder worker`` is an auxiliary tool that wraps celery command line using ``cube_builder`` as context. In this way, all ``celery worker`` parameters are currently supported. See more in `Celery Workers Guide <https://docs.celeryproject.org/en/stable/userguide/workers.html>`_.
+    The command line ``cube-builder worker`` is an auxiliary tool that wraps celery command line
+    using ``cube_builder`` as context. In this way, all ``celery worker`` parameters are currently supported.
+    See more in `Celery Workers Guide <https://docs.celeryproject.org/en/stable/userguide/workers.html>`_.
 
 
 .. warning::
 
-    The ``Cube Builder`` can use a lot of memory for each concurrent process, since it opens multiple images in memory. You can limit the concurrent processes in order to prevent it.
+    The ``Cube Builder`` can use a lot of memory for each concurrent process, since it opens multiple images in memory.
+    You can limit the concurrent processes in order to prevent it.
 
 
 .. rubric:: Footnotes
