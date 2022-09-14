@@ -133,18 +133,18 @@ Launch the ``Cube Builder`` service
 
 In the source code folder, enter the following command::
 
-    $ FLASK_ENV="development" \
-      WORK_DIR="/workdir" \
-      DATA_DIR="/data" \
-      SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-      cube-builder run
+    FLASK_ENV="development" \
+    WORK_DIR="/workdir" \
+    DATA_DIR="/data" \
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
+    cube-builder run
 
 
 You may need to replace the definition of some environment variables:
 
 - ``FLASK_ENV="development"``: used to tell Flask to run in ``Debug`` mode.
 
-- ``WORK_DIR="/data"``: set path to store temporary cubes/processing.
+- ``WORK_DIR="/workdir"``: set path to store temporary cubes/processing.
 
 - ``DATA_DIR="/data"``: set path to store data cubes
 

@@ -36,9 +36,9 @@ Creating a Grid for the Data Cubes
 A Data Cube must have an associated grid as mentioned in `BDC Grid <https://brazil-data-cube.github.io/products/specifications/bdc-grid.html?highlight=grid>`_.
 For this example, we will create 3 hierarchical grids for different data cubes:
 
-- ``BRAZIL_LG``: used by collection ``Sentinel-2`` which has resolution ``10 meters``;
+- ``BRAZIL_SM``: used by collection ``Sentinel-2`` which has resolution ``10 meters``;
 - ``BRAZIL_MD``: used by collection ``Landsat-8`` which has resolution ``30 meters``;
-- ``BRAZIL_SM``: used by collection ``CBERS`` which has resolution ``64 meters`` (or  ``55 meters`` for ``CBERS4A``).
+- ``BRAZIL_LG``: used by collection ``CBERS`` which has resolution ``64 meters`` (or  ``55 meters`` for ``CBERS4A``).
 
 In order to do this, we must understand a few concepts:
 
@@ -113,8 +113,8 @@ The response will have status code ``201`` and the body::
              }'
 
 
-Creating the Definition of Landsat-8 based Data Cube
-----------------------------------------------------
+Creating data cube Landsat-8
+----------------------------
 
 In order to create data cube ``Landsat-8`` monthly using the composite function ``Least Cloud Cover First`` (`LC8_30_1M_LCF`), use the following command to create data cube metadata::
 
@@ -183,7 +183,7 @@ In order to create data cube ``Landsat-8`` monthly using the composite function 
             }
         ],
         "quality_band": "Fmask4",
-        "description": "This datacube contains the all available images from Landsat-8, with 30 meters of spatial resolution, reprojected and cropped to BDC_MD grid, composed each 16 days using the best pixel (Stack) composite function.",
+        "description": "This datacube contains the all available images from Landsat-8, with 30 meters of spatial resolution, reprojected and cropped to BDC_MD grid, composed each 16 days using the best pixel (LCF) composite function.",
         "parameters": {
             "mask": {
                 "clear_data": [0, 1],
@@ -211,13 +211,13 @@ In order to create data cube ``Landsat-8`` monthly using the composite function 
         ..
 
     The property ``mask`` inside ``parameters`` represents how the Cube Builder will deal with ``Clear Data`` and ``Not Clear Data`` pixels.
-    The ``Clear Data`` pixels are considered to identify the ``Best Pixel`` (Stack) and it is count on the ``Clear Observation Band`` (``ClearOb``).
+    The ``Clear Data`` pixels are considered to identify the ``Best Pixel`` (LCF) and it is count on the ``Clear Observation Band`` (``ClearOb``).
 
 In order to trigger a data cube, we are going to use a collection `LC8_SR-1` made with Surface Reflectance using LaSRC 2.0 with cloud masking Fmask 4.2.
 In this example, we are going to use the official `Brazil Data Cube STAC <https://brazildatacube.dpi.inpe.br/stac/>`_. To do so, you will need to have an account in
 Brazil Data Cube environment. If you don't have any account, please, refer to `Brazil Data Cube Explorer <https://brazil-data-cube.github.io/applications/dc_explorer/token-module.html>`_.
 
-To trigger a data cube, use the following command::
+Once the data cube definition is created, you can trigger a data cube using the following command::
 
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
     cube-builder build LC8_30_1M_LCF \
@@ -228,19 +228,23 @@ To trigger a data cube, use the following command::
         --end=2019-01-31 \
         --token <USER_BDC_TOKEN>
 
-    # Using curl (Make sure to execute cube-builder run)
-    curl --location \
-         --request POST '127.0.0.1:5000/start-cube' \
-         --header 'Content-Type: application/json' \
-         --data-raw '{
-            "stac_url": "https://brazildatacube.dpi.inpe.br/stac/",
-            "token": "<USER_BDC_TOKEN>",
-            "datacube": "LC8_30_1M_LCF",
-            "collections": ["LC8_SR-1"],
-            "tiles": ["011009"],
-            "start_date": "2019-01-01",
-            "end_date": "2019-01-31"
-         }'
+.. note::
+
+    If you would like to trigger data cube generation using ``API call`` instead ``commandline`` use as following::
+
+        # Using curl (Make sure to execute cube-builder run)
+        curl --location \
+             --request POST '127.0.0.1:5000/start-cube' \
+             --header 'Content-Type: application/json' \
+             --data-raw '{
+                "stac_url": "https://brazildatacube.dpi.inpe.br/stac/",
+                "token": "<USER_BDC_TOKEN>",
+                "datacube": "LC8_30_1M_LCF",
+                "collections": ["LC8_SR-1"],
+                "tiles": ["011009"],
+                "start_date": "2019-01-01",
+                "end_date": "2019-01-31"
+             }'
 
 
 .. note::
@@ -266,7 +270,7 @@ In order to create data cube Sentinel 2, use the following command to create dat
     {
         "datacube": "S2",
         "grs": "BRAZIL_SM",
-        "title": "Sentinel-2 SR - Cube Stack 16 days -v001",
+        "title": "Sentinel-2 SR - Cube LCF 16 days -v001",
         "resolution": 10,
         "version": 1,
         "metadata": {
@@ -339,7 +343,7 @@ In order to create data cube Sentinel 2, use the following command to create dat
             }
         ],
         "quality_band": "SCL",
-        "description": "This data cube contains all available images from Sentinel-2, resampled to 10 meters of spatial resolution, reprojected, cropped and mosaicked to BDC_SM grid and time composed each 16 days using stack temporal composition function.",
+        "description": "This data cube contains all available images from Sentinel-2, resampled to 10 meters of spatial resolution, reprojected, cropped and mosaicked to BDC_SM grid and time composed each 16 days using LCF temporal composition function.",
         "parameters": {
             "mask": {
                 "clear_data": [4, 5, 6],
@@ -377,7 +381,7 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
     {
         "datacube": "CB4",
         "grs": "BRAZIL_LG",
-        "title": "CBERS-4 (AWFI) SR - Data Cube Stack 16 days - v001",
+        "title": "CBERS-4 (AWFI) SR - Data Cube LCF 16 days - v001",
         "resolution": 64,
         "version": 1,
         "metadata": {
@@ -442,7 +446,7 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
             }
         ],
         "quality_band": "CMASK",
-        "description": "This data cube contains the all available images from CBERS-4/AWFI resampled to 64 meters of spatial resolution, reprojected and cropped to BDC_LG grid, composed each 16 days using the best pixel (Stack) composite function.",
+        "description": "This data cube contains the all available images from CBERS-4/AWFI resampled to 64 meters of spatial resolution, reprojected and cropped to BDC_LG grid, composed each 16 days using the best pixel (LCF) composite function.",
         "parameters": {
             "mask": {
                 "clear_data": [127],
@@ -462,7 +466,7 @@ Trigger data cube generation with following command:
     cube-builder build CB4_64_16D_LCF \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=CBERS4_AWFI_L4_SR \
-        --tiles=022024 \
+        --tiles=005004 \
         --start=2019-01-01 \
         --end=2019-01-31 \
         --token <USER_BDC_TOKEN>
