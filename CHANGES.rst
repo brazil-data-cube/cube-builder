@@ -10,6 +10,12 @@
 Changes
 =======
 
+Version 0.8.2 (2022-09-21)
+--------------------------
+
+- Change LICENSE to GPL v3 and headers source code
+
+
 Version 0.8.1 (2022-09-14)
 --------------------------
 
