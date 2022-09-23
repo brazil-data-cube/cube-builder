@@ -1,9 +1,19 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 
@@ -170,8 +180,8 @@ class CubeController:
                     min_value=-10000 if band.get('metadata') else 0,
                     max_value=10000,
                     nodata=band['nodata'],
-                    scale_add=0.0001 if is_not_cloud else 1,
-                    scale_mult=params.get('scale_mult'),
+                    scale_mult=0.0001 if is_not_cloud else 1,
+                    scale_add=params.get('scale_add'),
                     data_type=data_type,
                     resolution_unit_id=resolution_meter.id,
                     description='',
@@ -344,23 +354,35 @@ class CubeController:
         """Retrieve a data cube status, which includes total items, tiles, etc."""
         cube = cls.get_cube_or_404(cube_name)
 
-        dates = db.session.query(
-            sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
-        ).filter(Activity.collection_id == cube.name).first()
+        dates = (
+            db.session.query(
+                sqlalchemy.func.min(Activity.created), sqlalchemy.func.max(Activity.created)
+            )
+            .filter(Activity.collection_id == cube_name)
+            .first()
+        )
 
         count_items = Item.query().filter(Item.collection_id == cube.id).count()
 
         count_tasks = 0
 
-        count_acts_errors = Activity.query().filter(
-            Activity.collection_id == cube.name,
-            Activity.status == 'FAILURE'
-        ).count()
+        count_acts_errors = (
+            db.session.query(Activity.id)
+            .filter(
+                Activity.collection_id == cube.name,
+                Activity.status == 'FAILURE'
+            )
+            .count()
+        )
 
-        count_acts_success = Activity.query().filter(
-            Activity.collection_id == cube.name,
-            Activity.status == 'SUCCESS'
-        ).count()
+        count_acts_success = (
+            db.session.query(Activity.id)
+            .filter(
+                Activity.collection_id == cube.name,
+                Activity.status == 'SUCCESS'
+            )
+            .count()
+        )
 
         if count_tasks > 0:
             return dict(
@@ -528,36 +550,39 @@ class CubeController:
         return dump_grs, 200
 
     @classmethod
-    def create_grs_schema(cls, name, description, projection, meridian, degreesx, degreesy, bbox, srid=100001):
+    def create_grs_schema(cls, names, description, projection, meridian, shape, tile_factor, bbox, srid=100001):
         """Create a Brazil Data Cube Grid Schema."""
-        grid_mapping, proj4 = create_grids(names=[name], projection=projection, meridian=meridian,
-                                           degreesx=[degreesx], degreesy=[degreesy],
-                                           bbox=bbox, srid=srid)
-        grid = grid_mapping[name]
+        grid_mapping, proj4 = create_grids(names=names, projection=projection, meridian=meridian,
+                                           shape=shape,
+                                           bbox=bbox, srid=srid,
+                                           tile_factor=tile_factor)
 
-        with db.session.begin_nested():
-            crs = CRS.from_proj4(proj4)
-            data = dict(
-                auth_name='Albers Equal Area',
-                auth_srid=srid,
-                srid=srid,
-                srtext=crs.to_wkt(),
-                proj4text=proj4
-            )
+        for name in names:
+            grid = grid_mapping[name]
 
-            spatial_index, _ = get_or_create_model(SpatialRefSys, defaults=data, srid=srid)
+            with db.session.begin_nested():
+                crs = CRS.from_proj4(proj4)
+                data = dict(
+                    auth_name='Albers Equal Area',
+                    auth_srid=srid,
+                    srid=srid,
+                    srtext=crs.to_wkt(),
+                    proj4text=proj4
+                )
 
-            grs = GridRefSys.create_geometry_table(table_name=name,
-                                                   features=grid['features'],
-                                                   srid=srid)
-            grs.description = description
-            db.session.add(grs)
-            for tile_obj in grid['tiles']:
-                tile = Tile(**tile_obj, grs=grs)
-                db.session.add(tile)
-        db.session.commit()
+                spatial_index, _ = get_or_create_model(SpatialRefSys, defaults=data, srid=srid)
 
-        return 'Grid {} created with successfully'.format(name), 201
+                grs = GridRefSys.create_geometry_table(table_name=name,
+                                                       features=grid['features'],
+                                                       srid=srid)
+                grs.description = description
+                db.session.add(grs)
+                for tile_obj in grid['tiles']:
+                    tile = Tile(**tile_obj, grs=grs)
+                    db.session.add(tile)
+            db.session.commit()
+
+        return 'Grids {} created with successfully'.format(names), 201
 
     @classmethod
     def list_cube_items(cls, cube_id: str, bbox: str = None, start: str = None,
@@ -651,6 +676,31 @@ class CubeController:
         db.session.commit()
 
         return Serializer.serialize(cube_parameters)
+
+    @classmethod
+    def summarize(cls, cube: Union[str, Collection]) -> dict:
+        """Retrieve data cube summarization.
+
+        This method consists in compute the tile statistics like total items per tile, etc.
+        """
+        if isinstance(cube, str):
+            cube = CubeController.get_cube_or_404(cube_id=cube)
+
+        summary_rows = (
+            db.session.query(
+                Tile.name.label('tile'), func.count(Item.name).label('total_items')
+            )
+            .join(Tile, Tile.id == Item.tile_id)
+            .filter(Item.collection_id == cube.id)
+            .group_by(Tile.name)
+            .order_by(Tile.name)
+            .all()
+        )
+
+        return {
+            row.tile: row.total_items
+            for row in summary_rows
+        }
 
 
 def _make_item_assets(cube: Collection) -> dict:

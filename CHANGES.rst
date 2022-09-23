@@ -10,6 +10,19 @@
 Changes
 =======
 
+Version 0.8.2 (2022-09-21)
+--------------------------
+
+- Change LICENSE to GPL v3 and headers source code
+
+
+Version 0.8.1 (2022-09-14)
+--------------------------
+
+- Fix search images using temporal dimension `#221 <https://github.com/brazil-data-cube/cube-builder/issues/221>`_.
+- Add way to retrieve total items per tile
+- Improve Usage/Setup documentation `#164 <https://github.com/brazil-data-cube/cube-builder/issues/164>`_.
+
 
 Version 0.8.0 (2022-05-05)
 --------------------------
