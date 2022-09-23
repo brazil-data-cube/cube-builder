@@ -61,6 +61,7 @@ extras_require['all'] = [ req for exts, reqs in extras_require.items() for req i
 setup_requires = []
 
 install_requires = [
+    'bdc-auth-client @ git+https://github.com/brazil-data-cube/bdc-auth-client.git@v0.4.2#egg=bdc-auth-client',
     'bdc-catalog @ git+https://github.com/brazil-data-cube/bdc-catalog.git@v1.0.0#egg=bdc-catalog',
     'celery>=4.3.0,<5',
     'Flask>=1.1.1,<2',
@@ -77,7 +78,6 @@ install_requires = [
     'SQLAlchemy-Utils>=0.34.2,<1',
     'stac.py==0.9.0.post12',
     'MarkupSafe==2.0.1',
-    'bdc-auth-client @ git+https://github.com/brazil-data-cube/bdc-auth-client.git@v0.4.2#egg=bdc-auth-client'
 ]
 
 packages = find_packages()

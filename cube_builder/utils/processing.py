@@ -330,7 +330,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
 
                 src = dataset_from_uri(link, band=band)
 
-                with src.open():
+                with src:
                     meta = src.meta.copy()
                     meta.update({
                         'width': cols,
@@ -344,7 +344,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
 
                     if src.profile['nodata'] is not None:
                         source_nodata = src.profile['nodata']
-                    elif 'LC8SR' in dataset:
+                    elif 'LC8SR' in dataset or 'LC8_SR' in dataset:
                         if band != quality_band:
                             # Temporary workaround for landsat
                             # Sometimes, the laSRC does not generate the data set properly and
@@ -1108,7 +1108,6 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
                 tile_id=tile.id,
                 start_date=start_date,
                 end_date=end_date,
-                is_public=False,  # TODO: Review this flag
                 is_available=False
             )
 
@@ -1233,7 +1232,6 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
             tile_id=tile.id,
             start_date=date,
             end_date=date,
-            is_public=False,  # TODO: Review this flag
             is_available=False
         )
 

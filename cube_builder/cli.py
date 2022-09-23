@@ -60,16 +60,17 @@ def load_data():
 
         where = dict(
             name=__package__,
-            facility='BDC - INPE',
-            level="",  # TODO: Should it have a level processor?
-            uri='https://github.com/brazil-data-cube/cube-builder.git',
             version=__version__
         )
 
         # Cube-Builder application
         application, _ = get_or_create_model(
             Processor,
-            defaults=dict(),
+            defaults=dict(
+                facility='BDC - INPE',
+                level="",  # TODO: Should it have a level processor?
+                uri='https://github.com/brazil-data-cube/cube-builder.git',
+            ),
             **where
         )
 

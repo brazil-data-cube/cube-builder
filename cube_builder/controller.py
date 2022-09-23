@@ -26,8 +26,8 @@ from typing import Tuple, Union
 import sqlalchemy
 from bdc_catalog.models import (Band, BandSRC, Collection, CompositeFunction, GridRefSys, Item, MimeType, Quicklook,
                                 ResolutionUnit, SpatialRefSys, Tile, db)
-from geoalchemy2 import func
 from rasterio.crs import CRS
+from geoalchemy2 import func
 from werkzeug.exceptions import NotFound, abort
 
 from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
@@ -148,7 +148,6 @@ class CubeController:
                 category=params.get('category') or 'eo',
                 description=params['description'],
                 collection_type='cube',
-                is_public=params.get('public', False),
                 is_available=params.get('public', False),
                 version=params['version'],
                 keywords=params.get('keywords'),
@@ -229,7 +228,7 @@ class CubeController:
                                        resolution_unit_id=resolution_meter.id,
                                        resolution_x=params['resolution'], resolution_y=params['resolution'])
 
-            if function in ('STK', 'LCF'):
+            if function == 'LCF':
                 _ = cls.get_or_create_band(cube.id, **PROVENANCE_ATTRIBUTES, mime_type_id=mime_type.id,
                                            resolution_unit_id=resolution_meter.id,
                                            resolution_x=params['resolution'], resolution_y=params['resolution'])
@@ -350,7 +349,7 @@ class CubeController:
         return list_cubes, 200
 
     @classmethod
-    def get_cube_status(cls, cube_name: str) -> Tuple[dict, int]:
+    def get_cube_status(cls, cube_name: str):
         """Retrieve a data cube status, which includes total items, tiles, etc."""
         cube = cls.get_cube_or_404(cube_name)
 
@@ -439,8 +438,8 @@ class CubeController:
         """List merge files used in data cube and check for invalid scenes.
 
         Args:
-            datacube: Data cube name
-            tile: Brazil Data Cube Tile identifier
+            cube_id: Data cube name
+            tile_id: Brazil Data Cube Tile identifier
             start_date: Activity start date (period)
             end_date: Activity End (period)
 
@@ -588,7 +587,7 @@ class CubeController:
     def list_cube_items(cls, cube_id: str, bbox: str = None, start: str = None,
                         end: str = None, tiles: str = None, page: int = 1, per_page: int = 10):
         """Retrieve all data cube items done."""
-        cube = cls.get_cube_or_404(cube_id=cube_id)
+        _ = cls.get_cube_or_404(cube_id=cube_id)
 
         where = [
             Item.collection_id == cube_id,
@@ -708,7 +707,7 @@ def _make_item_assets(cube: Collection) -> dict:
     for band in cube.bands:
         definition[band.name] = dict(
             type=band.mime_type.name,
-            title=band.description,
+            title=band.description or f'Band {band.name}',
             roles=['data'],
         )
 
