@@ -496,7 +496,7 @@ class CubeController:
         if activity is not None:
             # TODO: Remove this activity dataset retrieval.
             # This is a workaround for deal with Cube Builder legacy versions. Will be removed soon
-            response['collections'] = activity.args.get('dataset', activity.args.get('datasets'))
+            response['collections'] = activity.args.get('datasets', activity.args.get('dataset'))
 
         return response, 200
 

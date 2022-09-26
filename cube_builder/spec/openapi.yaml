@@ -7,8 +7,8 @@ info:
     url: "https://discord.com/channels/689541907621085198#/"
     email: brazildatacube@inpe.br
   license:
-    name: MIT
-    url: "https://opensource.org/licenses/MIT"
+    name: GPLv3
+    url: "https://opensource.org/licenses/GPL-3.0"
   version: "0.6"
   x-logo:
     url: "https://brazil-data-cube.github.io/_static/logo-bdc.png"
