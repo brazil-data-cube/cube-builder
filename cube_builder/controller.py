@@ -31,7 +31,8 @@ from geoalchemy2 import func
 from werkzeug.exceptions import NotFound, abort
 
 from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
-                        PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_ATTRIBUTES, TOTAL_OBSERVATION_NAME)
+                        PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_ATTRIBUTES, TOTAL_OBSERVATION_NAME,
+                        IDENTITY)
 from .forms import CollectionForm
 from .grids import create_grids
 from .models import Activity, CubeParameters
@@ -141,7 +142,7 @@ class CubeController:
             cube = Collection(
                 name=cube_id,
                 title=params['title'],
-                temporal_composition_schema=params['temporal_composition'] if function != 'IDT' else None,
+                temporal_composition_schema=params['temporal_composition'] if function != IDENTITY else None,
                 composite_function_id=cube_function.id,
                 grs=grs,
                 metadata_=params['metadata'],
@@ -220,7 +221,7 @@ class CubeController:
         db.session.add(cube_parameters)
 
         # Create default Cube Bands
-        if function != 'IDT':
+        if function != IDENTITY:
             _ = cls.get_or_create_band(cube.id, **CLEAR_OBSERVATION_ATTRIBUTES, mime_type_id=mime_type.id,
                                        resolution_unit_id=resolution_meter.id,
                                        resolution_x=params['resolution'], resolution_y=params['resolution'])
@@ -228,7 +229,7 @@ class CubeController:
                                        resolution_unit_id=resolution_meter.id,
                                        resolution_x=params['resolution'], resolution_y=params['resolution'])
 
-            if function == 'LCF':
+            if function in ('STK', 'LCF'):
                 _ = cls.get_or_create_band(cube.id, **PROVENANCE_ATTRIBUTES, mime_type_id=mime_type.id,
                                            resolution_unit_id=resolution_meter.id,
                                            resolution_x=params['resolution'], resolution_y=params['resolution'])
@@ -264,7 +265,7 @@ class CubeController:
 
             cube_serialized = [cube]
 
-            if params['composite_function'] != 'IDT':
+            if params['composite_function'] != IDENTITY:
                 step = params['temporal_composition']['step']
                 unit = params['temporal_composition']['unit'][0].upper()
                 temporal_str = f'{step}{unit}'
@@ -311,7 +312,7 @@ class CubeController:
     @classmethod
     def get_cube(cls, cube_id: int):
         """Retrieve a data cube definition metadata."""
-        cube = cls.get_cube_or_404(cube_id=cube_id)
+        cube = cls.get_cube_or_404(cube_id=int(cube_id))
 
         dump_cube = Serializer.serialize(cube)
         dump_cube['bands'] = [Serializer.serialize(b) for b in cube.bands]
@@ -322,7 +323,25 @@ class CubeController:
         ]
         dump_cube['extent'] = None
         dump_cube['grid'] = cube.grs.name
-        dump_cube['composite_function'] = cube.composite_function.name
+        dump_cube['composite_function'] = dict(
+            name=cube.composite_function.name,
+            description=cube.composite_function.description,
+            alias=cube.composite_function.alias,
+        )
+
+        # Retrieve Item Start/End Date
+        # This step is required since the default generation trigger
+        # does not compute stats when is_available = False
+        stats = (
+            db.session
+            .query(func.min(Item.start_date).label('start_date'),
+                   func.max(Item.start_date).label('end_date'))
+            .filter(Item.collection_id == cube.id)
+            .first()
+        )
+        if stats:
+            dump_cube['start_date'] = stats.start_date
+            dump_cube['end_date'] = stats.end_date
 
         return dump_cube, 200
 
@@ -406,7 +425,7 @@ class CubeController:
         features = db.session.query(
             Item.tile_id,
             Tile,
-            func.ST_AsGeoJSON(Item.geom, 6, 3).cast(sqlalchemy.JSON).label('geom')
+            func.ST_AsGeoJSON(Item.bbox, 6, 3).cast(sqlalchemy.JSON).label('geom')
         ).distinct(Item.tile_id).filter(Item.collection_id == cube_id, Item.tile_id == Tile.id).all()
 
         return [feature.Tile.name if only_ids else feature.geom for feature in features], 200
@@ -434,7 +453,8 @@ class CubeController:
         return dict(ok=True)
 
     @classmethod
-    def check_for_invalid_merges(cls, cube_id: str, tile_id: str, start_date: str, end_date: str) -> Tuple[dict, int]:
+    def check_for_invalid_merges(cls, cube_id: str, tile_id: str, start_date: str,
+                                 end_date: str) -> Tuple[dict, int]:
         """List merge files used in data cube and check for invalid scenes.
 
         Args:
@@ -452,8 +472,9 @@ class CubeController:
             raise NotFound('Cube {} not found'.format(cube_id))
 
         # TODO validate schema to avoid start/end too abroad
+        identity = cube.composite_function.alias == IDENTITY
 
-        res = Activity.list_merge_files(cube.name, tile_id, start_date[:10], end_date[:10])
+        res = Activity.list_merge_files(cube.name, tile_id, start_date[:10], end_date[:10], identity)
 
         result = validate_merges(res)
 
@@ -497,9 +518,7 @@ class CubeController:
         response = dict(**cube_params.metadata_)
 
         if activity is not None:
-            # TODO: Remove this activity dataset retrieval.
-            # This is a workaround for deal with Cube Builder legacy versions. Will be removed soon
-            response['collections'] = activity.args.get('dataset', activity.args.get('datasets'))
+            response['collections'] = activity.args['datasets']
 
         return response, 200
 
@@ -612,7 +631,7 @@ class CubeController:
             xmin, ymin, xmax, ymax = [float(coord) for coord in bbox.split(',')]
             where.append(
                 func.ST_Intersects(
-                    func.ST_SetSRID(Item.geom, 4326), func.ST_MakeEnvelope(xmin, ymin, xmax, ymax, 4326)
+                    func.ST_SetSRID(Item.bbox, 4326), func.ST_MakeEnvelope(xmin, ymin, xmax, ymax, 4326)
                 )
             )
 
@@ -623,8 +642,8 @@ class CubeController:
         result = []
         for item in paginator.items:
             obj = Serializer.serialize(item)
-            obj['geom'] = None
-            obj['min_convex_hull'] = None
+            obj['bbox'] = None
+            obj['footprint'] = None
             obj['tile_id'] = item.tile.name
             if item.assets.get('thumbnail'):
                 obj['quicklook'] = item.assets['thumbnail']['href']

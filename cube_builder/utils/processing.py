@@ -51,8 +51,8 @@ from rio_cogeo.profiles import cog_profiles
 from ..config import Config
 # Constant to define required bands to generate both NDVI and EVI
 from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
-                         DATASOURCE_NAME, PNG_MIME_TYPE, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA,
-                         TOTAL_OBSERVATION_NAME)
+                         DATASOURCE_NAME, IDENTITY, PNG_MIME_TYPE, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME,
+                         SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_NAME)
 # Builder
 from . import get_srid_column
 from .index_generator import generate_band_indexes
@@ -167,7 +167,7 @@ class DataCubeFragments(list):
         TODO: Add reference to document User Guide - Convention Data Cube Names
         """
         if len(self) < 4:
-            return 'IDT'
+            return IDENTITY
 
         return self[-1]
 
@@ -181,7 +181,7 @@ def get_cube_id(datacube: str, func=None):
     """Prepare data cube name based on temporal function."""
     cube_fragments = get_cube_parts(datacube)
 
-    if not func or func.upper() == 'IDT':
+    if not func or func.upper() == IDENTITY:
         return f"{'_'.join(cube_fragments[:2])}"
 
     # Ensure that data cube with composite function must have a
@@ -1058,7 +1058,7 @@ def _item_prefix(absolute_path: Path, data_dir: str = None) -> Path:
 
 
 def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_data_cube=None,
-                     srid=SRID_ALBERS_EQUAL_AREA, data_dir=None, **kwargs):
+                     srid=SRID_ALBERS_EQUAL_AREA, data_dir=None, generate_index=True, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
     data_dir = data_dir or Config.DATA_DIR

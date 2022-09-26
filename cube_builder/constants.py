@@ -18,6 +18,7 @@
 
 """Define the Brazil Data Cube Builder constants."""
 
+IDENTITY = 'IDT'
 
 CLEAR_OBSERVATION_NAME = 'CLEAROB'
 

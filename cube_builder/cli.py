@@ -23,6 +23,7 @@ from bdc_catalog.models import CompositeFunction, Processor, db
 from flask.cli import FlaskGroup, with_appcontext
 
 from . import create_app
+from .constants import IDENTITY
 from .controller import CubeController
 from .models import CubeParameters
 from .version import __version__
@@ -55,7 +56,7 @@ def load_data():
         _, _ = get_or_create_model(
             CompositeFunction,
             defaults=dict(name='Identity', description=''),
-            alias='IDT'
+            alias=IDENTITY
         )
 
         where = dict(

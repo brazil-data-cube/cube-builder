@@ -22,6 +22,8 @@ from bdc_auth_client.decorators import oauth2
 from flask import Blueprint, jsonify, request
 
 # Cube Builder
+from werkzeug.exceptions import abort
+
 from .celery.utils import list_queues
 from .config import Config
 from .controller import CubeController
@@ -138,16 +140,16 @@ def update_cube_parameters(cube_id, **kwargs):
     return jsonify(message), status_code
 
 
-@bp.route('/cubes/<cube_id>/tiles/geom', methods=['GET'])
+@bp.route('/cubes/<int:cube_id>/tiles/geom', methods=['GET'])
 @oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_tiles_as_features(cube_id, **kwargs):
     """List all tiles as GeoJSON feature."""
-    message, status_code = CubeController.list_tiles_cube(cube_id)
+    message, status_code = CubeController.list_tiles_cube(int(cube_id))
 
     return jsonify(message), status_code
 
 
-@bp.route('/cubes/<cube_id>/items', methods=['GET'])
+@bp.route('/cubes/<int:cube_id>/items', methods=['GET'])
 @oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_cube_items(cube_id, **kwargs):
     """List all data cube items."""
@@ -165,7 +167,7 @@ def list_cube_items(cube_id, **kwargs):
     return jsonify(message), status_code
 
 
-@bp.route('/cubes/<cube_id>/meta', methods=['GET'])
+@bp.route('/cubes/<int:cube_id>/meta', methods=['GET'])
 @oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def get_cube_meta(cube_id, **kwargs):
     """Retrieve the meta information of a data cube such STAC provider used, collection, etc."""
@@ -204,7 +206,12 @@ def list_merges(**kwargs):
 
     Expects a JSON that matches with ``DataCubeProcessForm``.
     """
-    args = request.args
+    args = request.args.to_dict()
+    if not args.get('cube_id'):
+        abort(400, 'Missing "cube_id" parameter')
+
+    if args['cube_id'].isnumeric():
+        args['cube_id'] = int(args['cube_id'])
 
     res = CubeController.check_for_invalid_merges(**args)
 

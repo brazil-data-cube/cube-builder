@@ -41,7 +41,7 @@ from stac import STAC
 # Cube Builder
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
-from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
+from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, IDENTITY, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from .models import CubeParameters
 from .utils import get_srid_column
 from .utils.processing import get_cube_id, get_or_create_activity
@@ -212,7 +212,7 @@ class Maestro:
         dstart = self.params['start_date']
         dend = self.params['end_date']
 
-        if self.datacube.composite_function.alias == 'IDT':
+        if self.datacube.composite_function.alias == IDENTITY:
             timeline = [[dstart, dend]]
         else:
             if self.datacube.composite_function.alias == 'STK':
@@ -315,8 +315,8 @@ class Maestro:
                 if reused_datacube is None:
                     raise RuntimeError(f'Data cube {self.properties["reuse_from"]} not found.')
 
-                if reused_datacube.composite_function.alias != 'IDT':
-                    raise RuntimeError(f'Data cube {self.properties["reuse_from"]} must be IDT.')
+                if reused_datacube.composite_function.alias != IDENTITY:
+                    raise RuntimeError(f'Data cube {self.properties["reuse_from"]} must be {IDENTITY}.')
 
                 if reused_datacube.grid_ref_sys_id != self.datacube.grid_ref_sys_id:
                     raise RuntimeError(
@@ -362,7 +362,7 @@ class Maestro:
 
             quality_band = None
             stac_kwargs = self.properties.get('stac_kwargs', dict())
-            if self.datacube.composite_function.alias != 'IDT':
+            if self.properties.get('quality_band'):
                 quality_band = self.properties['quality_band']
 
                 quality = next(filter(lambda b: b.name == quality_band, bands))
@@ -398,7 +398,7 @@ class Maestro:
 
                     assets_by_period = self.search_images(shapely.geometry.mapping(feature), start, end, tileid, **stac_kwargs)
 
-                    if self.datacube.composite_function.alias == 'IDT':
+                    if self.datacube.composite_function.alias == IDENTITY:
                         stats_bands = [TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME]
 
                         stats_bands.extend([b.name for b in bands if b.name not in stats_bands and _has_default_or_index_bands(b)])

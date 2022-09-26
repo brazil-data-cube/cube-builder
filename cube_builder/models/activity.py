@@ -52,17 +52,22 @@ class Activity(BaseModel):
     @classmethod
     def list_merge_files(cls, collection: str, tile: str,
                          start_date: Union[str, datetime],
-                         end_date: Union[str, datetime]) -> ResultProxy:
+                         end_date: Union[str, datetime],
+                         identity: bool = False) -> ResultProxy:
         """List all merge files used in data cube generation."""
+        field = 'collection_id'
+        if identity:
+            field = 'warped_collection_id'
         sql = """
         SELECT id, tile_id, band, date::VARCHAR as date, collection_id, args->>'file' AS file, args->'dataset'::VARCHAR AS data_set, (elem->>'link')::VARCHAR as link, status, traceback::TEXT
           FROM cube_builder.activities
          CROSS JOIN json_array_elements(args->'assets') elem
-         WHERE collection_id = '{}'
+         WHERE {} = '{}'
            AND tile_id = '{}'
            AND date BETWEEN '{}'::DATE AND '{}'::DATE
          ORDER BY id
         """.format(
+            field,
             collection,
             tile,
             start_date,
