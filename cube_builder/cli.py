@@ -19,10 +19,11 @@
 """Create a python click context and inject it to the global flask commands."""
 
 import click
-from bdc_catalog.models import Application, CompositeFunction, db
+from bdc_catalog.models import CompositeFunction, Processor, db
 from flask.cli import FlaskGroup, with_appcontext
 
 from . import create_app
+from .constants import IDENTITY
 from .controller import CubeController
 from .models import CubeParameters
 from .version import __version__
@@ -55,7 +56,7 @@ def load_data():
         _, _ = get_or_create_model(
             CompositeFunction,
             defaults=dict(name='Identity', description=''),
-            alias='IDT'
+            alias=IDENTITY
         )
 
         where = dict(
@@ -65,8 +66,12 @@ def load_data():
 
         # Cube-Builder application
         application, _ = get_or_create_model(
-            Application,
-            defaults=dict(),
+            Processor,
+            defaults=dict(
+                facility='BDC - INPE',
+                level="",  # TODO: Should it have a level processor?
+                uri='https://github.com/brazil-data-cube/cube-builder.git',
+            ),
             **where
         )
 

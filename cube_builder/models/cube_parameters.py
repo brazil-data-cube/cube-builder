@@ -24,6 +24,7 @@ from bdc_catalog.models.base_sql import BaseModel
 from sqlalchemy.orm import relationship
 
 from cube_builder.config import Config
+from cube_builder.constants import IDENTITY
 
 
 class CubeParameters(BaseModel):
@@ -57,7 +58,7 @@ class CubeParameters(BaseModel):
 
     def validate(self):
         """Validate minimal properties for metadata field."""
-        if self.cube.composite_function.alias != 'IDT':
+        if self.cube.composite_function.alias != IDENTITY:
             self._require_property('mask')
             self._require_property('quality_band')
         self._check_reuse_cube()

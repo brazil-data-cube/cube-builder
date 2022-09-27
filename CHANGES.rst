@@ -20,6 +20,15 @@
 Changes
 =======
 
+
+Version 1.0.0a1 (2022-09-27)
+----------------------------
+
+- Add integration with BDC-Catalog 1.0 `#233 <https://github.com/brazil-data-cube/cube-builder/issues/233>`_.
+- Add support to generate datacube from Sentinel-2 Zip (experimental) `#222 <https://github.com/brazil-data-cube/cube-builder/issues/222>`_.
+- Improve docs setup
+
+
 Version 0.8.2 (2022-09-21)
 --------------------------
 

@@ -46,6 +46,8 @@ Compatibility
 +--------------+-------------+
 | Cube-Builder | BDC-Catalog |
 +==============+=============+
+| 1.0.x        | 1.0.0       |
++--------------+-------------+
 | 0.8.x        | 0.8.2       |
 +--------------+-------------+
 | 0.4.x, 0.6.x | 0.8.1       |
@@ -196,12 +198,14 @@ You may need to replace the definition of some parameters:
     The command line ``cube-builder worker`` is an auxiliary tool that wraps celery command line
     using ``cube_builder`` as context. In this way, all ``celery worker`` parameters are currently supported.
     See more in `Celery Workers Guide <https://docs.celeryproject.org/en/stable/userguide/workers.html>`_.
+    If you keep parameters ``WORK_DIR`` and ``DATA_DIR``, just make sure its writable in order to works, otherwise,
+    you may see issues related ``Permission Denied``.
 
 
 .. warning::
 
     The ``Cube Builder`` can use a lot of memory for each concurrent process, since it opens multiple images in memory.
-    You can limit the concurrent processes in order to prevent it.
+    You can limit the concurrent processes with ``--concurrency NUMBER`` in order to prevent it.
 
 
 .. rubric:: Footnotes

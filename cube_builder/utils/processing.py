@@ -38,7 +38,6 @@ import requests
 import shapely
 import shapely.geometry
 from bdc_catalog.models import Collection, Item, SpatialRefSys, Tile, db
-from bdc_catalog.utils import multihash_checksum_sha256
 from flask import abort
 from geoalchemy2 import func
 from geoalchemy2.shape import from_shape, to_shape
@@ -51,11 +50,12 @@ from rio_cogeo.profiles import cog_profiles
 from ..config import Config
 # Constant to define required bands to generate both NDVI and EVI
 from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
-                         DATASOURCE_NAME, PNG_MIME_TYPE, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA,
-                         TOTAL_OBSERVATION_NAME)
+                         DATASOURCE_NAME, IDENTITY, PNG_MIME_TYPE, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME,
+                         SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_NAME)
 # Builder
 from . import get_srid_column
 from .index_generator import generate_band_indexes
+from ..datasets import dataset_from_uri
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 
@@ -166,7 +166,7 @@ class DataCubeFragments(list):
         TODO: Add reference to document User Guide - Convention Data Cube Names
         """
         if len(self) < 4:
-            return 'IDT'
+            return IDENTITY
 
         return self[-1]
 
@@ -180,7 +180,7 @@ def get_cube_id(datacube: str, func=None):
     """Prepare data cube name based on temporal function."""
     cube_fragments = get_cube_parts(datacube)
 
-    if not func or func.upper() == 'IDT':
+    if not func or func.upper() == IDENTITY:
         return f"{'_'.join(cube_fragments[:2])}"
 
     # Ensure that data cube with composite function must have a
@@ -197,7 +197,7 @@ def get_cube_id(datacube: str, func=None):
 
 def get_item_id(datacube: str, version: int, tile: str, date: str) -> str:
     """Prepare a data cube item structure."""
-    version_str = '{0:03d}'.format(version)
+    version_str = '{0:03d}'.format(int(version))
 
     return f'{datacube}_v{version_str}_{tile}_{date}'
 
@@ -327,7 +327,9 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
 
                 _check_rio_file_access(link, access_token=kwargs.get('token'))
 
-                with rasterio.open(link) as src:
+                src = dataset_from_uri(link, band=band)
+
+                with src:
                     meta = src.meta.copy()
                     meta.update({
                         'width': cols,
@@ -341,7 +343,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
 
                     if src.profile['nodata'] is not None:
                         source_nodata = src.profile['nodata']
-                    elif 'LC8SR' in dataset:
+                    elif 'LC8SR' in dataset or 'LC8_SR' in dataset:
                         if band != quality_band:
                             # Temporary workaround for landsat
                             # Sometimes, the laSRC does not generate the data set properly and
@@ -359,7 +361,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
                             if shape:
                                 raster = src.read(1)
                             else:
-                                source_array = rasterio.band(src, 1)  # src.read(1)
+                                source_array = rasterio.band(src.dataset, 1)  # src.read(1)
 
                                 reproject(
                                     source=source_array,
@@ -1055,7 +1057,7 @@ def _item_prefix(absolute_path: Path, data_dir: str = None) -> Path:
 
 
 def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_data_cube=None,
-                     srid=SRID_ALBERS_EQUAL_AREA, data_dir=None, **kwargs):
+                     srid=SRID_ALBERS_EQUAL_AREA, data_dir=None, generate_index=True, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
     data_dir = data_dir or Config.DATA_DIR
@@ -1105,20 +1107,14 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
                 tile_id=tile.id,
                 start_date=start_date,
                 end_date=end_date,
+                is_available=False
             )
 
             item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=cube.id)
             item.cloud_cover = cloudratio
 
-            assets = deepcopy(item.assets) or dict()
-            assets.update(
-                thumbnail=create_asset_definition(
-                    href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)),
-                    mime_type=PNG_MIME_TYPE,
-                    role=['thumbnail'],
-                    absolute_path=str(quick_look_file)
-                )
-            )
+            item.add_asset('thumbnail', file=str(quick_look_file), role=['thumbnail'],
+                           href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)))
 
             relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
             target_publish_dir = Path(data_dir) / relative_work_dir_file.parent
@@ -1133,8 +1129,8 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
             item.start_date = start_date
             item.end_date = end_date
 
-            extent = to_shape(item.geom) if item.geom else None
-            min_convex_hull = to_shape(item.min_convex_hull) if item.min_convex_hull else None
+            bbox = to_shape(item.bbox) if item.bbox else None
+            footprint = to_shape(item.footprint) if item.footprint else None
 
             for band in scenes:
                 band_model = list(filter(lambda b: b.name == band, cube_bands))
@@ -1144,19 +1140,16 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
                     logging.warning('Band {} of {} does not exist on database. Skipping'.format(band, cube.id))
                     continue
 
-                if extent is None:
-                    extent = raster_extent(str(scenes[band][composite_function]))
+                if bbox is None:
+                    bbox = raster_extent(str(scenes[band][composite_function]))
 
-                if min_convex_hull is None:
-                    min_convex_hull = raster_convexhull(str(scenes[band][composite_function]))
+                if footprint is None:
+                    footprint = raster_convexhull(str(scenes[band][composite_function]))
 
-                assets[band_model[0].name] = create_asset_definition(
-                    href=str(_item_prefix(scenes[band][composite_function], data_dir=data_dir)),
-                    mime_type=COG_MIME_TYPE,
-                    role=['data'],
-                    absolute_path=str(scenes[band][composite_function]),
-                    is_raster=True
-                )
+                item.add_asset(band_model[0].name, file=str(scenes[band][composite_function]), role=['data'],
+                               href=str(_item_prefix(scenes[band][composite_function], data_dir=data_dir)),
+                               mime_type=COG_MIME_TYPE,
+                               is_raster=True)
 
                 destination_file = target_publish_dir / Path(scenes[band][composite_function]).name
 
@@ -1166,11 +1159,11 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
                     str(destination_file) # target
                 ))
 
-            item.assets = assets
             item.srid = srid
-            if min_convex_hull.area > 0.0:
-                item.min_convex_hull = from_shape(min_convex_hull, srid=4326, extended=True)
-            item.geom = from_shape(extent, srid=4326, extended=True)
+            if footprint.area > 0.0:
+                item.footprint = from_shape(footprint, srid=4326, extended=True)
+            item.bbox = from_shape(bbox, srid=4326, extended=True)
+            item.save(commit=False)
 
         db.session.commit()
 
@@ -1228,24 +1221,17 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
             tile_id=tile.id,
             start_date=date,
             end_date=date,
+            is_available=False
         )
 
         item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=datacube.id)
         item.cloud_cover = scenes.get('cloudratio', 0)
 
-        extent = to_shape(item.geom) if item.geom else None
-        min_convex_hull = to_shape(item.min_convex_hull) if item.min_convex_hull else None
+        bbox = to_shape(item.bbox) if item.bbox else None
+        footprint = to_shape(item.footprint) if item.footprint else None
 
-        assets = deepcopy(item.assets) or dict()
-
-        assets.update(
-            thumbnail=create_asset_definition(
-                href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)),
-                mime_type=PNG_MIME_TYPE,
-                role=['thumbnail'],
-                absolute_path=str(quick_look_file)
-            )
-        )
+        item.add_asset('thumbnail', file=str(quick_look_file), role=['thumbnail'],
+                       href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)))
 
         relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
         target_publish_dir = Path(data_dir) / relative_work_dir_file.parent
@@ -1268,19 +1254,15 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
                 logging.warning('Band {} of {} does not exist on database'.format(band, datacube.id))
                 continue
 
-            if extent is None:
-                extent = raster_extent(str(scenes['ARDfiles'][band]))
+            if bbox is None:
+                bbox = raster_extent(str(scenes['ARDfiles'][band]))
 
-            if min_convex_hull is None:
-                min_convex_hull = raster_convexhull(str(scenes['ARDfiles'][band]))
+            if footprint is None:
+                footprint = raster_convexhull(str(scenes['ARDfiles'][band]))
 
-            assets[band_model[0].name] = create_asset_definition(
-                href=str(_item_prefix(scenes['ARDfiles'][band], data_dir=data_dir)),
-                mime_type=COG_MIME_TYPE,
-                role=['data'],
-                absolute_path=str(scenes['ARDfiles'][band]),
-                is_raster=True
-            )
+            item.add_asset(band_model[0].name, file=str(scenes['ARDfiles'][band]),
+                           href=str(_item_prefix(scenes['ARDfiles'][band], data_dir=data_dir)),
+                           role=['data'], mime_type=COG_MIME_TYPE, is_raster=True)
 
             destination_file = target_publish_dir / Path(scenes['ARDfiles'][band]).name
 
@@ -1291,10 +1273,10 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
             ))
 
         item.srid = srid
-        item.geom = from_shape(extent, srid=4326, extended=True)
-        if min_convex_hull.area > 0.0:
-            item.min_convex_hull = from_shape(min_convex_hull, srid=4326, extended=True)
-        item.assets = assets
+        item.bbox = from_shape(bbox, srid=4326, extended=True)
+        if footprint.area > 0.0:
+            item.footprint = from_shape(footprint, srid=4326, extended=True)
+        item.save(commit=False)
 
     db.session.commit()
 
@@ -1465,7 +1447,7 @@ def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band
 
     fragments = DataCubeFragments(datacube)
 
-    version_str = 'v{0:03d}'.format(version)
+    version_str = 'v{0:03d}'.format(int(version))
 
     file_name = get_item_id(datacube, version, tile_id, period)
 
@@ -1483,55 +1465,6 @@ def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band
     return Path(prefix) / folder / datacube / version_str / tile_id / date / file_name
 
 
-def create_asset_definition(href: str, mime_type: str, role: List[str], absolute_path: str,
-                            created=None, is_raster=False):
-    """Create a valid asset definition for collections.
-
-    TODO: Generate the asset for `Item` field with all bands
-
-    Args:
-        href - Relative path to the asset
-        mime_type - Asset Mime type str
-        role - Asset role. Available values are: ['data'], ['thumbnail']
-        absolute_path - Absolute path to the asset. Required to generate check_sum
-        created - Date time str of asset. When not set, use current timestamp.
-        is_raster - Flag to identify raster. When set, `raster_size` and `chunk_size` will be set to the asset.
-    """
-    fmt = '%Y-%m-%dT%H:%M:%S'
-    _now_str = datetime.utcnow().strftime(fmt)
-
-    if created is None:
-        created = _now_str
-    elif isinstance(created, datetime):
-        created = created.strftime(fmt)
-
-    asset = {
-        'href': str(href),
-        'type': mime_type,
-        'bdc:size': Path(absolute_path).stat().st_size,
-        'checksum:multihash': multihash_checksum_sha256(str(absolute_path)),
-        'roles': role,
-        'created': created,
-        'updated': _now_str
-    }
-
-    if is_raster:
-        with rasterio.open(str(absolute_path)) as data_set:
-            asset['bdc:raster_size'] = dict(
-                x=data_set.shape[1],
-                y=data_set.shape[0],
-            )
-
-            chunk_x, chunk_y = data_set.profile.get('blockxsize'), data_set.profile.get('blockxsize')
-
-            if chunk_x is None or chunk_x is None:
-                return asset
-
-            asset['bdc:chunk_size'] = dict(x=chunk_x, y=chunk_y)
-
-    return asset
-
-
 def save_as_cog(destination: str, raster, mode='w', tags=None, block_size=None, **profile):
     """Save the raster file as Cloud Optimized GeoTIFF.
 
@@ -1543,6 +1476,7 @@ def save_as_cog(destination: str, raster, mode='w', tags=None, block_size=None, 
         raster: Numpy raster values to persist in disk
         mode: Default rasterio mode. Default is 'w' but you also can set 'r+'.
         tags: Tag values (Dict[str, str]) to write on dataset.
+        block_size: The Rasterio Block Size
         **profile: Rasterio profile values to add in dataset.
     """
     with rasterio.open(str(destination), mode, **profile) as dataset:

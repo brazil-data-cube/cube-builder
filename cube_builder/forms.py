@@ -26,6 +26,8 @@ from marshmallow_sqlalchemy import auto_field
 from marshmallow_sqlalchemy.schema import SQLAlchemyAutoSchema
 from rasterio.dtypes import dtype_ranges
 
+from cube_builder.constants import IDENTITY
+
 
 class CollectionForm(SQLAlchemyAutoSchema):
     """Form definition for Model Collection."""
@@ -35,7 +37,7 @@ class CollectionForm(SQLAlchemyAutoSchema):
 
         model = Collection
         sqla_session = db.session
-        exclude = ('extent', )
+        exclude = ('spatial_extent', )
 
 
 class GridRefSysForm(SQLAlchemyAutoSchema):
@@ -155,7 +157,7 @@ class DataCubeForm(Schema):
             if band_index['name'] in band_names:
                 raise ValidationError(f'Duplicated band name in indices {band_index["name"]}')
 
-        if data['composite_function'] != 'IDT' and data.get('quality_band') is None:
+        if data['composite_function'] != IDENTITY and data.get('quality_band') is None:
             raise ValidationError(f'Quality band is required for {data["composite_function"]}.')
 
         if 'quality_band' in data and data.get('quality_band') is not None:
