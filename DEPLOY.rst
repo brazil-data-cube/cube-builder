@@ -35,6 +35,8 @@ Before deploy/install ``Cube-Builder``, please, take a look into compatibility t
 +--------------+-------------+
 | Cube-Builder | BDC-Catalog |
 +==============+=============+
+| 1.0.x        | 1.0.0       |
++--------------+-------------+
 | 0.8.x        | 0.8.2       |
 +--------------+-------------+
 | 0.4.x, 0.6.x | 0.8.1       |

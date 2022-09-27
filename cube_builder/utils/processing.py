@@ -38,7 +38,6 @@ import requests
 import shapely
 import shapely.geometry
 from bdc_catalog.models import Collection, Item, SpatialRefSys, Tile, db
-from bdc_catalog.utils import multihash_checksum_sha256
 from flask import abort
 from geoalchemy2 import func
 from geoalchemy2.shape import from_shape, to_shape
@@ -1114,15 +1113,8 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
             item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=cube.id)
             item.cloud_cover = cloudratio
 
-            assets = deepcopy(item.assets) or dict()
-            assets.update(
-                thumbnail=create_asset_definition(
-                    href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)),
-                    mime_type=PNG_MIME_TYPE,
-                    role=['thumbnail'],
-                    absolute_path=str(quick_look_file)
-                )
-            )
+            item.add_asset('thumbnail', file=str(quick_look_file), role=['thumbnail'],
+                           href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)))
 
             relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
             target_publish_dir = Path(data_dir) / relative_work_dir_file.parent
@@ -1154,13 +1146,10 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
                 if footprint is None:
                     footprint = raster_convexhull(str(scenes[band][composite_function]))
 
-                assets[band_model[0].name] = create_asset_definition(
-                    href=str(_item_prefix(scenes[band][composite_function], data_dir=data_dir)),
-                    mime_type=COG_MIME_TYPE,
-                    role=['data'],
-                    absolute_path=str(scenes[band][composite_function]),
-                    is_raster=True
-                )
+                item.add_asset(band_model[0].name, file=str(scenes[band][composite_function]), role=['data'],
+                               href=str(_item_prefix(scenes[band][composite_function], data_dir=data_dir)),
+                               mime_type=COG_MIME_TYPE,
+                               is_raster=True)
 
                 destination_file = target_publish_dir / Path(scenes[band][composite_function]).name
 
@@ -1170,11 +1159,11 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
                     str(destination_file) # target
                 ))
 
-            item.assets = assets
             item.srid = srid
             if footprint.area > 0.0:
                 item.footprint = from_shape(footprint, srid=4326, extended=True)
             item.bbox = from_shape(bbox, srid=4326, extended=True)
+            item.save(commit=False)
 
         db.session.commit()
 
@@ -1241,16 +1230,8 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
         bbox = to_shape(item.bbox) if item.bbox else None
         footprint = to_shape(item.footprint) if item.footprint else None
 
-        assets = deepcopy(item.assets) or dict()
-
-        assets.update(
-            thumbnail=create_asset_definition(
-                href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)),
-                mime_type=PNG_MIME_TYPE,
-                role=['thumbnail'],
-                absolute_path=str(quick_look_file)
-            )
-        )
+        item.add_asset('thumbnail', file=str(quick_look_file), role=['thumbnail'],
+                       href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)))
 
         relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
         target_publish_dir = Path(data_dir) / relative_work_dir_file.parent
@@ -1279,13 +1260,9 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
             if footprint is None:
                 footprint = raster_convexhull(str(scenes['ARDfiles'][band]))
 
-            assets[band_model[0].name] = create_asset_definition(
-                href=str(_item_prefix(scenes['ARDfiles'][band], data_dir=data_dir)),
-                mime_type=COG_MIME_TYPE,
-                role=['data'],
-                absolute_path=str(scenes['ARDfiles'][band]),
-                is_raster=True
-            )
+            item.add_asset(band_model[0].name, file=str(scenes['ARDfiles'][band]),
+                           href=str(_item_prefix(scenes['ARDfiles'][band], data_dir=data_dir)),
+                           role=['data'], mime_type=COG_MIME_TYPE, is_raster=True)
 
             destination_file = target_publish_dir / Path(scenes['ARDfiles'][band]).name
 
@@ -1299,7 +1276,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
         item.bbox = from_shape(bbox, srid=4326, extended=True)
         if footprint.area > 0.0:
             item.footprint = from_shape(footprint, srid=4326, extended=True)
-        item.assets = assets
+        item.save(commit=False)
 
     db.session.commit()
 
@@ -1488,55 +1465,6 @@ def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band
     return Path(prefix) / folder / datacube / version_str / tile_id / date / file_name
 
 
-def create_asset_definition(href: str, mime_type: str, role: List[str], absolute_path: str,
-                            created=None, is_raster=False):
-    """Create a valid asset definition for collections.
-
-    TODO: Generate the asset for `Item` field with all bands
-
-    Args:
-        href - Relative path to the asset
-        mime_type - Asset Mime type str
-        role - Asset role. Available values are: ['data'], ['thumbnail']
-        absolute_path - Absolute path to the asset. Required to generate check_sum
-        created - Date time str of asset. When not set, use current timestamp.
-        is_raster - Flag to identify raster. When set, `raster_size` and `chunk_size` will be set to the asset.
-    """
-    fmt = '%Y-%m-%dT%H:%M:%S'
-    _now_str = datetime.utcnow().strftime(fmt)
-
-    if created is None:
-        created = _now_str
-    elif isinstance(created, datetime):
-        created = created.strftime(fmt)
-
-    asset = {
-        'href': str(href),
-        'type': mime_type,
-        'bdc:size': Path(absolute_path).stat().st_size,
-        'checksum:multihash': multihash_checksum_sha256(str(absolute_path)),
-        'roles': role,
-        'created': created,
-        'updated': _now_str
-    }
-
-    if is_raster:
-        with rasterio.open(str(absolute_path)) as data_set:
-            asset['bdc:raster_size'] = dict(
-                x=data_set.shape[1],
-                y=data_set.shape[0],
-            )
-
-            chunk_x, chunk_y = data_set.profile.get('blockxsize'), data_set.profile.get('blockxsize')
-
-            if chunk_x is None or chunk_x is None:
-                return asset
-
-            asset['bdc:chunk_size'] = dict(x=chunk_x, y=chunk_y)
-
-    return asset
-
-
 def save_as_cog(destination: str, raster, mode='w', tags=None, block_size=None, **profile):
     """Save the raster file as Cloud Optimized GeoTIFF.
 
@@ -1548,6 +1476,7 @@ def save_as_cog(destination: str, raster, mode='w', tags=None, block_size=None, 
         raster: Numpy raster values to persist in disk
         mode: Default rasterio mode. Default is 'w' but you also can set 'r+'.
         tags: Tag values (Dict[str, str]) to write on dataset.
+        block_size: The Rasterio Block Size
         **profile: Rasterio profile values to add in dataset.
     """
     with rasterio.open(str(destination), mode, **profile) as dataset:
