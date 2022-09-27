@@ -30,7 +30,7 @@ from celery import chain, group
 
 # Cube Builder
 from ..config import Config
-from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
+from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, IDENTITY
 from ..models import Activity
 from ..utils import get_srid_column
 from ..utils.image import check_file_integrity, create_empty_raster, match_histogram_with_merges
@@ -385,7 +385,7 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
     datacube = activity_list[0]['datacube']
 
     # For IDENTITY data cube trigger, just publish
-    if DataCubeFragments(datacube).composite_function == 'IDT':
+    if DataCubeFragments(datacube).composite_function == IDENTITY:
         task = publish.s(list(activities.values()), reuse_data_cube=reuse_data_cube, band_map=band_map, **kwargs)
         return task.apply_async()
 
@@ -473,7 +473,7 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
     quality_blend = dict(efficacy=100, cloudratio=0)
 
     for blend_result in blends:
-        if composite_function != 'IDT':
+        if composite_function != IDENTITY:
             blend_files[blend_result['band']] = blend_result['blends']
 
         if blend_result.get('clear_observation_file'):
@@ -489,7 +489,7 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
             blend_files[DATASOURCE_NAME] = {composite_function: blend_result['datasource']}
 
         for merge_date, definition in blend_result['scenes'].items():
-            merges.setdefault(merge_date, dict(datasets=definition.get('datasets', definition.get('dataset')),
+            merges.setdefault(merge_date, dict(datasets=definition['datasets'],
                                                cloudratio=definition['cloudratio'],
                                                ARDfiles=dict()))
             merges[merge_date]['ARDfiles'].update(definition['ARDfiles'])
@@ -506,7 +506,7 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
     if result is not None:
         srid = result.srid
 
-    if composite_function != 'IDT':
+    if composite_function != IDENTITY:
         cloudratio = quality_blend['cloudratio']
 
         # Generate quick looks for cube scenes
