@@ -38,14 +38,11 @@ import requests
 import shapely
 import shapely.geometry
 from bdc_catalog.models import Collection, Item, SpatialRefSys, Tile, db
-from flask import abort
 from geoalchemy2 import func
 from geoalchemy2.shape import from_shape, to_shape
 from numpngw import write_png
 from rasterio import Affine, MemoryFile
 from rasterio.warp import Resampling, reproject
-from rio_cogeo.cogeo import cog_translate
-from rio_cogeo.profiles import cog_profiles
 
 from ..config import Config
 # Constant to define required bands to generate both NDVI and EVI
@@ -54,10 +51,13 @@ from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, C
                          SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_NAME)
 # Builder
 from . import get_srid_column
+from .image import SmartDataSet, generate_cogs, save_as_cog
 from .index_generator import generate_band_indexes
+from .strings import StringFormatter
 from ..datasets import dataset_from_uri
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
+FORMATTER = StringFormatter()
 
 
 def get_rasterio_config() -> dict:
@@ -113,93 +113,20 @@ def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_typ
     )
 
 
-class DataCubeFragments(list):
-    """Parse a data cube name and retrieve their parts.
-
-    A data cube is composed by the following structure:
-    ``Collections_Resolution_TemporalPeriod_CompositeFunction``.
-
-    An IDT data cube does not have TemporalPeriod and CompositeFunction.
-
-    Examples:
-        >>> # Parse Sentinel 2 Monthly MEDIAN
-        >>> cube_parts = DataCubeFragments('S2_10_1M_MED') # ['S2', '10', '1M', 'MED']
-        >>> cube_parts.composite_function
-        ... 'MED'
-        >>> # Parse Sentinel 2 IDENTITY
-        >>> cube_parts = DataCubeFragments('S2_10') # ['S2', '10']
-        >>> cube_parts.composite_function
-        ... 'IDT'
-        >>> DataCubeFragments('S2-10') # ValueError Invalid data cube name
-    """
-
-    def __init__(self, datacube: str):
-        """Construct a Data Cube Fragments parser.
-
-        Exceptions:
-            ValueError when data cube name is invalid.
-        """
-        cube_fragments = self.parse(datacube)
-
-        self.datacube = '_'.join(cube_fragments)
-
-        super(DataCubeFragments, self).__init__(cube_fragments)
-
-    @staticmethod
-    def parse(datacube: str) -> List[str]:
-        """Parse a data cube name."""
-        cube_fragments = datacube.split('_')
-
-        if len(cube_fragments) > 4 or len(cube_fragments) < 2:
-            abort(400, 'Invalid data cube name. "{}"'.format(datacube))
-
-        return cube_fragments
-
-    def __str__(self):
-        """Retrieve the data cube name."""
-        return self.datacube
-
-    @property
-    def composite_function(self):
-        """Retrieve data cube composite function based.
-
-        TODO: Add reference to document User Guide - Convention Data Cube Names
-        """
-        if len(self) < 4:
-            return IDENTITY
-
-        return self[-1]
-
-
-def get_cube_parts(datacube: str) -> DataCubeFragments:
-    """Build a `DataCubeFragments` and validate data cube name policy."""
-    return DataCubeFragments(datacube)
-
-
-def get_cube_id(datacube: str, func=None):
-    """Prepare data cube name based on temporal function."""
-    cube_fragments = get_cube_parts(datacube)
-
-    if not func or func.upper() == IDENTITY:
-        return f"{'_'.join(cube_fragments[:2])}"
-
-    # Ensure that data cube with composite function must have a
-    # temporal resolution
-    if len(cube_fragments) <= 3:
-        raise ValueError('Invalid cube id without temporal resolution. "{}"'.format(datacube))
-
-    # When data cube have temporal resolution (S2_10_1M) use it
-    # Otherwise, just remove last cube part (composite function)
-    cube = datacube if len(cube_fragments) == 3 else '_'.join(cube_fragments[:-1])
-
-    return f'{cube}_{func}'
-
-
-def get_item_id(datacube: str, version: int, tile: str, date: str) -> str:
+def get_item_id(datacube: str, version: int, tile: str, date: str, fmt=None) -> str:
     """Prepare a data cube item structure."""
-    version_str = '{0:03d}'.format(int(version))
+    if fmt is None:
+        fmt = '{datacube:upper}_V{version}_{tile_id}_{start_date}'
 
-    return f'{datacube}_v{version_str}_{tile}_{date}'
+    return FORMATTER.format(
+        fmt,
+        datacube=datacube,
+        version=str(version),
+        version_legacy='{0:03d}'.format(int(version)),
+        tile_id=tile,
+        date=date,
+        start_date=date.replace('-', '')[:8]
+    )
 
 
 def prepare_asset_url(url: str) -> str:
@@ -241,6 +168,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
     resx, resy = kwargs['resx'], kwargs['resy']
     block_size = kwargs.get('block_size')
     shape = kwargs.get('shape', None)
+    transform = None
 
     if native_grid:
         tile_id = kwargs['tile_id']
@@ -474,7 +402,8 @@ def _check_rio_file_access(url: str, access_token: str = None):
 
 
 def post_processing_quality(quality_file: str, bands: List[str], cube: str,
-                            date: str, tile_id, quality_band: str, band_map: dict, version: int, block_size:int=None, datasets=None):
+                            date: str, tile_id, quality_band: str, band_map: dict, version: int,
+                            datasets=None, **kwargs):
     """Stack the merge bands in order to apply a filter on the quality band.
 
     We have faced some issues regarding `nodata` value in spectral bands, which was resulting
@@ -497,7 +426,9 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
          tile_id: Brazil data cube tile identifier
          quality_band: Quality band name
          version: Data cube version
+         datasets: List of related data sets used
     """
+    block_size = kwargs.get('block_size')
     # Get quality profile and chunks
     with rasterio.open(str(quality_file)) as merge_dataset:
         blocks = list(merge_dataset.block_windows())
@@ -526,7 +457,8 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
         nodata_scl = raster_merge[block.row_off: row_offset, block.col_off: col_offset] == nodata
 
         for band in bands_without_quality:
-            band_file = build_cube_path(get_cube_id(cube), date, tile_id, version=version, band=band)
+            band_file = build_cube_path(cube, date, tile_id, version=version, band=band,
+                                        prefix=Config.WORK_DIR, composed=False, **kwargs)
 
             with rasterio.open(str(band_file)) as ds:
                 raster = ds.read(1, window=block)
@@ -542,43 +474,6 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
             raster_merge[block.row_off: row_offset, block.col_off: col_offset][nodata_scl] = nodata
 
     save_as_cog(str(quality_file), raster_merge, block_size=block_size, **profile)
-
-
-class SmartDataSet:
-    """Defines utility class to auto close rasterio data set.
-
-    This class is class helper to avoid memory leak of opened data set in memory.
-    """
-
-    def __init__(self, file_path: str, mode='r', tags=None, **properties):
-        """Initialize SmartDataSet definition and open rasterio data set."""
-        self.path = Path(file_path)
-        self.mode = mode
-        self.dataset = rasterio.open(file_path, mode=mode, **properties)
-        self.tags = tags
-        self.mode = mode
-
-    def __del__(self):
-        """Close dataset on delete object."""
-        self.close()
-
-    def __enter__(self):
-        """Use data set context with operator ``with``."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Close data set on exit with clause."""
-        self.close()
-
-    def close(self):
-        """Close rasterio data set."""
-        if not self.dataset.closed:
-            logging.debug('Closing dataset {}'.format(str(self.path)))
-
-            if self.mode == 'w' and self.tags:
-                self.dataset.update_tags(**self.tags)
-
-            self.dataset.close()
 
 
 def compute_data_set_stats(file_path: str, mask: dict, compute: bool = True) -> Tuple[float, float]:
@@ -601,14 +496,15 @@ def compute_data_set_stats(file_path: str, mask: dict, compute: bool = True) -> 
     return efficacy, cloud_ratio
 
 
-def blend(activity, band_map, quality_band, build_clear_observation=False, block_size=None, reuse_data_cube=None, apply_valid_range=None):
+def blend(activity, band_map, quality_band, build_clear_observation=False, block_size=None,
+          reuse_data_cube=None, apply_valid_range=None, **kwargs):
     """Apply blend and generate raster from activity.
 
     Basically, the blend operation consists in stack all the images (merges) in period. The stack is based in
     best pixel image (Best clear ratio). The cloud pixels are masked with `numpy.ma` module, enabling to apply
     temporal composite function MEDIAN, AVG over these rasters.
 
-    The following example represents a data cube Landsat-8 16 days using function Best Pixel (Stack - STK) and
+    The following example represents a data cube Landsat-8 16 days using function Best Pixel (Stack - LCF) and
     Median (MED) in period of 16 days from 1/1 to 16/1. The images from `10/1` and `15/1` were found and the values as
     described below::
 
@@ -702,6 +598,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     bandlist = []
 
     provenance_merge_map = dict()
+    merges_band_map = {}
 
     for m in sorted(mask_tuples, reverse=True):
         key = m[1]
@@ -720,6 +617,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             raise IOError('FileError while opening {} - {}'.format(filename, e))
 
         filename = scene['ARDfiles'][band]
+        merges_band_map[filename] = key
 
         provenance_merge_map.setdefault(key, None)
 
@@ -766,12 +664,13 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         datacube = reuse_data_cube['name']
         version = reuse_data_cube['version']
 
-    cube_file = build_cube_path(datacube, period, tile_id, version=version, band=band, suffix='.tif')
+    cube_file = build_cube_path(datacube, period, tile_id, version=version, band=band, suffix='.tif',
+                                composed=True, **kwargs)
 
     # Create directory
     cube_file.parent.mkdir(parents=True, exist_ok=True)
 
-    cube_function = DataCubeFragments(datacube).composite_function
+    cube_function = activity['composite_function']
 
     if cube_function == 'MED':
         median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
@@ -779,8 +678,10 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     if build_clear_observation:
         logging.warning('Creating and computing Clear Observation (ClearOb) file...')
 
-        clear_ob_file_path = build_cube_path(datacube, period, tile_id, version=version, band=CLEAR_OBSERVATION_NAME, suffix='.tif')
-        dataset_file_path = build_cube_path(datacube, period, tile_id, version=version, band=DATASOURCE_NAME, suffix='.tif')
+        clear_ob_file_path = build_cube_path(datacube, period, tile_id, version=version,
+                                             band=CLEAR_OBSERVATION_NAME, suffix='.tif', composed=True, **kwargs)
+        dataset_file_path = build_cube_path(datacube, period, tile_id, version=version,
+                                            band=DATASOURCE_NAME, suffix='.tif', composed=True, **kwargs)
 
         clear_ob_profile = profile.copy()
         clear_ob_profile['dtype'] = CLEAR_OBSERVATION_ATTRIBUTES['data_type']
@@ -854,8 +755,8 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask.astype(numpy.uint8)
 
             # Get current observation file name
-            file_name = Path(bandlist[order].name).stem
-            file_date = datetime.strptime(file_name.split('_')[4], '%Y-%m-%d')
+            file_path = bandlist[order].name
+            file_date = datetime.strptime(merges_band_map[file_path], '%Y-%m-%d')
             day_of_year = file_date.timetuple().tm_yday
 
             # Find all no data in destination STACK image
@@ -950,7 +851,8 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         clear_ob_data_set.close()
         logging.warning('Clear Observation (ClearOb) file generated successfully.')
 
-        total_observation_file = build_cube_path(datacube, period, tile_id, version=version, band=TOTAL_OBSERVATION_NAME)
+        total_observation_file = build_cube_path(datacube, period, tile_id, version=version,
+                                                 band=TOTAL_OBSERVATION_NAME, composed=True, **kwargs)
         total_observation_profile = profile.copy()
         total_observation_profile.pop('nodata', None)
         total_observation_profile['dtype'] = 'uint8'
@@ -968,7 +870,8 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         save_as_cog(str(cube_file), stack_raster, block_size=block_size, mode='w', **profile)
 
         if build_clear_observation:
-            provenance_file = build_cube_path(datacube, period, tile_id, version=version, band=PROVENANCE_NAME)
+            provenance_file = build_cube_path(datacube, period, tile_id, version=version,
+                                              band=PROVENANCE_NAME, composed=True, **kwargs)
             provenance_profile = profile.copy()
             provenance_profile.pop('nodata', -1)
             provenance_profile['dtype'] = PROVENANCE_ATTRIBUTES['data_type']
@@ -1056,8 +959,8 @@ def _item_prefix(absolute_path: Path, data_dir: str = None) -> Path:
     return concat_path(Config.ITEM_PREFIX, relative_path)
 
 
-def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_data_cube=None,
-                     srid=SRID_ALBERS_EQUAL_AREA, data_dir=None, generate_index=True, **kwargs):
+def publish_datacube(cube: Collection, bands, tile_id, period, scenes, cloudratio, reuse_data_cube=None,
+                     srid=SRID_ALBERS_EQUAL_AREA, data_dir=None, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
     data_dir = data_dir or Config.DATA_DIR
@@ -1068,17 +971,15 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
         datacube = reuse_data_cube['name']
         version = reuse_data_cube['version']
 
-    cube_parts = get_cube_parts(datacube)
+    format_item_cube = kwargs.get('format_item_cube')
     output = []
 
-    for composite_function in [cube_parts.composite_function]:
-        item_datacube = get_cube_id(datacube, composite_function)
-
-        item_id = get_item_id(item_datacube, version, tile_id, period)
+    for composite_function in [cube.composite_function.alias]:
+        item_id = get_item_id(datacube, version, tile_id, period, fmt=format_item_cube)
 
         cube_bands = cube.bands
 
-        quick_look_file = build_cube_path(item_datacube, period, tile_id, version=version, suffix=None)
+        quick_look_file = build_cube_path(datacube, period, tile_id, version=version, suffix=None, composed=True, **kwargs)
 
         ql_files = []
         for band in bands:
@@ -1087,12 +988,13 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
         quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
         if kwargs.get('with_rgb'):
-            rgb_file = build_cube_path(item_datacube, period, tile_id, version=version, band='RGB')
+            rgb_file = build_cube_path(datacube, period, tile_id, version=version, band='RGB', composed=True, **kwargs)
             generate_rgb(rgb_file, ql_files)
 
         map_band_scene = {name: composite_map[composite_function] for name, composite_map in scenes.items()}
 
-        custom_bands = generate_band_indexes(cube, map_band_scene, period, tile_id, reuse_data_cube=reuse_data_cube)
+        custom_bands = generate_band_indexes(cube, map_band_scene, period, tile_id, reuse_data_cube=reuse_data_cube,
+                                             composed=True, **kwargs)
         for name, file in custom_bands.items():
             scenes[name] = {composite_function: str(file)}
 
@@ -1178,7 +1080,8 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, reuse_dat
     return output
 
 
-def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, srid=SRID_ALBERS_EQUAL_AREA, data_dir=None):
+def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, srid=SRID_ALBERS_EQUAL_AREA,
+                  data_dir=None, **kwargs):
     """Generate quicklook and catalog warped datacube on database.
 
     TODO: Review it with publish_datacube
@@ -1186,14 +1089,16 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
     data_dir = data_dir or Config.DATA_DIR
     cube_name = datacube.name
     cube_version = datacube.version
+
     if reuse_data_cube:
-        cube_name = get_cube_id(reuse_data_cube['name'])
+        cube_name = reuse_data_cube['name']
         cube_version = reuse_data_cube['version']
         reuse_data_cube['name'] = cube_name
 
-    item_id = get_item_id(cube_name, cube_version, tile_id, date)
+    format_item_cube = kwargs.get('format_item_cube')
+    item_id = get_item_id(cube_name, cube_version, tile_id, date, fmt=format_item_cube)
 
-    quick_look_file = build_cube_path(cube_name, date, tile_id, version=cube_version, suffix=None)
+    quick_look_file = build_cube_path(cube_name, date, tile_id, version=cube_version, composed=False, suffix=None, **kwargs)
 
     cube_bands = datacube.bands
     output = []
@@ -1206,7 +1111,8 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
     quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
     # Generate VI
-    custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id, reuse_data_cube=reuse_data_cube)
+    custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id, reuse_data_cube=reuse_data_cube,
+                                         composed=False, **kwargs)
     scenes['ARDfiles'].update(custom_bands)
 
     tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == datacube.grid_ref_sys_id).first()
@@ -1221,7 +1127,6 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
             tile_id=tile.id,
             start_date=date,
             end_date=date,
-            is_available=False
         )
 
         item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=datacube.id)
@@ -1438,18 +1343,74 @@ def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, fl
     return efficacy, not_clear_ratio
 
 
-def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band: str = None, suffix: Union[str, None] = '.tif', prefix=None) -> Path:
-    """Retrieve the path to the Data cube file in Brazil Data Cube Cluster."""
+def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band: str = None,
+                    suffix: Union[str, None] = '.tif', prefix=None,
+                    format_path_cube: str = None,
+                    format_item_cube: str = None,
+                    composed: bool = False,
+                    **kwargs) -> Path:
+    """Retrieve the path to the Data cube file in Brazil Data Cube Cluster.
+
+    The following values are available for ``format_path_cube``:
+
+    - ``datacube``: Data cube name
+    - ``prefix``: Prefix for cubes.
+    - ``path``: Orbit path from tile id (for native BDC Grids).
+    - ``row``: Orbit row from tile id (for native BDC Grids).
+    - ``tile_id``: Same value in variable.
+    - ``year``: String representation of Start Date Year
+    - ``month``: String representation of Start Date Month
+    - ``day``: String representation of Start Date Day
+    - ``version``: Version string using ``V<Value>``.
+    - ``version_legacy``: Legacy string version using the structure ``v{0:03d}`` -> ``v001``.
+    - ``period=period``: String period (Start/End) date.
+    - ``filename``: Entire Item id using value from ``format_item_cube``.
+
+    Args:
+        datacube (str): The data cube base name
+        period (str): String representation for Data Period. It may be ``start_date`` for
+            Identity Data cubes or ``start_date_end_date`` for temporal composing data cube.
+        tile_id (str): The tile identifier as string.
+        version (str): String representation for Collection version.
+        band (Union[str, None]): Attach a band value into path. Defaults to ``None``.
+        suffix (Union[str, None]): Path suffix representing file extension. Defaults to ``.tif``.
+        prefix (str): Path prefix for cubes. Defaults to ``Config.WORK_DIR``.
+        format_path_cube (Optional[str]): Custom format while building data cube path. Defaults
+            to ``{prefix}/{folder}/{datacube:lower}/{version}/{path}/{row}/{year}/{month}/{day}/{filename}``.
+        format_item_cube (Optional[str]): Custom format while building data cube item name. Defaults
+            to ``{datacube:upper}_V{version}_{tile_id}_{start_date}``.
+        composed (bool): Flag to identify cube context (identity or composed). Defaults to ``False``.
+    """
     # Default prefix path is WORK_DIR
     prefix = prefix or Config.WORK_DIR
     folder = 'identity'
-    date = period
-
-    fragments = DataCubeFragments(datacube)
+    if composed:
+        folder = 'composed'
 
     version_str = 'v{0:03d}'.format(int(version))
+    path, row = tile_id[:3], tile_id[-3:]
+    # Manual start date reference
+    year = str(period[:4])
+    month = '{0:02d}'.format(int(period[5:7]))
+    day = '{0:02d}'.format(int(period[8:10]))
 
-    file_name = get_item_id(datacube, version, tile_id, period)
+    fmt_kwargs = dict(
+        datacube=datacube,
+        prefix=prefix,
+        path=path, row=row,
+        tile_id=tile_id,
+        year=year,
+        month=month,
+        day=day,
+        version=f'v{version}',  # New version format
+        version_legacy=version_str,
+        period=period,
+    )
+
+    if format_path_cube is None:
+        format_path_cube = '{prefix}/{folder}/{datacube:lower}/{version}/{path}/{row}/{year}/{month}/{day}/{filename}'
+
+    file_name = get_item_id(datacube, version, tile_id, period, fmt=format_item_cube)
 
     if band is not None:
         file_name = f'{file_name}_{band}'
@@ -1459,79 +1420,10 @@ def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band
 
     file_name = f'{file_name}{suffix}'
 
-    if fragments.composite_function != 'IDT':  # For cube with temporal composition
-        folder = 'composed'
+    fmt_kwargs['filename'] = file_name
+    fmt_kwargs['folder'] = folder
 
-    return Path(prefix) / folder / datacube / version_str / tile_id / date / file_name
-
-
-def save_as_cog(destination: str, raster, mode='w', tags=None, block_size=None, **profile):
-    """Save the raster file as Cloud Optimized GeoTIFF.
-
-    See Also:
-        Cloud Optimized GeoTiff https://gdal.org/drivers/raster/cog.html
-
-    Args:
-        destination: Path to store the data set.
-        raster: Numpy raster values to persist in disk
-        mode: Default rasterio mode. Default is 'w' but you also can set 'r+'.
-        tags: Tag values (Dict[str, str]) to write on dataset.
-        block_size: The Rasterio Block Size
-        **profile: Rasterio profile values to add in dataset.
-    """
-    with rasterio.open(str(destination), mode, **profile) as dataset:
-        if profile.get('nodata'):
-            dataset.nodata = profile['nodata']
-
-        dataset.write_band(1, raster)
-
-        if tags:
-            dataset.update_tags(**tags)
-
-    generate_cogs(str(destination), str(destination), block_size=block_size)
-
-
-def generate_cogs(input_data_set_path, file_path, profile='deflate', block_size=None, profile_options=None, **options):
-    """Generate Cloud Optimized GeoTIFF files (COG).
-
-    Args:
-        input_data_set_path (str) - Path to the input data set
-        file_path (str) - Target data set filename
-        profile (str) - A COG profile based in `rio_cogeo.profiles`.
-        profile_options (dict) - Custom options to the profile.
-        block_size (int) - Custom block size.
-
-    Returns:
-        Path to COG.
-    """
-    if profile_options is None:
-        profile_options = dict()
-
-    output_profile = cog_profiles.get(profile)
-    output_profile.update(dict(BIGTIFF="IF_SAFER"))
-    output_profile.update(profile_options)
-
-    if block_size:
-        output_profile["blockxsize"] = block_size
-        output_profile["blockysize"] = block_size
-
-    # Dataset Open option (see gdalwarp `-oo` option)
-    config = dict(
-        GDAL_NUM_THREADS="ALL_CPUS",
-        GDAL_TIFF_INTERNAL_MASK=True,
-        GDAL_TIFF_OVR_BLOCKSIZE="128",
-    )
-
-    cog_translate(
-        str(input_data_set_path),
-        str(file_path),
-        output_profile,
-        config=config,
-        in_memory=False,
-        quiet=True,
-        **options,
-    )
-    return str(file_path)
+    return Path(FORMATTER.format(format_path_cube, **fmt_kwargs))
 
 
 @contextmanager

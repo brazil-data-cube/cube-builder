@@ -122,6 +122,7 @@ class DataCubeForm(Schema):
     """Define parser for datacube creation."""
 
     datacube = fields.String(required=True, allow_none=False, validate=Regexp('^[a-zA-Z0-9-]*$', error=INVALID_CUBE_NAME))
+    datacube_identity = fields.String(required=False, allow_none=False, validate=Regexp('^[a-zA-Z0-9-]*$', error=INVALID_CUBE_NAME))
     grs = fields.String(required=True, allow_none=False)
     resolution = fields.Integer(required=True, allow_none=False)
     temporal_composition = fields.Dict(required=True, allow_none=False)
@@ -132,12 +133,12 @@ class DataCubeForm(Schema):
     indexes = fields.Nested(BandDefinition, many=True)
     metadata = fields.Dict(required=True, allow_none=True)
     description = fields.String(required=True, allow_none=False)
-    version = fields.Integer(required=True, allow_none=False, default=1)
+    version = fields.Integer(required=True, allow_none=False, dump_default=1)
     title = fields.String(required=True, allow_none=False)
-    # Set cubes as public by default.
-    public = fields.Boolean(required=False, allow_none=False, default=True)
+    # Set cubes as public by dump_default.
+    public = fields.Boolean(required=False, allow_none=False, dump_default=True)
     # Is Data cube generated from Combined Collections?
-    is_combined = fields.Boolean(required=False, allow_none=False, default=False)
+    is_combined = fields.Boolean(required=False, allow_none=False, dump_default=False)
     parameters = fields.Nested(CubeParametersSchema, required=True, allow_none=False, many=False)
 
     @pre_load
@@ -190,7 +191,7 @@ class DataCubeMetadataForm(Schema):
     metadata = fields.Dict(required=False, allow_none=True)
     description = fields.String(required=False, allow_none=False)
     title = fields.String(required=False, allow_none=False)
-    public = fields.Boolean(required=False, allow_none=False, default=True)
+    public = fields.Boolean(required=False, allow_none=False, dump_default=True)
     bands = fields.Nested(BandForm, required=False, many=True)
 
 
@@ -203,15 +204,15 @@ class DataCubeProcessForm(Schema):
     start_date = fields.Date()
     end_date = fields.Date()
     bands = fields.List(fields.String, required=False)
-    force = fields.Boolean(required=False, default=False)
-    with_rgb = fields.Boolean(required=False, default=False)
+    force = fields.Boolean(required=False, dump_default=False)
+    with_rgb = fields.Boolean(required=False, dump_default=False)
     token = fields.String(required=False, allow_none=True)
     stac_url = fields.String(required=False, allow_none=True)
     shape = fields.List(fields.Integer(required=False))
-    block_size = fields.Integer(required=False, default=512)
+    block_size = fields.Integer(required=False, dump_default=512)
     # Reuse data cube from another data cube
     reuse_from = fields.String(required=False, allow_none=True)
-    histogram_matching = fields.Boolean(required=False, default=False)
+    histogram_matching = fields.Boolean(required=False, dump_default=False)
     mask = fields.Dict()
 
 
