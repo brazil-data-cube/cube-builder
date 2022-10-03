@@ -18,7 +18,6 @@
 
 
 """Define Cube Builder business interface."""
-import warnings
 from copy import deepcopy
 from datetime import datetime
 from typing import Tuple, Union
@@ -269,18 +268,9 @@ class CubeController:
             cube_serialized = [cube]
 
             if params['composite_function'] != IDENTITY:
-                step = params['temporal_composition']['step']
-                unit = params['temporal_composition']['unit'][0].upper()
-                temporal_str = f'{step}{unit}'
-
                 if cube_name == cube_identity:
-                    cube_name_composite = f'{cube_name}-{temporal_str}'
-                    warnings.warn(f'Data cube composed {cube_name} with same name of identity {cube_identity}.'
-                                  f'Renaming {cube_name} to {cube_name_composite}. '
-                                  f'It will be deprecated in Cube-Builder 1.0. '
-                                  f'Use the parameters "datacube" and "datacube_identity".',
-                                  DeprecationWarning, stacklevel=2)
-                    cube_name = cube_name_composite
+                    abort(409, f'Duplicated data cube name for cube: '
+                               f'Composed {cube_name} and Identity {cube_identity}')
 
                 # Create data cube with temporal composition
                 cube_composite = cls._create_cube_definition(cube_name, params)
@@ -310,7 +300,7 @@ class CubeController:
             cube.title = params.get('title') or cube.title
             cube._metadata = params.get('metadata') or cube._metadata
             cube.description = params.get('description') or cube.description
-            cube.is_public = params.get('public') or cube.is_public
+            cube.is_available = params.get('is_available') or cube.is_available
 
             if params.get('bands'):
                 band_map = {b.id: b for b in cube.bands}
