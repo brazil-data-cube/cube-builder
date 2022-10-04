@@ -133,9 +133,9 @@ def update_cube_parameters(cube_id, **kwargs):
     """Update the data cube parameters execution."""
     parameters = request.get_json()
 
-    message, status_code = CubeController.configure_parameters(cube_id, **parameters)
+    message = CubeController.configure_parameters(int(cube_id), **parameters)
 
-    return jsonify(message), status_code
+    return jsonify(message)
 
 
 @bp.route('/cubes/<cube_id>/tiles/geom', methods=['GET'])
