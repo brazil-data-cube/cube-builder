@@ -330,13 +330,12 @@ class CubeController:
         ]
         dump_cube['extent'] = None
         dump_cube['grid'] = cube.grs.name
-        dump_cube['composite_function'] = cube.composite_function.name
-        dump_cube['summary'] = cls.summarize(cube)
         dump_cube['composite_function'] = dict(
             name=cube.composite_function.name,
             description=cube.composite_function.description,
             alias=cube.composite_function.alias,
         )
+        dump_cube['summary'] = cls.summarize(cube)
 
         # Retrieve Item Start/End Date
         # This step is required since the default generation trigger
