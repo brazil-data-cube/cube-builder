@@ -1,5 +1,6 @@
 {
-    "datacube": "LC8-TESTE",
+    "datacube": "LC8-16D",
+    "datacube_identity": "LC8",
     "grs": "BDC_MD_TESTE",
     "title": "Landsat-8 OLI Data Cube",
     "resolution": 30,
