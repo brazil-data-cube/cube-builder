@@ -331,7 +331,12 @@ class CubeController:
         ]
         dump_cube['extent'] = None
         dump_cube['grid'] = cube.grs.name
-        dump_cube['composite_function'] = cube.composite_function.name
+        dump_cube['composite_function'] = dict(
+            name=cube.composite_function.name,
+            description=cube.composite_function.description,
+            alias=cube.composite_function.alias,
+        )
+
         dump_cube['summary'] = cls.summarize(cube)
 
         return dump_cube, 200
@@ -461,8 +466,9 @@ class CubeController:
             raise NotFound('Cube {} not found'.format(cube_id))
 
         # TODO validate schema to avoid start/end too abroad
+        identity = cube.composite_function.alias == 'IDT'
 
-        res = Activity.list_merge_files(cube.name, tile_id, start_date[:10], end_date[:10])
+        res = Activity.list_merge_files(cube.name, tile_id, start_date[:10], end_date[:10], identity)
 
         result = validate_merges(res)
 

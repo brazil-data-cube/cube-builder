@@ -119,8 +119,8 @@ class CubeParametersSchema(Schema):
 class DataCubeForm(Schema):
     """Define parser for datacube creation."""
 
-    datacube = fields.String(required=True, allow_none=False, validate=Regexp('^[a-zA-Z0-9-]*$', error=INVALID_CUBE_NAME))
-    datacube_identity = fields.String(required=False, allow_none=False, validate=Regexp('^[a-zA-Z0-9-]*$', error=INVALID_CUBE_NAME))
+    datacube = fields.String(required=True, allow_none=False, validate=Regexp('^[a-zA-Z0-9-_]*$', error=INVALID_CUBE_NAME))
+    datacube_identity = fields.String(required=False, allow_none=False, validate=Regexp('^[a-zA-Z0-9-_]*$', error=INVALID_CUBE_NAME))
     grs = fields.String(required=True, allow_none=False)
     resolution = fields.Integer(required=True, allow_none=False)
     temporal_composition = fields.Dict(required=True, allow_none=False)
