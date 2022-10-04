@@ -126,14 +126,15 @@ The response will have status code ``201`` and the body::
 Creating data cube Landsat-8
 ----------------------------
 
-In order to create data cube ``Landsat-8`` monthly using the composite function ``Least Cloud Cover First`` (`LC8_30_1M_LCF`), use the following command to create data cube metadata::
+In order to create data cube ``Landsat-8`` monthly using the composite function ``Least Cloud Cover First`` (`LC8-1M`), use the following command to create data cube metadata::
 
     curl --location \
          --request POST '127.0.0.1:5000/cubes' \
          --header 'Content-Type: application/json' \
          --data-raw '
     {
-        "datacube": "LC8",
+        "datacube": "LC8-1M",
+        "datacube_identity": "LC8",
         "grs": "BRAZIL_MD",
         "title": "Landsat-8 (OLI) Cube Monthly - v001",
         "resolution": 30,
@@ -230,7 +231,7 @@ Brazil Data Cube environment. If you don't have any account, please, refer to `B
 Once the data cube definition is created, you can trigger a data cube using the following command::
 
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder build LC8_30_1M_LCF \
+    cube-builder build LC8-1M \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=LC8_SR-1 \
         --tiles=011009 \
@@ -244,12 +245,12 @@ Once the data cube definition is created, you can trigger a data cube using the 
 
         # Using curl (Make sure to execute cube-builder run)
         curl --location \
-             --request POST '127.0.0.1:5000/start-cube' \
+             --request POST '127.0.0.1:5000/start' \
              --header 'Content-Type: application/json' \
              --data-raw '{
                 "stac_url": "https://brazildatacube.dpi.inpe.br/stac/",
                 "token": "<USER_BDC_TOKEN>",
-                "datacube": "LC8_30_1M_LCF",
+                "datacube": "LC8-1M",
                 "collections": ["LC8_SR-1"],
                 "tiles": ["011009"],
                 "start_date": "2019-01-01",
@@ -278,7 +279,8 @@ In order to create data cube Sentinel 2, use the following command to create dat
          --header 'Content-Type: application/json' \
          --data-raw '
     {
-        "datacube": "S2",
+        "datacube": "S2-16D",
+        "datacube_identity": "S2",
         "grs": "BRAZIL_SM",
         "title": "Sentinel-2 SR - Cube LCF 16 days -v001",
         "resolution": 10,
@@ -364,11 +366,11 @@ In order to create data cube Sentinel 2, use the following command to create dat
         }
     }'
 
-In order to trigger a data cube, we are going to use a collection `S2_10_16D_LCF-1` made with Surface Reflectance using Sen2Cor::
+In order to trigger a data cube, we are going to use a collection `S2-16-1` made with Surface Reflectance using Sen2Cor::
 
     # Using cube-builder command line
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder build S2_10_16D_LCF \
+    cube-builder build S2-16D \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=S2_L2A-1 \
         --tiles=017019 \
@@ -389,7 +391,8 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
          --header 'Content-Type: application/json' \
          --data-raw '
     {
-        "datacube": "CB4",
+        "datacube": "CB4-16D",
+        "datacube_identity": "CB4",
         "grs": "BRAZIL_LG",
         "title": "CBERS-4 (AWFI) SR - Data Cube LCF 16 days - v001",
         "resolution": 64,
@@ -473,7 +476,7 @@ Trigger data cube generation with following command:
 
     # Using cube-builder command line
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder build CB4_64_16D_LCF \
+    cube-builder build CB4-16D \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=CBERS4_AWFI_L4_SR \
         --tiles=005004 \
@@ -489,10 +492,10 @@ When the ``Cube-Builder`` could not generate data cube for any unknown issue, yo
 with the same command you have dispatched::
 
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder build CB4_64_16D_LCF \
+    cube-builder build CB4-16D \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=CBERS4_AWFI_L4_SR \
-        --tiles=022024 \
+        --tiles=005004 \
         --start=2019-01-01 \
         --end=2019-01-31 \
         --token <USER_BDC_TOKEN>
@@ -500,10 +503,10 @@ with the same command you have dispatched::
 It will reuse most of files that were already processed, executing only the failed tasks. If you notice anything suspicious or want to re-create theses files again, use the option ``--force``::
 
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder build CB4_64_16D_LCF \
+    cube-builder build CB4-16D \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=CBERS4_AWFI_L4_SR \
-        --tiles=022024 \
+        --tiles=005004 \
         --start=2019-01-01 \
         --end=2019-01-31 \
         --token <USER_BDC_TOKEN> \
@@ -515,10 +518,10 @@ Data Cube Parameters
 
 The ``Cube-Builder`` supports a few parameters to be set during the data cube execution.
 
-In order to check the parameters associated with data cube ``CB4_64_16D_STK-1``, use the command::
+In order to check the parameters associated with data cube ``CB4-16D-1``, use the command::
 
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder show-parameters CB4_64_16D_LCF-1
+    cube-builder show-parameters CB4-16D-1
 
 
 The following output represents all the parameters related with the given data cube::
@@ -532,7 +535,7 @@ The following output represents all the parameters related with the given data c
 You can change any parameter with the command ``cube-builder configure`` with ``DataCubeName-Version``::
 
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder configure CB4_64_16D_LCF-1 --stac-url=AnySTAC
+    cube-builder configure CB4-16D-1 --stac-url=AnySTAC
 
 
 .. note::

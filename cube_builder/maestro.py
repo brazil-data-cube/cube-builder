@@ -32,7 +32,7 @@ from typing import List
 import numpy
 import shapely.geometry
 import sqlalchemy
-from bdc_catalog.models import Band, Collection, GridRefSys, Tile, db
+from bdc_catalog.models import Band, Collection, CollectionSRC, GridRefSys, Tile, db
 from celery import chain, group
 from geoalchemy2 import func
 from geoalchemy2.shape import to_shape
@@ -44,7 +44,7 @@ from .config import Config
 from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, IDENTITY, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from .models import CubeParameters
 from .utils import get_srid_column
-from .utils.processing import get_cube_id, get_or_create_activity
+from .utils.processing import get_or_create_activity
 from .utils.timeline import Timeline
 
 
@@ -180,7 +180,11 @@ class Maestro:
 
     def orchestrate(self):
         """Orchestrate datacube defintion and prepare temporal resolutions."""
-        self.datacube = Collection.query().filter(Collection.name == self.params['datacube']).one()
+        self.datacube = (
+            Collection.query()
+            .filter(Collection.name == self.params['datacube'])
+            .first_or_404(f'Cube {self.params["datacube"]} not found.')
+        )
 
         temporal_schema = self.datacube.temporal_composition_schema
 
@@ -331,11 +335,51 @@ class Maestro:
 
                 self._warped = reused_datacube
             else:
-                datacube_warped = get_cube_id(self.datacube.name)
+                source = self.datacube
+                if self.datacube.composite_function.alias != 'IDT':
+                    source = self.source(self.datacube, composite_function='IDT')
+                    if source is None:
+                        raise RuntimeError(f'Missing Identity cube for {self.datacube.name}-{self.datacube.version}')
 
-                self._warped = Collection.query().filter(Collection.name == datacube_warped).first()
+                self._warped = source
 
         return self._warped
+
+    @staticmethod
+    def sources(cube: Collection) -> List[Collection]:
+        """Trace data cube collection origin.
+
+        It traces all the collection origin from the given datacube using
+        ``bdc_catalog.models.CollectionSRC``.
+        """
+        out = []
+        ref = cube
+        while ref is not None:
+            source: CollectionSRC = (
+                CollectionSRC.query()
+                .filter(CollectionSRC.collection_id == ref.id)
+                .first()
+            )
+            if source is None:
+                break
+
+            ref = Collection.query().get(source.collection_src_id)
+            out.append(ref)
+        return out
+
+    @staticmethod
+    def source(cube: Collection, composite_function=None):
+        """Trace the first data cube origin.
+
+        Args:
+            cube (Collection): Data cube to trace.
+            composite_function (str): String composite function to filter.
+        """
+        sources = Maestro.sources(cube)
+        for collection in sources:
+            if (composite_function and collection.composite_function and
+                    collection.composite_function.alias == composite_function):
+                return collection
 
     @property
     def datacube_bands(self) -> List[Band]:

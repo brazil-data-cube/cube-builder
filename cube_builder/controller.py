@@ -24,8 +24,8 @@ from typing import Tuple, Union
 
 # 3rdparty
 import sqlalchemy
-from bdc_catalog.models import (Band, BandSRC, Collection, CompositeFunction, GridRefSys, Item, MimeType, Quicklook,
-                                ResolutionUnit, SpatialRefSys, Tile, db)
+from bdc_catalog.models import (Band, BandSRC, Collection, CollectionSRC, CompositeFunction, GridRefSys, Item, MimeType,
+                                Quicklook, ResolutionUnit, SpatialRefSys, Tile, db)
 from geoalchemy2 import func
 from rasterio.crs import CRS
 from werkzeug.exceptions import NotFound, abort
@@ -38,7 +38,7 @@ from .grids import create_grids
 from .models import Activity, CubeParameters
 from .utils import get_srid_column
 from .utils.image import validate_merges
-from .utils.processing import get_cube_parts, get_or_create_model
+from .utils.processing import get_or_create_model
 from .utils.serializer import Serializer
 from .utils.timeline import Timeline
 
@@ -115,13 +115,13 @@ class CubeController:
         Returns:
             A serialized data cube information.
         """
-        cube_parts = get_cube_parts(cube_id)
+        function = params['composite_function']
 
-        function = cube_parts.composite_function
-
-        cube_id = cube_parts.datacube
-
-        cube = Collection.query().filter(Collection.name == cube_id, Collection.version == str(params['version'])).first()
+        cube = (
+            Collection.query()
+            .filter(Collection.identifier == f'{cube_id}-{params["version"]}')
+            .first()
+        )
 
         grs = GridRefSys.query().filter(GridRefSys.name == params['grs']).first()
 
@@ -166,7 +166,7 @@ class CubeController:
             for band in params['bands']:
                 name = band['name'].strip()
 
-                if name in default_bands:
+                if name.lower() in default_bands:
                     continue
 
                 is_not_cloud = params['quality_band'] != band['name'] if params.get('quality_band') is not None else False
@@ -252,29 +252,36 @@ class CubeController:
         Returns:
              Tuple with serialized cube and HTTP Status code, respectively.
         """
-        cube_name = '{}_{}'.format(
-            params['datacube'],
-            int(params['resolution'])
-        )
+        cube_name = cube_identity = params['datacube']
+        # When custom idt name given, use it.
+        if params.get('datacube_identity'):
+            cube_identity = params['datacube_identity']
 
         params['bands'].extend(params['indexes'])
 
-        with db.session.begin_nested(), db.session.no_autoflush:
+        with db.session.begin_nested():
             # Create data cube Identity
-            cube = cls._create_cube_definition(cube_name, params)
+            identity_params = deepcopy(params)
+            identity_params['composite_function'] = IDENTITY
+            cube = cls._create_cube_definition(cube_identity, identity_params)
 
             cube_serialized = [cube]
 
             if params['composite_function'] != IDENTITY:
-                step = params['temporal_composition']['step']
-                unit = params['temporal_composition']['unit'][0].upper()
-                temporal_str = f'{step}{unit}'
-
-                cube_name_composite = f'{cube_name}_{temporal_str}_{params["composite_function"]}'
+                if cube_name == cube_identity:
+                    abort(409, f'Duplicated data cube name for cube: '
+                               f'Composed {cube_name} and Identity {cube_identity}')
 
                 # Create data cube with temporal composition
-                cube_composite = cls._create_cube_definition(cube_name_composite, params)
+                cube_composite = cls._create_cube_definition(cube_name, params)
                 cube_serialized.append(cube_composite)
+
+                # Create relationship between identity and composed
+                collection_src_opts = {
+                    'collection_id': cube_composite['id'],
+                    'collection_src_id': cube['id']
+                }
+                _, _ = get_or_create_model(CollectionSRC, defaults=collection_src_opts, **collection_src_opts)
 
         db.session.commit()
 
@@ -293,7 +300,7 @@ class CubeController:
             cube.title = params.get('title') or cube.title
             cube._metadata = params.get('metadata') or cube._metadata
             cube.description = params.get('description') or cube.description
-            cube.is_public = params.get('public') or cube.is_public
+            cube.is_available = params.get('is_available') or cube.is_available
 
             if params.get('bands'):
                 band_map = {b.id: b for b in cube.bands}
@@ -328,6 +335,7 @@ class CubeController:
             description=cube.composite_function.description,
             alias=cube.composite_function.alias,
         )
+        dump_cube['summary'] = cls.summarize(cube)
 
         # Retrieve Item Start/End Date
         # This step is required since the default generation trigger
@@ -590,9 +598,13 @@ class CubeController:
 
                 spatial_index, _ = get_or_create_model(SpatialRefSys, defaults=data, srid=srid)
 
-                grs = GridRefSys.create_geometry_table(table_name=name,
-                                                       features=grid['features'],
-                                                       srid=srid)
+                try:
+                    grs = GridRefSys.create_geometry_table(table_name=name,
+                                                           features=grid['features'],
+                                                           srid=srid)
+                except RuntimeError:
+                    abort(409, f'GRS / Table {name} already exists.')
+
                 grs.description = description
                 db.session.add(grs)
                 for tile_obj in grid['tiles']:
