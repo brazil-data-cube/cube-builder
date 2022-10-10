@@ -31,8 +31,8 @@ from rasterio.crs import CRS
 from werkzeug.exceptions import NotFound, abort
 
 from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
-                        PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_ATTRIBUTES, TOTAL_OBSERVATION_NAME,
-                        IDENTITY)
+                        IDENTITY, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_ATTRIBUTES,
+                        TOTAL_OBSERVATION_NAME)
 from .forms import CollectionForm
 from .grids import create_grids
 from .models import Activity, CubeParameters

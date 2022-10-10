@@ -116,6 +116,10 @@ class CubeParametersSchema(Schema):
     reference_day = fields.Integer(required=False, allow_none=False)
     histogram_matching = fields.Bool(required=False, allow_none=False)
     no_post_process = fields.Bool(required=False, allow_none=False)
+    local = fields.String(required=False, allow_none=False)
+    recursive = fields.Boolean(required=False, allow_none=False)
+    format = fields.String(required=False, allow_none=False)
+    pattern = fields.String(required=False, allow_none=False)
 
 
 class DataCubeForm(Schema):
@@ -199,7 +203,7 @@ class DataCubeProcessForm(Schema):
     """Define parser for datacube generation."""
 
     datacube = fields.String(required=True, allow_none=False)
-    collections = fields.List(fields.String, required=True, allow_none=False)
+    collections = fields.List(fields.String, required=False, allow_none=False)
     tiles = fields.List(fields.String, required=True, allow_none=False)
     start_date = fields.Date()
     end_date = fields.Date()
@@ -214,6 +218,10 @@ class DataCubeProcessForm(Schema):
     reuse_from = fields.String(required=False, allow_none=True)
     histogram_matching = fields.Boolean(required=False, dump_default=False)
     mask = fields.Dict()
+    local = fields.String(required=False, allow_none=False)
+    recursive = fields.Boolean(required=False, allow_none=False)
+    format = fields.String(required=False, allow_none=False)
+    pattern = fields.String(required=False, allow_none=False)
 
 
 class PeriodForm(Schema):

@@ -20,10 +20,9 @@
 from bdc_auth_client.decorators import oauth2
 # 3rdparty
 from flask import Blueprint, jsonify, request
-
-# Cube Builder
 from werkzeug.exceptions import abort
 
+# Cube Builder
 from .celery.utils import list_queues
 from .config import Config
 from .controller import CubeController

@@ -30,7 +30,7 @@ from celery import chain, group
 
 # Cube Builder
 from ..config import Config
-from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME, IDENTITY
+from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, IDENTITY, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from ..models import Activity
 from ..utils import get_srid_column
 from ..utils.image import check_file_integrity, create_empty_raster, match_histogram_with_merges

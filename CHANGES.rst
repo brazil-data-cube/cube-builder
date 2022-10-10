@@ -21,6 +21,12 @@ Changes
 =======
 
 
+Version 1.0.0
+-------------
+
+- Add support to generate data cube from local directories (`#25 <https://github.com/brazil-data-cube/cube-builder/issues/25>`_)
+
+
 Version 0.8.3 (2022-10-03)
 --------------------------
 
