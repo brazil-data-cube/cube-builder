@@ -140,7 +140,7 @@ In order to create data cube ``Landsat-8`` monthly using the composite function 
         "resolution": 30,
         "version": 1,
         "metadata": {
-            "license": "MIT",
+            "license": "proprietary",
             "platform": {
                 "code": "Landsat-8",
                 "instruments": "OLI"
@@ -288,7 +288,7 @@ In order to create data cube Sentinel 2, use the following command to create dat
         "resolution": 10,
         "version": 1,
         "metadata": {
-            "license": "MIT",
+            "license": "proprietary",
             "platform": {
                 "code": "Sentinel-2",
                 "instruments": "MSI"
@@ -400,6 +400,7 @@ In order to create data cube CBERS4 AWFI, use the following command to create da
         "resolution": 64,
         "version": 1,
         "metadata": {
+            "license": "cc-by-sa-3.0",
             "platform": {
               "code": "CBERS-4",
               "instruments": "AWFI"
