@@ -24,13 +24,15 @@ from typing import Dict, List
 import numpy
 from bdc_catalog.models import Band, Collection
 
+from .image import SmartDataSet, generate_cogs
 from .interpreter import execute
 
 BandMapFile = Dict[str, str]
 """Type which a key (represented as data cube band name) points to generated file in disk."""
 
 
-def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: str, reuse_data_cube: Collection = None) -> BandMapFile:
+def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: str, reuse_data_cube: Collection = None,
+                          **kwargs) -> BandMapFile:
     """Generate data cube custom bands based in string-expression on table `band_indexes`.
 
     This method seeks for custom bands on Collection Band definition. A custom band must have
@@ -45,7 +47,7 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
     Returns:
         A dict values with generated bands.
     """
-    from .processing import SmartDataSet, build_cube_path, generate_cogs
+    from .processing import build_cube_path
 
     cube_band_indexes: List[Band] = []
 
@@ -92,7 +94,8 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
         profile['dtype'] = band_data_type
         profile['nodata'] = float(band_index.nodata)
 
-        custom_band_path = build_cube_path(cube_name, period, tile_id, version=cube_version, band=band_name)
+        custom_band_path = build_cube_path(cube_name, period, tile_id, version=cube_version, band=band_name,
+                                           **kwargs)
 
         output_dataset = SmartDataSet(str(custom_band_path), mode='w', **profile)
         logging.info(f'Generating band {band_name} for cube {cube_name} - {custom_band_path.stem}...')

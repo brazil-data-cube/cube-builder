@@ -21,6 +21,13 @@ Changes
 =======
 
 
+Version 0.8.3 (2022-10-03)
+--------------------------
+
+- Add support to customize data cube path and data cube item (`#236 <https://github.com/brazil-data-cube/cube-builder/issues/236>`_)
+- Review docs related with new path format cubes
+
+
 Version 1.0.0a1 (2022-09-27)
 ----------------------------
 

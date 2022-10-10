@@ -28,10 +28,12 @@ from urllib.parse import urlparse
 import numpy
 import rasterio
 from rasterio._warp import Affine
+from rio_cogeo.cogeo import cog_translate
+from rio_cogeo.profiles import cog_profiles
 from sqlalchemy.engine import ResultProxy
+from sqlalchemy.engine.row import RowProxy
 
 from ..config import Config
-from .processing import SmartDataSet, generate_cogs, save_as_cog
 
 LANDSAT_BANDS = dict(
     int16=['band1', 'band2', 'band3', 'band4', 'band5', 'band6', 'band7', 'evi', 'ndvi'],
@@ -39,7 +41,7 @@ LANDSAT_BANDS = dict(
 )
 
 
-def validate(row: Any):
+def validate(row: RowProxy):
     """Validate each merge result."""
     url = row.link.replace('chronos.dpi.inpe.br:8089/datastore', 'www.dpi.inpe.br/newcatalog/tmp')
 
@@ -185,7 +187,7 @@ def create_empty_raster(location: str, proj4: str, dtype: str, xmin: float, ymax
     return str(location)
 
 
-def match_histogram_with_merges(source: str, source_mask: str, reference: str, reference_mask: str, block_size: int = None):
+def match_histogram_with_merges(source: str, source_mask: str, reference: str, reference_mask: str, **kwargs):
     """Normalize the source image histogram with reference image.
 
     This functions implements the `skimage.exposure.match_histograms`, which consists in the manipulate the pixels of an
@@ -203,6 +205,8 @@ def match_histogram_with_merges(source: str, source_mask: str, reference: str, r
         reference_mask (str): Path to the rasterio data set file
     """
     from skimage.exposure import match_histograms as _match_histograms
+
+    block_size = kwargs.get('block_size')
 
     with rasterio.open(source) as source_data_set, rasterio.open(source_mask) as source_mask_data_set:
         source_arr = source_data_set.read(1, masked=True)
@@ -293,3 +297,108 @@ def check_file_integrity(file_path: Union[str, Path], read_bytes: bool = False) 
             return True
     except (rasterio.RasterioIOError, Exception):
         return False
+
+
+def save_as_cog(destination: str, raster, mode='w', tags=None, block_size=None, **profile):
+    """Save the raster file as Cloud Optimized GeoTIFF.
+
+    See Also:
+        Cloud Optimized GeoTiff https://gdal.org/drivers/raster/cog.html
+
+    Args:
+        destination: Path to store the data set.
+        raster: Numpy raster values to persist in disk
+        mode: Default rasterio mode. Default is 'w' but you also can set 'r+'.
+        tags: Tag values (Dict[str, str]) to write on dataset.
+        **profile: Rasterio profile values to add in dataset.
+    """
+    with rasterio.open(str(destination), mode, **profile) as dataset:
+        if profile.get('nodata'):
+            dataset.nodata = profile['nodata']
+
+        dataset.write_band(1, raster)
+
+        if tags:
+            dataset.update_tags(**tags)
+
+    generate_cogs(str(destination), str(destination), block_size=block_size)
+
+
+def generate_cogs(input_data_set_path, file_path, profile='deflate', block_size=None, profile_options=None, **options):
+    """Generate Cloud Optimized GeoTIFF files (COG).
+
+    Args:
+        input_data_set_path (str) - Path to the input data set
+        file_path (str) - Target data set filename
+        profile (str) - A COG profile based in `rio_cogeo.profiles`.
+        profile_options (dict) - Custom options to the profile.
+        block_size (int) - Custom block size.
+
+    Returns:
+        Path to COG.
+    """
+    if profile_options is None:
+        profile_options = dict()
+
+    output_profile = cog_profiles.get(profile)
+    output_profile.update(dict(BIGTIFF="IF_SAFER"))
+    output_profile.update(profile_options)
+
+    if block_size:
+        output_profile["blockxsize"] = block_size
+        output_profile["blockysize"] = block_size
+
+    # Dataset Open option (see gdalwarp `-oo` option)
+    config = dict(
+        GDAL_NUM_THREADS="ALL_CPUS",
+        GDAL_TIFF_INTERNAL_MASK=True,
+        GDAL_TIFF_OVR_BLOCKSIZE="128",
+    )
+
+    cog_translate(
+        str(input_data_set_path),
+        str(file_path),
+        output_profile,
+        config=config,
+        in_memory=False,
+        quiet=True,
+        **options,
+    )
+    return str(file_path)
+
+
+class SmartDataSet:
+    """Defines utility class to auto close rasterio data set.
+
+    This class is class helper to avoid memory leak of opened data set in memory.
+    """
+
+    def __init__(self, file_path: str, mode='r', tags=None, **properties):
+        """Initialize SmartDataSet definition and open rasterio data set."""
+        self.path = Path(file_path)
+        self.mode = mode
+        self.dataset = rasterio.open(file_path, mode=mode, **properties)
+        self.tags = tags
+        self.mode = mode
+
+    def __del__(self):
+        """Close dataset on delete object."""
+        self.close()
+
+    def __enter__(self):
+        """Use data set context with operator ``with``."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Close data set on exit with clause."""
+        self.close()
+
+    def close(self):
+        """Close rasterio data set."""
+        if not self.dataset.closed:
+            logging.debug('Closing dataset {}'.format(str(self.path)))
+
+            if self.mode == 'w' and self.tags:
+                self.dataset.update_tags(**self.tags)
+
+            self.dataset.close()
