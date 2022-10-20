@@ -328,7 +328,7 @@ class CubeController:
             list(filter(lambda b: b.id == cube.quicklook[0].green, cube.bands))[0].name,
             list(filter(lambda b: b.id == cube.quicklook[0].blue, cube.bands))[0].name
         ]
-        dump_cube['extent'] = None
+        dump_cube['spatial_extent'] = None
         dump_cube['grid'] = cube.grs.name
         dump_cube['composite_function'] = dict(
             name=cube.composite_function.name,

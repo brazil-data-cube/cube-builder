@@ -20,14 +20,13 @@
 from bdc_auth_client.decorators import oauth2
 # 3rdparty
 from flask import Blueprint, jsonify, request
-from werkzeug.exceptions import abort
 
 # Cube Builder
 from .celery.utils import list_queues
 from .config import Config
 from .controller import CubeController
-from .forms import (CubeItemsForm, CubeStatusForm, DataCubeForm, DataCubeMetadataForm, DataCubeProcessForm, GridForm,
-                    PeriodForm)
+from .forms import (CubeDetailForm, CubeItemsForm, CubeStatusForm, DataCubeForm, DataCubeMetadataForm,
+                    DataCubeProcessForm, GridForm, PeriodForm)
 from .version import __version__
 
 bp = Blueprint('cubes', import_name=__name__)
@@ -192,6 +191,9 @@ def start_cube(**kwargs):
         return errors, 400
 
     data = form.load(args)
+    # For Local Data Sources, there is no reference for collections.
+    if data.get('local'):
+        data['collections'] = None
 
     proc = CubeController.maestro(**data)
 
@@ -206,8 +208,11 @@ def list_merges(**kwargs):
     Expects a JSON that matches with ``DataCubeProcessForm``.
     """
     args = request.args.to_dict()
-    if not args.get('cube_id'):
-        abort(400, 'Missing "cube_id" parameter')
+
+    form = CubeDetailForm()
+    errors = form.validate(args)
+    if errors:
+        return errors, 400
 
     if args['cube_id'].isnumeric():
         args['cube_id'] = int(args['cube_id'])

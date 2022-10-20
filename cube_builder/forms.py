@@ -251,3 +251,12 @@ class CubeItemsForm(Schema):
     end = fields.String(required=False)
     page = fields.Integer(required=False)
     per_page = fields.Integer(required=False)
+
+
+class CubeDetailForm(Schema):
+    """Parser for List Merges identity."""
+
+    cube_id = fields.String(required=True)
+    tile_id = fields.String(required=True)
+    start_date = fields.Date(required=True)
+    end_date = fields.Date(required=True)
