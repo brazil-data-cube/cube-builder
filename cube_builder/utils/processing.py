@@ -47,14 +47,14 @@ from rasterio.warp import Resampling, reproject
 from ..config import Config
 # Constant to define required bands to generate both NDVI and EVI
 from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
-                         DATASOURCE_NAME, IDENTITY, PNG_MIME_TYPE, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME,
-                         SRID_ALBERS_EQUAL_AREA, TOTAL_OBSERVATION_NAME)
+                         DATASOURCE_NAME, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA,
+                         TOTAL_OBSERVATION_NAME)
+from ..datasets import dataset_from_uri
 # Builder
 from . import get_srid_column
 from .image import SmartDataSet, generate_cogs, save_as_cog
 from .index_generator import generate_band_indexes
 from .strings import StringFormatter
-from ..datasets import dataset_from_uri
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 FORMATTER = StringFormatter()

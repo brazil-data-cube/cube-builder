@@ -21,6 +21,7 @@
 from json import JSONEncoder
 
 from bdc_catalog.ext import BDCCatalog
+from bdc_catalog.models import db
 from flask import Flask, abort, request
 from flask_redoc import Redoc
 from werkzeug.exceptions import HTTPException, InternalServerError

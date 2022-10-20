@@ -19,6 +19,7 @@
 """Define Cube Builder forms used to validate both data input and data serialization."""
 
 # Python
+import datetime
 import json
 import logging
 import warnings
@@ -42,6 +43,7 @@ from stac import STAC
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
 from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, IDENTITY, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
+from .local_accessor import load_format
 from .models import CubeParameters
 from .utils import get_srid_column
 from .utils.processing import get_or_create_activity
@@ -188,25 +190,7 @@ class Maestro:
 
         temporal_schema = self.datacube.temporal_composition_schema
 
-        cube_parameters: CubeParameters = CubeParameters.query().filter(
-            CubeParameters.collection_id == self.datacube.id
-        ).first()
-
-        if cube_parameters is None:
-            raise RuntimeError(f'No parameters configured for data cube "{self.datacube.id}"')
-
-        # This step acts like first execution. When no stac_url defined in cube parameters but it was given, save it.
-        if self.properties.get('stac_url') and not cube_parameters.metadata_.get('stac_url'):
-            logging.debug(f'No "stac_url"/"token" configured yet for cube parameters.'
-                          f'Using {self.properties["stac_url"]}')
-            meta = cube_parameters.metadata_.copy()
-            meta['stac_url'] = self.properties['stac_url']
-            meta['token'] = self.properties.get('token')
-            cube_parameters.metadata_ = meta
-            cube_parameters.save(commit=True)
-
-        # Validate parameters
-        cube_parameters.validate()
+        cube_parameters = self._check_parameters()
 
         # Pass the cube parameters to the data cube functions arguments
         props = deepcopy(cube_parameters.metadata_)
@@ -260,6 +244,23 @@ class Maestro:
         if cube_parameters.reuse_cube:
             self.reused_datacube = cube_parameters.reuse_cube
 
+        quality_band = None
+        if self.properties.get('quality_band'):
+            quality_band = self.properties['quality_band']
+
+            quality = next(filter(lambda b: b.name == quality_band, bands))
+            self.properties['mask']['nodata'] = float(quality.nodata)
+        else:
+            self.properties['quality_band'] = None
+            self.properties['mask'] = None
+
+        # When reuse Identity data cubes, set both name/version as identifier
+        if self.reused_datacube:
+            self.properties['reuse_data_cube'] = dict(
+                name=self.reused_datacube.name,
+                version=self.reused_datacube.version,
+            )
+
         for tile in self.tiles:
             tile_name = tile.name
 
@@ -279,7 +280,8 @@ class Maestro:
                 (func.ST_YMax(grid_geom.c.geom) - func.ST_YMin(grid_geom.c.geom)).label('dist_y'),
                 (func.ST_Transform(
                     func.ST_SetSRID(grid_geom.c.geom, srid_column), 4326
-                )).label('feature')
+                )).label('feature'),
+                grid_geom.c.geom.label('geom')
             ).filter(grid_geom.c.tile == tile_name).first()
 
             self.mosaics[tile_name] = dict(
@@ -305,12 +307,42 @@ class Maestro:
                 self.mosaics[tile_name]['periods'][period]['min_x'] = tile_stats.min_x
                 self.mosaics[tile_name]['periods'][period]['max_y'] = tile_stats.max_y
                 self.mosaics[tile_name]['periods'][period]['feature'] = tile_stats.feature
+                self.mosaics[tile_name]['periods'][period]['geom'] = to_shape(tile_stats.geom)
                 if self.properties.get('shape', None):
                     self.mosaics[tile_name]['periods'][period]['shape'] = self.properties['shape']
 
+    def _check_parameters(self) -> CubeParameters:
+        cube_parameters: CubeParameters = CubeParameters.query().filter(
+            CubeParameters.collection_id == self.datacube.id
+        ).first()
+
+        if cube_parameters is None:
+            raise RuntimeError(f'No parameters configured for data cube "{self.datacube.id}"')
+
+        # This step acts like first execution.
+        # When no stac_url/local defined in cube parameters, save it initial from parameters.
+        if self.properties.get('local') and not cube_parameters.metadata_.get('local'):
+            pass
+        elif self.properties.get('stac_url') and not cube_parameters.metadata_.get('stac_url'):
+            logging.debug(f'No "stac_url"/"token" configured yet for cube parameters.'
+                          f'Using {self.properties["stac_url"]}')
+            meta = cube_parameters.metadata_.copy()
+            meta['stac_url'] = self.properties['stac_url']
+            meta['token'] = self.properties.get('token')
+            cube_parameters.metadata_ = meta
+            cube_parameters.save(commit=True)
+
+        # Validate parameters
+        cube_parameters.validate()
+
+        if self.properties.get('stac_url') and self.params.get('collections') is None:
+            raise RuntimeError(f'Missing parameter "collections" for STAC {self.properties.get("stac_url")}')
+
+        return cube_parameters
+
     @property
     def warped_datacube(self) -> Collection:
-        """Retrieve cached datacube defintion."""
+        """Retrieve cached datacube definition."""
         if not self._warped:
             if self.properties.get('reuse_from'):
                 reused_datacube: Collection = Collection.query().filter(
@@ -397,31 +429,20 @@ class Maestro:
             bands = self.datacube_bands
             common_bands = _common_bands()
             export = dict()
+            output = dict(merges=dict(), blends=dict())
+            stac_kwargs = self.properties.get('stac_kwargs', dict())
+            local = self.properties.get('local')
+            fmt = self.properties.get('format')
+            pattern = self.properties.get('pattern')
+            local_resolver = None
+            if local and fmt:
+                local_resolver = load_format(fmt)
 
             band_str_list = [
                 band.name for band in bands if band.name not in common_bands
             ]
 
             warped_datacube = self.warped_datacube.name
-
-            quality_band = None
-            stac_kwargs = self.properties.get('stac_kwargs', dict())
-            if self.properties.get('quality_band'):
-                quality_band = self.properties['quality_band']
-
-                quality = next(filter(lambda b: b.name == quality_band, bands))
-                self.properties['mask']['nodata'] = float(quality.nodata)
-            else:
-                self.properties['quality_band'] = None
-                self.properties['mask'] = None
-
-            output = dict(merges=dict(), blends=dict())
-
-            if self.reused_datacube:
-                self.properties['reuse_data_cube'] = dict(
-                    name=self.reused_datacube.name,
-                    version=self.reused_datacube.version,
-                )
 
             for tileid in self.mosaics:
                 blends = []
@@ -440,7 +461,18 @@ class Maestro:
 
                     feature = to_shape(self.mosaics[tileid]['periods'][period]['feature'])
 
-                    assets_by_period = self.search_images(shapely.geometry.mapping(feature), start, end, tileid, **stac_kwargs)
+                    if local and fmt:
+                        start = datetime.datetime.strptime(start, '%Y-%m-%d')
+                        end = datetime.datetime.strptime(end, '%Y-%m-%d')
+                        files = local_resolver.files(local, pattern=pattern, recursive=True)
+                        tile_geom = self.mosaics[tileid]['periods'][period]['geom']
+                        assets_by_period = local_resolver.create_collection(tile_geom,
+                                                                            grid_crs,
+                                                                            files=files,
+                                                                            start=start,
+                                                                            end=end)
+                    else:
+                        assets_by_period = self.search_images(shapely.geometry.mapping(feature), start, end, tileid, **stac_kwargs)
 
                     if self.datacube.composite_function.alias == IDENTITY:
                         stats_bands = [TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME]
@@ -501,7 +533,7 @@ class Maestro:
 
                             properties = dict(
                                 date=merge_date,
-                                datasets=self.params['collections'],
+                                datasets=collections,
                                 xmin=min_x,
                                 ymax=max_y,
                                 resx=float(resolutions[0]),

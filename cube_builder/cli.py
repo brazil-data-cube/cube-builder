@@ -169,6 +169,50 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
     assert res['ok']
 
 
+@cli.command()
+@click.argument('datacube')
+@click.option('--tiles', type=click.STRING, required=True, help='Comma delimited tiles')
+@click.option('-d', '--directory', type=click.Path(exists=True, readable=True), required=True,
+              help='Directory containing files to read')
+@click.option('-f', '--format', type=click.STRING, required=True, help='Pattern to seek for files')
+@click.option('-r', '--recursive', is_flag=True, default=False, help='Recursive listing files')
+@click.option('-p', '--pattern', type=click.STRING, default='.tif', help='Pattern to seek for files')
+@click.option('--start-date', type=click.STRING, required=False, help='Start date')
+@click.option('--end-date', type=click.STRING, required=False, help='End date')
+@click.option('--force', '-f', is_flag=True, help='Build data cube without cache')
+@click.option('--token', type=click.STRING, help='Token to access data from STAC.')
+@click.option('--export-files', type=click.Path(writable=True), help='Export Identity Merges in file')
+@with_appcontext
+def build_local(datacube: str, tiles: str, directory: str, format: str,
+                force=False, with_rgb=False, export_files=None, **kwargs):
+    """Build data cube from local files."""
+    from .forms import DataCubeProcessForm
+
+    mask = kwargs.get('mask')
+
+    if mask:
+        kwargs['mask'] = eval(mask)
+
+    data = dict(
+        datacube=datacube,
+        tiles=tiles.split(','),
+        local=directory,
+        format=format,
+        force=force,
+        with_rgb=with_rgb,
+        **kwargs
+    )
+
+    parser = DataCubeProcessForm()
+    parsed_data = parser.load(data)
+    parsed_data['export_files'] = export_files
+    parsed_data['collections'] = None
+
+    res = CubeController.maestro(**parsed_data)
+
+    assert res['ok']
+
+
 @cli.command('configure')
 @click.argument('datacube')
 @click.option('--stac-url', type=click.STRING, help='STAC to search')

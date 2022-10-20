@@ -21,19 +21,20 @@ Changes
 =======
 
 
-Version 0.8.3 (2022-10-03)
---------------------------
-
-- Add support to customize data cube path and data cube item (`#236 <https://github.com/brazil-data-cube/cube-builder/issues/236>`_)
-- Review docs related with new path format cubes
-
-
-Version 1.0.0a1 (2022-09-27)
+Version 1.0.0a1 (2022-10-20)
 ----------------------------
 
 - Add integration with BDC-Catalog 1.0 `#233 <https://github.com/brazil-data-cube/cube-builder/issues/233>`_.
 - Add support to generate datacube from Sentinel-2 Zip (experimental) `#222 <https://github.com/brazil-data-cube/cube-builder/issues/222>`_.
 - Improve docs setup
+- Add support to generate data cube from local directories (`#25 <https://github.com/brazil-data-cube/cube-builder/issues/25>`_)
+
+
+Version 0.8.3 (2022-10-03)
+--------------------------
+
+- Add support to customize data cube path and data cube item (`#236 <https://github.com/brazil-data-cube/cube-builder/issues/236>`_)
+- Review docs related with new path format cubes
 
 
 Version 0.8.2 (2022-09-21)
