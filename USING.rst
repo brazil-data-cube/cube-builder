@@ -267,6 +267,8 @@ Once the data cube definition is created, you can trigger a data cube using the 
     if you would like to generate data cube using a different STAC provider. Remember that the ``--collection`` must exists.
 
 
+.. _create_sentinel:
+
 Creating data cube Sentinel 2
 -----------------------------
 
@@ -545,3 +547,181 @@ You can change any parameter with the command ``cube-builder configure`` with ``
     Be aware of what you are changing to do not affect the integrity of data cube.
     For example, changing the masking ``clear_data`` when there is a already area generated.
     Make sure to re-generate all the periods and tiles again.
+
+
+
+Advanced User Guide
+-------------------
+
+Generate data cubes from local dir
+++++++++++++++++++++++++++++++++++
+
+.. versionadded:: 1.0.0
+
+.. note::
+
+    To proceed this step, you will need to have a set of files in disk.
+    We will not provide this files since its just a briefing of this feature. You may consider
+    to have own files individually.
+
+
+With latest change of ``Cube-Builder`` (1.0), the user can generate data cubes using local directories containing
+images. This feature is useful to generate data cubes when the user has a bunch of image files locally and would like
+to apply temporal composition function over these files. In this case, a  ``STAC Server`` is not required.
+This feature can be achieved using parameters ``--local DIRECTORY`` and ``--format PATH_TO_FORMAT.json``.
+It follows the signature of `GDALCubes Formats <https://github.com/appelmar/gdalcubes/tree/master/formats>`_ to read
+directories.
+Essentially, a format contains the following properties:
+
+- ``images`` (REQUIRED): Object context representing how to seek for any image in disk.
+
+    - ``pattern`` (REQUIRED)
+- ``datetime`` (REQUIRED): Object context describing how to identify data times from any directory path or file path.
+
+    - ``pattern`` (REQUIRED): A regex expression describing how to match datetime.
+    - ``format`` (REQUIRED): ISO Format to get data time from `str`.
+
+- ``bands`` (REQUIRED): The data set bands that will be captured while recurring disk. You can also add extra fields to increment metadata of band. The following internal props are required:
+
+    - ``pattern``: Regex pattern to identify band in disk.
+    - ``nodata``: No data value for band.
+- ``tags`` (OPTIONAL): List of keywords describing the given format.
+- ``description`` (OPTIONAL): A detailed multi-line description to fully explain the format.
+
+You can check a minimal example in ``examples/formats/bdc-sentinel-2-l2a-cogs.json``, which offers support to
+locate ``Sentinel-2`` Cloud Optimized GeoTIFF files. You may also take a look in `GDALCubes Formats <https://github.com/appelmar/gdalcubes/tree/master/formats>`_
+for others formats.
+
+For this example, lets create a simple sentinel-2 data cube called ``S2-LOCAL-16D``. The signature is similar from
+:ref:`create_sentinel`. We just need to change the cube parameters to something like::
+
+        ...
+        "parameters": {
+            "mask": {
+                "clear_data": [4, 5, 6],
+                "not_clear_data": [2, 3, 7, 8, 9, 10, 11],
+                "nodata": 0,
+                "saturated_data": [1]
+            },
+            "local": "/path/to/local/files",
+            "recursive": true,
+            "format": "examples/formats/bdc-sentinel-2-l2a-cogs.json",
+            "pattern": ".tif"
+        }
+
+So you can create a data cube with command::
+
+    curl --location \
+         --request POST '127.0.0.1:5000/cubes' \
+         --header 'Content-Type: application/json' \
+         --data-raw '
+    {
+        "datacube": "S2-LOCAL-16D",
+        "datacube_identity": "S2-LOCAL",
+        "grs": "BRAZIL_SM",
+        "title": "Sentinel-2 SR - Cube LCF 16 days -v001",
+        "resolution": 10,
+        "version": 1,
+        "metadata": {
+            "license": "MIT",
+            "platform": {
+                "code": "Sentinel-2",
+                "instruments": "MSI"
+            }
+        },
+        "temporal_composition": {
+            "schema": "Cyclic",
+            "step": 16,
+            "unit": "day",
+            "cycle": {
+                "unit": "year",
+                "step": 1
+            }
+        },
+        "composite_function": "LCF",
+        "bands_quicklook": [
+            "B04",
+            "B03",
+            "B02"
+        ],
+        "bands": [
+            {"name": "B01", "common_name": "coastal", "data_type": "int16", "nodata": 0},
+            {"name": "B02", "common_name": "blue", "data_type": "int16", "nodata": 0},
+            {"name": "B03", "common_name": "green", "data_type": "int16", "nodata": 0},
+            {"name": "B04", "common_name": "red", "data_type": "int16", "nodata": 0},
+            {"name": "B05", "common_name": "rededge", "data_type": "int16", "nodata": 0},
+            {"name": "B06", "common_name": "rededge", "data_type": "int16", "nodata": 0},
+            {"name": "B07", "common_name": "rededge", "data_type": "int16", "nodata": 0},
+            {"name": "B08", "common_name": "nir", "data_type": "int16", "nodata": 0},
+            {"name": "B8A", "common_name": "nir08", "data_type": "int16", "nodata": 0},
+            {"name": "B11", "common_name": "swir16", "data_type": "int16", "nodata": 0},
+            {"name": "B12", "common_name": "swir22", "data_type": "int16", "nodata": 0},
+            {"name": "SCL", "common_name": "quality","data_type": "uint8", "nodata": 0}
+        ],
+        "indexes": [
+            {
+                "name": "EVI",
+                "common_name": "evi",
+                "data_type": "int16",
+                "nodata": -9999,
+                "metadata": {
+                    "expression": {
+                        "bands": [
+                            "B8A",
+                            "B04",
+                            "B02"
+                        ],
+                        "value": "(10000. * 2.5 * (B8A - B04) / (B8A + 6. * B04 - 7.5 * B02 + 10000.))"
+                    }
+                }
+            },
+            {
+                "name": "NDVI",
+                "common_name": "ndvi",
+                "data_type": "int16",
+                "nodata": -9999,
+                "metadata": {
+                    "expression": {
+                        "bands": [
+                            "B8A",
+                            "B04"
+                        ],
+                        "value": "10000. * ((B8A - B04)/(B8A + B04))"
+                    }
+                }
+            }
+        ],
+        "quality_band": "SCL",
+        "description": "This data cube contains all available images from Sentinel-2, resampled to 10 meters of spatial resolution, reprojected, cropped and mosaicked to BDC_SM grid and time composed each 16 days using LCF temporal composition function.",
+        "parameters": {
+            "mask": {
+                "clear_data": [4, 5, 6],
+                "not_clear_data": [2, 3, 7, 8, 9, 10, 11],
+                "nodata": 0,
+                "saturated_data": [1]
+            },
+            "local": "/path/to/local/files",
+            "recursive": true,
+            "format": "examples/formats/bdc-sentinel-2-l2a-cogs.json",
+            "pattern": ".tif"
+        }
+    }'
+
+After cube definition created, you can just use the command line ``cube-builder build-local``::
+
+    SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
+    cube-builder build-local S2-LOCAL-16D \
+        --tiles 003011 \
+        --start-date 2021-08-29 \
+        --end-date 2021-09-13 \
+        --directory /path/to/local/files \
+        --format examples/formats/bdc-sentinel-2-l2a-cogs.json
+
+
+.. note::
+
+    This example just illustrate how to trigger the data cube using local directory. You may need to
+    change these values like ``directory``, ``format``, ``start-date``, ``end-date`` and ``tiles``.
+
+    Right now, it only supports using ``--tiles`` as parameter. It will be replaced in the next release
+    to support any ``Region of Interest (ROI)`` or shapefile.
