@@ -443,7 +443,7 @@ class CubeController:
         """Search and Dispatch datacube generation on cluster.
 
         Args:
-            datacube - Data cube name.
+            datacube - Data cube identifier.
             collections - List of collections used to generate datacube.
             tiles - List of tiles to generate.
             start_date - Start period

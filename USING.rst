@@ -231,7 +231,7 @@ Brazil Data Cube environment. If you don't have any account, please, refer to `B
 Once the data cube definition is created, you can trigger a data cube using the following command::
 
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder build LC8-1M \
+    cube-builder build LC8-1M-1 \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=LC8_SR-1 \
         --tiles=011009 \
@@ -372,7 +372,7 @@ In order to trigger a data cube, we are going to use a collection `S2-16-1` made
 
     # Using cube-builder command line
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder build S2-16D \
+    cube-builder build S2-16D-1 \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=S2_L2A-1 \
         --tiles=017019 \
@@ -479,7 +479,7 @@ Trigger data cube generation with following command:
 
     # Using cube-builder command line
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder build CB4-16D \
+    cube-builder build CB4-16D-1 \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=CBERS4_AWFI_L4_SR \
         --tiles=005004 \
@@ -495,7 +495,7 @@ When the ``Cube-Builder`` could not generate data cube for any unknown issue, yo
 with the same command you have dispatched::
 
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder build CB4-16D \
+    cube-builder build CB4-16D-1 \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=CBERS4_AWFI_L4_SR \
         --tiles=005004 \
@@ -506,7 +506,7 @@ with the same command you have dispatched::
 It will reuse most of files that were already processed, executing only the failed tasks. If you notice anything suspicious or want to re-create theses files again, use the option ``--force``::
 
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder build CB4-16D \
+    cube-builder build CB4-16D-1 \
         --stac-url https://brazildatacube.dpi.inpe.br/stac/ \
         --collections=CBERS4_AWFI_L4_SR \
         --tiles=005004 \
@@ -710,7 +710,7 @@ So you can create a data cube with command::
 After cube definition created, you can just use the command line ``cube-builder build-local``::
 
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder build-local S2-LOCAL-16D \
+    cube-builder build-local S2-LOCAL-16D-1 \
         --tiles 003011 \
         --start-date 2021-08-29 \
         --end-date 2021-09-13 \

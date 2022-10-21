@@ -182,11 +182,7 @@ class Maestro:
 
     def orchestrate(self):
         """Orchestrate datacube defintion and prepare temporal resolutions."""
-        self.datacube = (
-            Collection.query()
-            .filter(Collection.name == self.params['datacube'])
-            .first_or_404(f'Cube {self.params["datacube"]} not found.')
-        )
+        self.datacube = Collection.get_by_id(self.params['datacube'])
 
         temporal_schema = self.datacube.temporal_composition_schema
 
