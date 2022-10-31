@@ -40,6 +40,8 @@ from geoalchemy2.shape import to_shape
 from stac import STAC
 
 # Cube Builder
+from werkzeug.exceptions import abort
+
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
 from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, IDENTITY, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
@@ -211,11 +213,6 @@ class Maestro:
 
         where = [Tile.grid_ref_sys_id == self.datacube.grid_ref_sys_id]
 
-        if self.params.get('tiles'):
-            where.append(Tile.name.in_(self.params['tiles']))
-
-        self.tiles = db.session.query(Tile).filter(*where).all()
-
         self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
 
         bands = self.datacube_bands
@@ -260,6 +257,18 @@ class Maestro:
                 name=self.reused_datacube.name,
                 version=self.reused_datacube.version,
             )
+
+        if not self.params.get('tiles'):
+            abort(400, 'Missing tiles in data cube generation')
+
+        where.append(Tile.name.in_(self.params['tiles']))
+        tiles = db.session.query(Tile).filter(*where).all()
+
+        if len(tiles) != len(self.params['tiles']):
+            tiles_not_found = set(self.params['tiles']) - set([t.name for t in tiles])
+            abort(400, f'Tiles not found {tiles_not_found}')
+
+        self.tiles = tiles
 
         for tile in self.tiles:
             tile_name = tile.name
@@ -306,7 +315,7 @@ class Maestro:
                 self.mosaics[tile_name]['periods'][period]['dist_y'] = tile_stats.dist_y
                 self.mosaics[tile_name]['periods'][period]['min_x'] = tile_stats.min_x
                 self.mosaics[tile_name]['periods'][period]['max_y'] = tile_stats.max_y
-                self.mosaics[tile_name]['periods'][period]['feature'] = tile_stats.feature
+                self.mosaics[tile_name]['periods'][period]['feature'] = to_shape(tile_stats.feature)
                 self.mosaics[tile_name]['periods'][period]['geom'] = to_shape(tile_stats.geom)
                 if self.properties.get('shape', None):
                     self.mosaics[tile_name]['periods'][period]['shape'] = self.properties['shape']
@@ -459,7 +468,7 @@ class Maestro:
 
                     output['merges'].setdefault(period, dict())
 
-                    feature = to_shape(self.mosaics[tileid]['periods'][period]['feature'])
+                    feature = self.mosaics[tileid]['periods'][period]['feature']
 
                     if local and fmt:
                         start = datetime.datetime.strptime(start, '%Y-%m-%d')
