@@ -20,7 +20,7 @@ Usage
 =====
 
 This section explains how to use the Cube Builder application to generate data cubes from Sentinel 2,
-Landsat 8 and CBERS collections.
+Landsat 8 and CBERS collections using API REST interactions. You may consider to install the `Data Cube Manager <https://github.com/brazil-data-cube/dc-manager>`_ which provides a GUI for data cube creation. Keep in mind that it must follows the `compatibility table <https://github.com/brazil-data-cube/dc-manager/blob/master/COMPATIBILITY.md>`_ to work properly.
 
 
 If you have not read yet how to install or deploy the system, please refer to :doc:`installation` or :doc:`deploy` documentation.
