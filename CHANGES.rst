@@ -1,14 +1,61 @@
 ..
-    This file is part of Brazil Data Cube Builder.
-    Copyright (C) 2019-2021 INPE.
+    This file is part of Cube Builder.
+    Copyright (C) 2022 INPE.
 
-    Cube Builder is free software; you can redistribute it and/or modify it
-    under the terms of the MIT License; see LICENSE file for more details.
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 
 
 =======
 Changes
 =======
+
+
+Version 0.8.3 (2022-10-03)
+--------------------------
+
+- Add support to customize data cube path and data cube item (`#236 <https://github.com/brazil-data-cube/cube-builder/issues/236>`_)
+- Review docs related with new path format cubes
+
+
+Version 0.8.2 (2022-09-21)
+--------------------------
+
+- Change LICENSE to GPL v3 and headers source code
+
+
+Version 0.8.1 (2022-09-14)
+--------------------------
+
+- Fix search images using temporal dimension `#221 <https://github.com/brazil-data-cube/cube-builder/issues/221>`_.
+- Add way to retrieve total items per tile
+- Improve Usage/Setup documentation `#164 <https://github.com/brazil-data-cube/cube-builder/issues/164>`_.
+
+
+Version 0.8.0 (2022-05-05)
+--------------------------
+
+- Add tests for cube builder and workflow.
+- Fix deprecated git protocol in pip for bdc-catalog package (`#211 <https://github.com/brazil-data-cube/cube-builder/issues/211>`_).
+- Fix rasterio version for reading GeoTIFF or JP2 files (`#203 <https://github.com/brazil-data-cube/cube-builder/issues/203>`_).
+- Review directory structure for data cubes (`#199 <https://github.com/brazil-data-cube/cube-builder/issues/199>`_).
+- Set rio-cogeo version to 3 due GeoTransform bit precision casting (`#209 <https://github.com/brazil-data-cube/cube-builder/issues/209>`).
+- Apply band valid ranges in cube identity (`#198 <https://github.com/brazil-data-cube/cube-builder/issues/203>`_).
+- Fix bit precision error in grid generation (`#210 <https://github.com/brazil-data-cube/cube-builder/issues/203>`_).
+- Add support to generate data cube Identity without Mask band (`#142 <https://github.com/brazil-data-cube/cube-builder/issues/142>`_).
+- Rename Stack composite function to Least CC First (LCF) (`#213 <https://github.com/brazil-data-cube/cube-builder/issues/213>`_).
+- Add support to retrieve GRID tiles GeoJSON through API (`#215 <https://github.com/brazil-data-cube/cube-builder/issues/215>`_)
+- Add flag "data_dir" to customize data cube location (`#205 <https://github.com/brazil-data-cube/cube-builder/issues/205>`_)
 
 
 Version 0.6.3 (2021-07-19)

@@ -1,9 +1,19 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 """Create a python click context and inject it to the global flask commands."""
@@ -38,8 +48,8 @@ def load_data():
 
         _, _ = get_or_create_model(
             CompositeFunction,
-            defaults=dict(name='Stack', alias='STK', description='Best pixel'),
-            alias='STK'
+            defaults=dict(name='Least Cloud Cover First', alias='LCF', description='Best pixel'),
+            alias='LCF'
         )
 
         _, _ = get_or_create_model(
@@ -97,9 +107,10 @@ def worker(ctx: click.Context):
 @click.option('--stac-url', type=click.STRING, help='STAC to search')
 @click.option('--force', '-f', is_flag=True, help='Build data cube without cache')
 @click.option('--token', type=click.STRING, help='Token to access data from STAC.')
+@click.option('--export-files', type=click.Path(writable=True), help='Export Identity Merges in file')
 @with_appcontext
 def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None,
-          stac_url: str = None, force=False, with_rgb=False, shape=None, **kwargs):
+          stac_url: str = None, force=False, with_rgb=False, shape=None, export_files=None, **kwargs):
     """Build data cube through command line.
 
     Args:
@@ -145,6 +156,7 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
 
     parser = DataCubeProcessForm()
     parsed_data = parser.load(data)
+    parsed_data['export_files'] = export_files
 
     click.secho('Triggering data cube generation...', fg='green')
     res = CubeController.maestro(**parsed_data)

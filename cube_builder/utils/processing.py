@@ -1,15 +1,26 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 """Define celery tasks utilities for datacube generation."""
 
 # Python Native
 import logging
+import shutil
 import warnings
 from contextlib import contextmanager
 from copy import deepcopy
@@ -22,18 +33,17 @@ from typing import List, Tuple, Union
 import numpy
 import rasterio
 import rasterio.features
+import rasterio.windows
 import requests
 import shapely
 import shapely.geometry
-from bdc_catalog.models import Item, Tile, db
+from bdc_catalog.models import Collection, Item, SpatialRefSys, Tile, db
 from bdc_catalog.utils import multihash_checksum_sha256
-from flask import abort
+from geoalchemy2 import func
 from geoalchemy2.shape import from_shape, to_shape
 from numpngw import write_png
 from rasterio import Affine, MemoryFile
 from rasterio.warp import Resampling, reproject
-from rio_cogeo.cogeo import cog_translate
-from rio_cogeo.profiles import cog_profiles
 
 from ..config import Config
 # Constant to define required bands to generate both NDVI and EVI
@@ -41,9 +51,13 @@ from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, C
                          DATASOURCE_NAME, PNG_MIME_TYPE, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA,
                          TOTAL_OBSERVATION_NAME)
 # Builder
+from . import get_srid_column
+from .image import SmartDataSet, generate_cogs, save_as_cog
 from .index_generator import generate_band_indexes
+from .strings import StringFormatter
 
 VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
+FORMATTER = StringFormatter()
 
 
 def get_rasterio_config() -> dict:
@@ -99,95 +113,20 @@ def get_or_create_activity(cube: str, warped: str, activity_type: str, scene_typ
     )
 
 
-class DataCubeFragments(list):
-    """Parse a data cube name and retrieve their parts.
-
-    A data cube is composed by the following structure:
-    ``Collections_Resolution_TemporalPeriod_CompositeFunction``.
-
-    An IDT data cube does not have TemporalPeriod and CompositeFunction.
-
-    Examples:
-        >>> # Parse Sentinel 2 Monthly MEDIAN
-        >>> cube_parts = DataCubeFragments('S2_10_1M_MED') # ['S2', '10', '1M', 'MED']
-        >>> cube_parts.composite_function
-        ... 'MED'
-        >>> # Parse Sentinel 2 IDENTITY
-        >>> cube_parts = DataCubeFragments('S2_10') # ['S2', '10']
-        >>> cube_parts.composite_function
-        ... 'IDT'
-        >>> DataCubeFragments('S2-10') # ValueError Invalid data cube name
-    """
-
-    def __init__(self, datacube: str):
-        """Construct a Data Cube Fragments parser.
-
-        Exceptions:
-            ValueError when data cube name is invalid.
-        """
-        cube_fragments = self.parse(datacube)
-
-        self.datacube = '_'.join(cube_fragments)
-
-        super(DataCubeFragments, self).__init__(cube_fragments)
-
-    @staticmethod
-    def parse(datacube: str) -> List[str]:
-        """Parse a data cube name."""
-        cube_fragments = datacube.split('_')
-
-        if len(cube_fragments) > 4 or len(cube_fragments) < 2:
-            abort(400, 'Invalid data cube name. "{}"'.format(datacube))
-
-        return cube_fragments
-
-    def __str__(self):
-        """Retrieve the data cube name."""
-        return self.datacube
-
-    @property
-    def composite_function(self):
-        """Retrieve data cube composite function based.
-
-        TODO: Add reference to document User Guide - Convention Data Cube Names
-        """
-        if len(self) < 4:
-            return 'IDT'
-
-        return self[-1
-
-        ]
-
-
-def get_cube_parts(datacube: str) -> DataCubeFragments:
-    """Build a `DataCubeFragments` and validate data cube name policy."""
-    return DataCubeFragments(datacube)
-
-
-def get_cube_id(datacube: str, func=None):
-    """Prepare data cube name based on temporal function."""
-    cube_fragments = get_cube_parts(datacube)
-
-    if not func or func.upper() == 'IDT':
-        return f"{'_'.join(cube_fragments[:2])}"
-
-    # Ensure that data cube with composite function must have a
-    # temporal resolution
-    if len(cube_fragments) <= 3:
-        raise ValueError('Invalid cube id without temporal resolution. "{}"'.format(datacube))
-
-    # When data cube have temporal resolution (S2_10_1M) use it
-    # Otherwise, just remove last cube part (composite function)
-    cube = datacube if len(cube_fragments) == 3 else '_'.join(cube_fragments[:-1])
-
-    return f'{cube}_{func}'
-
-
-def get_item_id(datacube: str, version: int, tile: str, date: str) -> str:
+def get_item_id(datacube: str, version: int, tile: str, date: str, fmt=None) -> str:
     """Prepare a data cube item structure."""
-    version_str = '{0:03d}'.format(version)
+    if fmt is None:
+        fmt = '{datacube:upper}_V{version}_{tile_id}_{start_date}'
 
-    return f'{datacube}_v{version_str}_{tile}_{date}'
+    return FORMATTER.format(
+        fmt,
+        datacube=datacube,
+        version=str(version),
+        version_legacy='{0:03d}'.format(version),
+        tile_id=tile,
+        date=date,
+        start_date=date.replace('-', '')[:8]
+    )
 
 
 def prepare_asset_url(url: str) -> str:
@@ -202,14 +141,16 @@ def prepare_asset_url(url: str) -> str:
     return urljoin(url, parsed_url.path)
 
 
-def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: dict, quality_band: str, build_provenance=False, compute=False, **kwargs):
+def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
+          band_map: dict, quality_band: str, collection: str, build_provenance=False, compute=False,
+          native_grid: bool = False, **kwargs):
     """Apply datacube merge scenes.
 
     The Merge or Warp consists in a procedure that cropping and mosaicking all imagens that superimpose a target tile
     of common grid, for a specific date.
 
     See also:
-        BDC Warp https://brazil-data-cube.github.io/products/specifications/processing-flow.html#warp-merge-reprojecting-resampling-and-griding
+        `Warp (Merge, Reprojecting, Resampling and Griding) <https://brazil-data-cube.github.io/products/specifications/processing-flow.html#warp-merge-reprojecting-resampling-and-griding>`_
 
     Args:
         merge_file: Path to store data cube merge
@@ -229,8 +170,36 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
     resx, resy = kwargs['resx'], kwargs['resy']
     block_size = kwargs.get('block_size')
     shape = kwargs.get('shape', None)
+    transform = None
 
-    if shape:
+    if native_grid:
+        tile_id = kwargs['tile_id']
+        cname, collection_version = collection.rsplit('-', 1)
+        collection = Collection.query().filter(
+            Collection.name == cname,
+            Collection.version == collection_version
+        ).first_or_404(f'Collection {collection} not found')
+        geom_table = collection.grs.geom_table
+        if geom_table is None:
+            raise RuntimeError(f'The Grid {collection.grs.name} not found.')
+
+        srid_column = get_srid_column(geom_table.c)
+        query = db.session.query(
+            func.ST_SetSRID(geom_table.c.geom, srid_column).label('geom'),
+            SpatialRefSys.proj4text.label('crs'),
+        ).join(SpatialRefSys, SpatialRefSys.srid == srid_column).filter(geom_table.c.tile == tile_id).first()
+        if query is None:
+            raise RuntimeError(f'Tile {tile_id} not found')
+        geom = to_shape(query.geom)
+        xmin, ymin, xmax, ymax = geom.bounds
+        transform = Affine(resx, 0, xmin, 0, -resy, ymax)
+        cols = int((xmax - xmin) / resx)
+        rows = int((ymax - ymin) / resy)
+        shape = None
+
+        kwargs['srs'] = query.crs
+
+    elif shape:
         cols = shape[0]
         rows = shape[1]
     else:
@@ -250,31 +219,41 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
         )
         datasets = [datasets]
 
-    source_nodata = nodata = float(band_map[band]['nodata'])
+    source_nodata = None
+    for _asset in assets:
+        source_nodata = _asset['nodata']
+        break
+
+    nodata = float(band_map[band]['nodata'])
+    if source_nodata is None:
+        source_nodata = float(band_map[band]['nodata'])
+
     data_type = band_map[band]['data_type']
     resampling = Resampling.nearest
 
     if quality_band == band:
         source_nodata = nodata = float(mask['nodata'])
         # Only apply bilinear (change pixel values) for band values
-    elif mask.get('saturated_band') != band:
+    elif (mask and mask.get('saturated_band') != band) or quality_band is None:
         resampling = Resampling.bilinear
 
     raster = numpy.zeros((rows, cols,), dtype=data_type)
-    raster_merge = numpy.full((rows, cols,), dtype=data_type, fill_value=source_nodata)
+    raster_merge = numpy.full((rows, cols,), dtype=data_type, fill_value=nodata)
     confidence = None
 
     if build_provenance:
         raster_provenance = numpy.full((rows, cols,),
                                        dtype=DATASOURCE_ATTRIBUTES['data_type'],
                                        fill_value=DATASOURCE_ATTRIBUTES['nodata'])
-        if mask.get('bits'):
+        if mask.get('bits') and mask.get('confidence'):
             conf = mask['confidence']
-            conf.setdefault('landsat_8', True)
+            conf.setdefault('oli', True)
             confidence = QAConfidence(**conf)
 
     template = None
-    is_combined_collection = len(datasets) > 1
+    is_combined_collection = len(datasets) > 1 or (len(platforms) > 1 and kwargs.get('combined'))
+    index_landsat_oli = []
+    platforms_used = []
 
     with rasterio_access_token(kwargs.get('token')) as options:
         with rasterio.Env(CPL_CURL_VERBOSE=False, **get_rasterio_config(), **options):
@@ -282,11 +261,17 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
                 link = prepare_asset_url(asset['link'])
 
                 dataset = asset['dataset']
-                platform = asset.get('platform')
+                platform = asset.get('platform', '')
 
-                index_landsat_8 = platforms.index('LANDSAT_8') if 'LANDSAT_8' in platforms else -1
+                if platform and 'landsat' in platform.lower():
+                    _, platform_version = platform.split('-' if '-' in platform else '_')
+                    is_oli = int(platform_version) > 7
+                    if is_oli:
+                        index_landsat_oli.append(platforms.index(platform))
 
                 _check_rio_file_access(link, access_token=kwargs.get('token'))
+                if platform:
+                    platforms_used.append(platform)
 
                 with rasterio.open(link) as src:
                     meta = src.meta.copy()
@@ -311,7 +296,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
                     elif 'CBERS' in dataset and band != quality_band:
                         source_nodata = nodata
 
-                    kwargs.update({
+                    meta.update({
                         'nodata': source_nodata
                     })
 
@@ -320,8 +305,10 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
                             if shape:
                                 raster = src.read(1)
                             else:
+                                source_array = rasterio.band(src, 1)  # src.read(1)
+
                                 reproject(
-                                    source=rasterio.band(src, 1),
+                                    source=source_array,
                                     destination=raster,
                                     src_transform=src.transform,
                                     src_crs=src.crs,
@@ -348,6 +335,10 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
                                     if len(intersect_ravel):
                                         where_intersec = numpy.unravel_index(intersect_ravel, raster.shape)
                                         raster_merge[where_intersec] = raster[where_intersec]
+
+                                        if build_provenance:
+                                            # TODO: Improve way to get fixed Value instead. Use GUI mapping?
+                                            raster_provenance[where_intersec] = datasets.index(dataset)
                             else:
                                 valid_data_scene = raster[raster != nodata]
                                 raster_merge[raster != nodata] = valid_data_scene.reshape(numpy.size(valid_data_scene))
@@ -370,8 +361,8 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
     template['dtype'] = data_type
     template['nodata'] = nodata
 
-    if build_provenance and mask.get('bits'):
-        confidence.landsat_8 = raster_provenance == index_landsat_8
+    if build_provenance and mask.get('bits') and mask.get('confidence'):
+        confidence.oli = numpy.isin(raster_provenance, index_landsat_oli)
 
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
@@ -384,28 +375,28 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str, band_map: 
     merge_file = Path(merge_file)
     merge_file.parent.mkdir(parents=True, exist_ok=True)
 
-    template.update({
-        'tiled': True,
-        "interleave": "pixel",
-    })
-
     options = dict(
         file=str(merge_file),
         efficacy=efficacy,
         cloudratio=cloudratio,
         dataset=dataset,
         resolution=resx,
-        nodata=nodata
+        nodata=nodata,
+        platforms_used=platforms_used
     )
 
-    if band == quality_band and len(datasets) > 1:
+    if band == quality_band and build_provenance:
         provenance = merge_file.parent / merge_file.name.replace(band, DATASOURCE_NAME)
 
         profile = deepcopy(template)
         profile['dtype'] = DATASOURCE_ATTRIBUTES['data_type']
         profile['nodata'] = DATASOURCE_ATTRIBUTES['nodata']
+        entries = datasets
+        if len(datasets) == 1:
+            entries = platforms
+            options['platforms'] = platforms
 
-        custom_tags = {dataset: value for value, dataset in enumerate(datasets)}
+        custom_tags = {dataset: value for value, dataset in enumerate(entries)}
 
         save_as_cog(str(provenance), raster_provenance, tags=custom_tags, block_size=block_size, **profile)
         options[DATASOURCE_NAME] = str(provenance)
@@ -445,7 +436,8 @@ def _check_rio_file_access(url: str, access_token: str = None):
 
 
 def post_processing_quality(quality_file: str, bands: List[str], cube: str,
-                            date: str, tile_id, quality_band: str, band_map: dict, version: int, block_size:int=None):
+                            date: str, tile_id, quality_band: str, band_map: dict, version: int,
+                            datasets=None, **kwargs):
     """Stack the merge bands in order to apply a filter on the quality band.
 
     We have faced some issues regarding `nodata` value in spectral bands, which was resulting
@@ -468,7 +460,9 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
          tile_id: Brazil data cube tile identifier
          quality_band: Quality band name
          version: Data cube version
+         datasets: List of related data sets used
     """
+    block_size = kwargs.get('block_size')
     # Get quality profile and chunks
     with rasterio.open(str(quality_file)) as merge_dataset:
         blocks = list(merge_dataset.block_windows())
@@ -482,14 +476,23 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
 
     bands_without_quality = [b for b in bands if b != quality_band and b.lower() not in _default_bands]
 
+    saturated = nodata
+    for dataset in datasets:
+        if dataset is not None and (dataset.lower().startswith('s2') or dataset.lower().startswith('sentinel')):
+            saturated = 1
+            logging.info('Using saturated value 1 for Sentinel-2...')
+
     for _, block in blocks:
         nodata_positions = []
 
         row_offset = block.row_off + block.height
         col_offset = block.col_off + block.width
 
+        nodata_scl = raster_merge[block.row_off: row_offset, block.col_off: col_offset] == nodata
+
         for band in bands_without_quality:
-            band_file = build_cube_path(get_cube_id(cube), date, tile_id, version=version, band=band)
+            band_file = build_cube_path(cube, date, tile_id, version=version, band=band,
+                                        prefix=Config.WORK_DIR, composed=False, **kwargs)
 
             with rasterio.open(str(band_file)) as ds:
                 raster = ds.read(1, window=block)
@@ -501,46 +504,10 @@ def post_processing_quality(quality_file: str, bands: List[str], cube: str,
 
         if len(nodata_positions):
             raster_merge[block.row_off: row_offset, block.col_off: col_offset][
-                numpy.unravel_index(nodata_positions.astype(numpy.int64), raster.shape)] = nodata
+                numpy.unravel_index(nodata_positions.astype(numpy.int64), raster.shape)] = saturated
+            raster_merge[block.row_off: row_offset, block.col_off: col_offset][nodata_scl] = nodata
 
     save_as_cog(str(quality_file), raster_merge, block_size=block_size, **profile)
-
-
-class SmartDataSet:
-    """Defines utility class to auto close rasterio data set.
-
-    This class is class helper to avoid memory leak of opened data set in memory.
-    """
-
-    def __init__(self, file_path: str, mode='r', tags=None, **properties):
-        """Initialize SmartDataSet definition and open rasterio data set."""
-        self.path = Path(file_path)
-        self.mode = mode
-        self.dataset = rasterio.open(file_path, mode=mode, **properties)
-        self.tags = tags
-        self.mode = mode
-
-    def __del__(self):
-        """Close dataset on delete object."""
-        self.close()
-
-    def __enter__(self):
-        """Use data set context with operator ``with``."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Close data set on exit with clause."""
-        self.close()
-
-    def close(self):
-        """Close rasterio data set."""
-        if not self.dataset.closed:
-            logging.debug('Closing dataset {}'.format(str(self.path)))
-
-            if self.mode == 'w' and self.tags:
-                self.dataset.update_tags(**self.tags)
-
-            self.dataset.close()
 
 
 def compute_data_set_stats(file_path: str, mask: dict, compute: bool = True) -> Tuple[float, float]:
@@ -563,14 +530,15 @@ def compute_data_set_stats(file_path: str, mask: dict, compute: bool = True) -> 
     return efficacy, cloud_ratio
 
 
-def blend(activity, band_map, quality_band, build_clear_observation=False, block_size=None):
+def blend(activity, band_map, quality_band, build_clear_observation=False, block_size=None,
+          reuse_data_cube=None, apply_valid_range=None, **kwargs):
     """Apply blend and generate raster from activity.
 
     Basically, the blend operation consists in stack all the images (merges) in period. The stack is based in
-    best pixel image (Best clear ratio). The cloud pixels are masked with the module `numpy.ma <https://numpy.org/doc/stable/reference/maskedarray.generic.html>`_, enabling to apply
+    best pixel image (Best clear ratio). The cloud pixels are masked with `numpy.ma` module, enabling to apply
     temporal composite function MEDIAN, AVG over these rasters.
 
-    The following example represents a data cube Landsat-8 16 days using function Best Pixel (Stack - STK) and
+    The following example represents a data cube Landsat-8 16 days using function Best Pixel (Stack - LCF) and
     Median (MED) in period of 16 days from 1/1 to 16/1. The images from `10/1` and `15/1` were found and the values as
     described below::
 
@@ -590,7 +558,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     According to Brazil Data Cube User Guide, the best image is 15/1 (clear ratio ~83%) and worst as 10/1 (50%).
     The result data cube will be::
 
-        Landsat-8_30_16D_STK
+        Landsat-8_30_16D_LCF
         Quality        Nir                     Provenance (Day of Year)
 
         0 0 2 4       854 756 7000 9000      15 15 10 10
@@ -648,6 +616,14 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         profile = src.profile
         tilelist = list(src.block_windows())
 
+    platforms = activity.get('platforms', [])
+    is_combined_collection = len(activity['datasets']) > 1 or (len(platforms) > 1 and kwargs.get('combined'))
+    index_landsat_oli = []
+    for idx, platform in enumerate(platforms):
+        if 'landsat' in platform.lower():
+            _, platform_version = platform.split('-')
+            if int(platform_version) >= 8:
+                index_landsat_oli.append(idx)
     # Order scenes based in efficacy/resolution
     mask_tuples = []
 
@@ -665,6 +641,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     bandlist = []
 
     provenance_merge_map = dict()
+    merges_band_map = {}
 
     for m in sorted(mask_tuples, reverse=True):
         key = m[1]
@@ -683,6 +660,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             raise IOError('FileError while opening {} - {}'.format(filename, e))
 
         filename = scene['ARDfiles'][band]
+        merges_band_map[filename] = key
 
         provenance_merge_map.setdefault(key, None)
 
@@ -697,6 +675,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     # Build the raster to store the output images.
     width = profile['width']
     height = profile['height']
+    min_value, max_value = float(band_map[band]['min_value']), float(band_map[band]['max_value'])
 
     # Get the map values
     clear_values = mask_values['clear_data']
@@ -722,21 +701,22 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     period = activity.get('period')
     tile_id = activity.get('tile_id')
 
-    is_combined_collection = len(activity['datasets']) > 1
+    if reuse_data_cube:
+        datacube = reuse_data_cube['name']
+        version = reuse_data_cube['version']
 
-    cube_file = build_cube_path(datacube, period, tile_id, version=version, band=band, suffix='.tif')
+    cube_file = build_cube_path(datacube, period, tile_id, version=version, band=band, suffix='.tif',
+                                composed=True, **kwargs)
 
     # Create directory
     cube_file.parent.mkdir(parents=True, exist_ok=True)
 
-    cube_function = DataCubeFragments(datacube).composite_function
-    platforms = activity.get('platforms', [])
-    index_landsat_8 = platforms.index('LANDSAT_8') if 'LANDSAT_8' in platforms else -1
+    cube_function = activity['composite_function']
 
     confidence = None
     if mask_values['bits']:
         conf = mask_values.get('confidence', dict())
-        conf.setdefault('landsat_8', True)
+        conf.setdefault('oli', True)
         confidence = QAConfidence(**conf)
 
     if cube_function == 'MED':
@@ -745,8 +725,10 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     if build_clear_observation:
         logging.warning('Creating and computing Clear Observation (ClearOb) file...')
 
-        clear_ob_file_path = build_cube_path(datacube, period, tile_id, version=version, band=CLEAR_OBSERVATION_NAME, suffix='.tif')
-        dataset_file_path = build_cube_path(datacube, period, tile_id, version=version, band=DATASOURCE_NAME, suffix='.tif')
+        clear_ob_file_path = build_cube_path(datacube, period, tile_id, version=version,
+                                             band=CLEAR_OBSERVATION_NAME, suffix='.tif', composed=True, **kwargs)
+        dataset_file_path = build_cube_path(datacube, period, tile_id, version=version,
+                                            band=DATASOURCE_NAME, suffix='.tif', composed=True, **kwargs)
 
         clear_ob_profile = profile.copy()
         clear_ob_profile['dtype'] = CLEAR_OBSERVATION_ATTRIBUTES['data_type']
@@ -759,12 +741,15 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
         if is_combined_collection:
             datasets = activity['datasets']
-            tags = {dataset: value for value, dataset in enumerate(datasets)}
+            entities = datasets
+            if kwargs.get('combined'):
+                entities = platforms
+            tags = {dataset: value for value, dataset in enumerate(entities)}
 
             datasource = SmartDataSet(str(dataset_file_path), 'w', tags=tags, **dataset_profile)
             datasource.dataset.write(numpy.full((height, width),
-                                              fill_value=DATASOURCE_ATTRIBUTES['nodata'],
-                                              dtype=DATASOURCE_ATTRIBUTES['data_type']), indexes=1)
+                                     fill_value=DATASOURCE_ATTRIBUTES['nodata'],
+                                     dtype=DATASOURCE_ATTRIBUTES['data_type']), indexes=1)
 
     provenance_array = numpy.full((height, width), dtype=numpy.int16, fill_value=-1)
 
@@ -795,17 +780,8 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
                 saturated = saturated_list[order].dataset.read(1, window=window)
                 # TODO: Get the original band order and apply to the extract function instead.
                 saturated = radsat_extract_bits(saturated, 1, 7).astype(numpy.bool_)
-                masked.mask = saturated.astype(numpy.bool_)
-
-            # Get current observation file name
-            file_name = Path(bandlist[order].name).stem
-            file_date = datetime.strptime(file_name.split('_')[4], '%Y-%m-%d')
-            day_of_year = file_date.timetuple().tm_yday
-
-            if build_clear_observation and is_combined_collection:
-                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
-                if mask_values['bits']:
-                    confidence.landsat_8 = datasource_block == index_landsat_8
+                # masked.mask = saturated.astype(numpy.bool_)
+                masked.mask[saturated] = True
 
             if mask_values['bits']:
                 matched = get_qa_mask(masked,
@@ -836,6 +812,16 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
             stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask.astype(numpy.uint8)
 
+            # Get current observation file name
+            file_path = bandlist[order].name
+            file_date = datetime.strptime(merges_band_map[file_path], '%Y-%m-%d')
+            day_of_year = file_date.timetuple().tm_yday
+
+            if build_clear_observation and is_combined_collection:
+                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
+                if mask_values['bits']:
+                    confidence.oli = datasource_block == index_landsat_oli
+
             # Find all no data in destination STACK image
             stack_raster_where_nodata = numpy.where(
                 stack_raster[window.row_off: row_offset, window.col_off: col_offset] == nodata
@@ -845,6 +831,9 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             stack_raster_nodata_pos = numpy.ravel_multi_index(stack_raster_where_nodata,
                                                               stack_raster[window.row_off: row_offset,
                                                               window.col_off: col_offset].shape)
+
+            if build_clear_observation and is_combined_collection:
+                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
 
             # Find all valid/cloud in destination STACK image
             raster_where_data = numpy.where(raster != nodata)
@@ -880,6 +869,14 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             if build_clear_observation and is_combined_collection:
                 data_set_block[clear_not_done_pixels] = datasource_block[clear_not_done_pixels]
 
+            if apply_valid_range:
+                # Apply band limit
+                raster_valid_data = raster[raster_where_data]
+                saturated_positions_min = numpy.where(raster_valid_data < min_value)
+                saturated_positions_max = numpy.where(raster_valid_data > max_value)
+                bmask[raster_where_data][saturated_positions_min] = True
+                bmask[raster_where_data][saturated_positions_max] = True
+
             # Update what was done.
             notdonemask = notdonemask * bmask
 
@@ -906,7 +903,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     efficacy, cloudcover = _qa_statistics(stack_raster, mask=mask_values, compute=False)
 
     profile.update({
-        'compress': 'LZW',
         'tiled': True,
         'interleave': 'pixel',
     })
@@ -918,7 +914,8 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         clear_ob_data_set.close()
         logging.warning('Clear Observation (ClearOb) file generated successfully.')
 
-        total_observation_file = build_cube_path(datacube, period, tile_id, version=version, band=TOTAL_OBSERVATION_NAME)
+        total_observation_file = build_cube_path(datacube, period, tile_id, version=version,
+                                                 band=TOTAL_OBSERVATION_NAME, composed=True, **kwargs)
         total_observation_profile = profile.copy()
         total_observation_profile.pop('nodata', None)
         total_observation_profile['dtype'] = 'uint8'
@@ -936,7 +933,8 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         save_as_cog(str(cube_file), stack_raster, block_size=block_size, mode='w', **profile)
 
         if build_clear_observation:
-            provenance_file = build_cube_path(datacube, period, tile_id, version=version, band=PROVENANCE_NAME)
+            provenance_file = build_cube_path(datacube, period, tile_id, version=version,
+                                              band=PROVENANCE_NAME, composed=True, **kwargs)
             provenance_profile = profile.copy()
             provenance_profile.pop('nodata', -1)
             provenance_profile['dtype'] = PROVENANCE_ATTRIBUTES['data_type']
@@ -997,29 +995,54 @@ def concat_path(*entries) -> Path:
     return base
 
 
-def _item_prefix(absolute_path: Path) -> Path:
-    relative_path = Path(absolute_path).relative_to(Config.DATA_DIR)
-    relative_path = relative_path.relative_to('Repository')
+def is_relative_to(absolute_path: Union[str, Path], *other) -> bool:
+    """Return True if the given another path is relative to absolute path.
+
+    Note:
+        Adapted from Python 3.9
+    """
+    try:
+        Path(absolute_path).relative_to(*other)
+        return True
+    except ValueError:
+        return False
+
+
+def _item_prefix(absolute_path: Path, data_dir: str = None) -> Path:
+    data_dir = data_dir or Config.DATA_DIR
+    if is_relative_to(absolute_path, Config.WORK_DIR):
+        relative_prefix = Config.WORK_DIR
+    elif is_relative_to(absolute_path, data_dir):
+        relative_prefix = data_dir
+    else:
+        raise ValueError(f'Invalid file prefix for {str(absolute_path)} - ({Config.WORK_DIR}, {data_dir})')
+
+    relative_path = Path(absolute_path).relative_to(relative_prefix)
 
     return concat_path(Config.ITEM_PREFIX, relative_path)
 
 
-def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map, **kwargs):
+def publish_datacube(cube: Collection, bands, tile_id, period, scenes, cloudratio, reuse_data_cube=None,
+                     srid=SRID_ALBERS_EQUAL_AREA, data_dir=None, **kwargs):
     """Generate quicklook and catalog datacube on database."""
     start_date, end_date = period.split('_')
+    data_dir = data_dir or Config.DATA_DIR
 
     datacube = cube.name
+    version = cube.version
+    if reuse_data_cube:
+        datacube = reuse_data_cube['name']
+        version = reuse_data_cube['version']
 
-    cube_parts = get_cube_parts(datacube)
+    format_item_cube = kwargs.get('format_item_cube')
+    output = []
 
-    for composite_function in [cube_parts.composite_function]:
-        item_datacube = get_cube_id(datacube, composite_function)
-
-        item_id = get_item_id(item_datacube, cube.version, tile_id, period)
+    for composite_function in [cube.composite_function.alias]:
+        item_id = get_item_id(datacube, version, tile_id, period, fmt=format_item_cube)
 
         cube_bands = cube.bands
 
-        quick_look_file = build_cube_path(item_datacube, period, tile_id, version=cube.version, suffix=None)
+        quick_look_file = build_cube_path(datacube, period, tile_id, version=version, suffix=None, composed=True, **kwargs)
 
         ql_files = []
         for band in bands:
@@ -1028,16 +1051,19 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
         quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
         if kwargs.get('with_rgb'):
-            rgb_file = build_cube_path(item_datacube, period, tile_id, version=cube.version, band='RGB')
+            rgb_file = build_cube_path(datacube, period, tile_id, version=version, band='RGB', composed=True, **kwargs)
             generate_rgb(rgb_file, ql_files)
 
         map_band_scene = {name: composite_map[composite_function] for name, composite_map in scenes.items()}
 
-        custom_bands = generate_band_indexes(cube, map_band_scene, period, tile_id)
+        custom_bands = generate_band_indexes(cube, map_band_scene, period, tile_id, reuse_data_cube=reuse_data_cube,
+                                             composed=True, **kwargs)
         for name, file in custom_bands.items():
             scenes[name] = {composite_function: str(file)}
 
         tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == cube.grid_ref_sys_id).first()
+
+        files_to_move = []
 
         with db.session.begin_nested():
             item_data = dict(
@@ -1054,12 +1080,23 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
             assets = deepcopy(item.assets) or dict()
             assets.update(
                 thumbnail=create_asset_definition(
-                    href=str(_item_prefix(Path(quick_look_file))),
+                    href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)),
                     mime_type=PNG_MIME_TYPE,
                     role=['thumbnail'],
                     absolute_path=str(quick_look_file)
                 )
             )
+
+            relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
+            target_publish_dir = Path(data_dir) / relative_work_dir_file.parent
+            # Ensure file is writable
+            target_publish_dir.mkdir(exist_ok=True, parents=True)
+
+            files_to_move.append((
+                str(quick_look_file),  # origin
+                str(target_publish_dir / relative_work_dir_file.name)  # target
+            ))
+
             item.start_date = start_date
             item.end_date = end_date
 
@@ -1081,50 +1118,83 @@ def publish_datacube(cube, bands, tile_id, period, scenes, cloudratio, band_map,
                     min_convex_hull = raster_convexhull(str(scenes[band][composite_function]))
 
                 assets[band_model[0].name] = create_asset_definition(
-                    href=str(_item_prefix(scenes[band][composite_function])),
+                    href=str(_item_prefix(scenes[band][composite_function], data_dir=data_dir)),
                     mime_type=COG_MIME_TYPE,
                     role=['data'],
                     absolute_path=str(scenes[band][composite_function]),
                     is_raster=True
                 )
 
+                destination_file = target_publish_dir / Path(scenes[band][composite_function]).name
+
+                # Move to DATA_DIR
+                files_to_move.append((
+                    str(scenes[band][composite_function]), # origin
+                    str(destination_file) # target
+                ))
+
             item.assets = assets
-            item.srid = SRID_ALBERS_EQUAL_AREA
+            item.srid = srid
             if min_convex_hull.area > 0.0:
-                item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
-            item.geom = from_shape(extent, srid=4326)
+                item.min_convex_hull = from_shape(min_convex_hull, srid=4326, extended=True)
+            item.geom = from_shape(extent, srid=4326, extended=True)
 
         db.session.commit()
 
-    return quick_look_file
+        for origin_file, destination_file in files_to_move:
+            output.append(str(destination_file))
+            if str(origin_file) != str(destination_file):
+                shutil.move(origin_file, destination_file)
+
+        # Remove the parent ctx directory in WORK_DIR
+        cleanup(Path(quick_look_file).parent)
+
+    return output
 
 
-def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
+def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, srid=SRID_ALBERS_EQUAL_AREA,
+                  data_dir=None, **kwargs):
     """Generate quicklook and catalog warped datacube on database.
 
     TODO: Review it with publish_datacube
     """
-    item_id = get_item_id(datacube.name, datacube.version, tile_id, date)
+    data_dir = data_dir or Config.DATA_DIR
+    cube_name = datacube.name
+    cube_version = datacube.version
 
-    quick_look_file = build_cube_path(datacube.name, date, tile_id, version=datacube.version, suffix=None)
+    if reuse_data_cube:
+        cube_name = reuse_data_cube['name']
+        cube_version = reuse_data_cube['version']
+        reuse_data_cube['name'] = cube_name
+
+    format_item_cube = kwargs.get('format_item_cube')
+    item_id = get_item_id(cube_name, cube_version, tile_id, date, fmt=format_item_cube)
+
+    quick_look_file = build_cube_path(cube_name, date, tile_id, version=cube_version, composed=False, suffix=None, **kwargs)
 
     cube_bands = datacube.bands
+    output = []
 
     ql_files = []
     for band in bands:
         ql_files.append(scenes['ARDfiles'][band])
 
+    quick_look_file.parent.mkdir(exist_ok=True, parents=True)
     quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
 
     # Generate VI
-    custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id)
+    custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id, reuse_data_cube=reuse_data_cube,
+                                         composed=False, **kwargs)
     scenes['ARDfiles'].update(custom_bands)
 
     tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == datacube.grid_ref_sys_id).first()
 
+    files_to_move = []
+
     with db.session.begin_nested():
         item_data = dict(
             name=item_id,
+            # Ensure that data cube id belongs to the original cube, not reused cube.
             collection_id=datacube.id,
             tile_id=tile.id,
             start_date=date,
@@ -1141,12 +1211,23 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
 
         assets.update(
             thumbnail=create_asset_definition(
-                href=str(_item_prefix(Path(quick_look_file))),
+                href=str(_item_prefix(Path(quick_look_file), data_dir=data_dir)),
                 mime_type=PNG_MIME_TYPE,
                 role=['thumbnail'],
                 absolute_path=str(quick_look_file)
             )
         )
+
+        relative_work_dir_file = Path(quick_look_file).relative_to(Config.WORK_DIR)
+        target_publish_dir = Path(data_dir) / relative_work_dir_file.parent
+        # Ensure file is writable
+        target_publish_dir.mkdir(exist_ok=True, parents=True)
+
+        files_to_move.append((
+            str(quick_look_file),  # origin
+            str(target_publish_dir / relative_work_dir_file.name)  # target
+        ))
+
         item.start_date = date
         item.end_date = date
 
@@ -1165,22 +1246,54 @@ def publish_merge(bands, datacube, tile_id, date, scenes, band_map):
                 min_convex_hull = raster_convexhull(str(scenes['ARDfiles'][band]))
 
             assets[band_model[0].name] = create_asset_definition(
-                href=str(_item_prefix(scenes['ARDfiles'][band])),
+                href=str(_item_prefix(scenes['ARDfiles'][band], data_dir=data_dir)),
                 mime_type=COG_MIME_TYPE,
                 role=['data'],
                 absolute_path=str(scenes['ARDfiles'][band]),
                 is_raster=True
             )
 
-        item.srid = SRID_ALBERS_EQUAL_AREA
-        item.geom = from_shape(extent, srid=4326)
+            destination_file = target_publish_dir / Path(scenes['ARDfiles'][band]).name
+
+            # Move to DATA_DIR
+            files_to_move.append((
+                str(scenes['ARDfiles'][band]),  # origin
+                str(destination_file)  # target
+            ))
+
+        item.srid = srid
+        item.geom = from_shape(extent, srid=4326, extended=True)
         if min_convex_hull.area > 0.0:
-            item.min_convex_hull = from_shape(min_convex_hull, srid=4326)
+            item.min_convex_hull = from_shape(min_convex_hull, srid=4326, extended=True)
         item.assets = assets
 
     db.session.commit()
 
-    return quick_look_file
+    for origin_file, destination_file in files_to_move:
+        output.append(str(destination_file))
+        if str(origin_file) != str(destination_file):
+            shutil.move(origin_file, destination_file)
+
+    cleanup(Path(quick_look_file).parent)
+
+    return output
+
+
+def cleanup(directory: Union[str, Path]):
+    """Cleanup a directory.
+
+    Note:
+        Only remove temporary files and rmdir when dir is empty.
+    """
+    directory = Path(directory)
+    for entry in directory.iterdir():
+        # Remove any file inside that are temp file
+        if entry.is_file() and entry.name.startswith('tmp') and entry.suffix.lower() == '.tif':
+            entry.unlink()
+    try:
+        directory.rmdir()
+    except OSError:
+        pass
 
 
 def generate_quick_look(file_path, qlfiles):
@@ -1202,29 +1315,13 @@ def generate_quick_look(file_path, qlfiles):
             nodata = raster <= 0
             if raster.min() != 0 or raster.max() != 0:
                 raster = raster.astype(numpy.float32)/10000.*255.
+                raster[raster < 0] = 0
                 raster[raster > 255] = 255
             image[:, :, nb] = raster.astype(numpy.uint8) * numpy.invert(nodata)
             nb += 1
 
     write_png(pngname, image, transparent=(0, 0, 0))
     return pngname
-
-
-def getMask(raster, dataset=None, mask=None, compute=False):
-    """Retrieve and re-sample quality raster to well-known values used in Brazil Data Cube.
-
-    Args:
-        raster - Raster with Quality band values
-        satellite - Satellite Type
-
-    Returns:
-        Tuple containing formatted quality raster, efficacy and cloud ratio, respectively.
-    """
-    rastercm = raster
-
-    efficacy, cloudratio = _qa_statistics(rastercm, mask=mask, compute=compute)
-
-    return rastercm, efficacy, cloudratio
 
 
 def parse_mask(mask: dict):
@@ -1330,16 +1427,74 @@ def _qa_statistics(raster, mask: dict, compute: bool = False, confidence=None) -
     return efficacy, not_clear_ratio
 
 
-def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band: str = None, suffix: Union[str, None] = '.tif') -> Path:
-    """Retrieve the path to the Data cube file in Brazil Data Cube Cluster."""
-    folder = 'Warped'
-    date = period
+def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band: str = None,
+                    suffix: Union[str, None] = '.tif', prefix=None,
+                    format_path_cube: str = None,
+                    format_item_cube: str = None,
+                    composed: bool = False,
+                    **kwargs) -> Path:
+    """Retrieve the path to the Data cube file in Brazil Data Cube Cluster.
 
-    fragments = DataCubeFragments(datacube)
+    The following values are available for ``format_path_cube``:
+
+    - ``datacube``: Data cube name
+    - ``prefix``: Prefix for cubes.
+    - ``path``: Orbit path from tile id (for native BDC Grids).
+    - ``row``: Orbit row from tile id (for native BDC Grids).
+    - ``tile_id``: Same value in variable.
+    - ``year``: String representation of Start Date Year
+    - ``month``: String representation of Start Date Month
+    - ``day``: String representation of Start Date Day
+    - ``version``: Version string using ``V<Value>``.
+    - ``version_legacy``: Legacy string version using the structure ``v{0:03d}`` -> ``v001``.
+    - ``period=period``: String period (Start/End) date.
+    - ``filename``: Entire Item id using value from ``format_item_cube``.
+
+    Args:
+        datacube (str): The data cube base name
+        period (str): String representation for Data Period. It may be ``start_date`` for
+            Identity Data cubes or ``start_date_end_date`` for temporal composing data cube.
+        tile_id (str): The tile identifier as string.
+        version (str): String representation for Collection version.
+        band (Union[str, None]): Attach a band value into path. Defaults to ``None``.
+        suffix (Union[str, None]): Path suffix representing file extension. Defaults to ``.tif``.
+        prefix (str): Path prefix for cubes. Defaults to ``Config.WORK_DIR``.
+        format_path_cube (Optional[str]): Custom format while building data cube path. Defaults
+            to ``{prefix}/{folder}/{datacube:lower}/{version}/{path}/{row}/{year}/{month}/{day}/{filename}``.
+        format_item_cube (Optional[str]): Custom format while building data cube item name. Defaults
+            to ``{datacube:upper}_V{version}_{tile_id}_{start_date}``.
+        composed (bool): Flag to identify cube context (identity or composed). Defaults to ``False``.
+    """
+    # Default prefix path is WORK_DIR
+    prefix = prefix or Config.WORK_DIR
+    folder = 'identity'
+    if composed:
+        folder = 'composed'
 
     version_str = 'v{0:03d}'.format(version)
+    path, row = tile_id[:3], tile_id[-3:]
+    # Manual start date reference
+    year = str(period[:4])
+    month = '{0:02d}'.format(int(period[5:7]))
+    day = '{0:02d}'.format(int(period[8:10]))
 
-    file_name = f'{datacube}_{version_str}_{tile_id}_{period}'
+    fmt_kwargs = dict(
+        datacube=datacube,
+        prefix=prefix,
+        path=path, row=row,
+        tile_id=tile_id,
+        year=year,
+        month=month,
+        day=day,
+        version=f'v{version}',  # New version format
+        version_legacy=version_str,
+        period=period,
+    )
+
+    if format_path_cube is None:
+        format_path_cube = '{prefix}/{folder}/{datacube:lower}/{version}/{path}/{row}/{year}/{month}/{day}/{filename}'
+
+    file_name = get_item_id(datacube, version, tile_id, period, fmt=format_item_cube)
 
     if band is not None:
         file_name = f'{file_name}_{band}'
@@ -1349,10 +1504,10 @@ def build_cube_path(datacube: str, period: str, tile_id: str, version: int, band
 
     file_name = f'{file_name}{suffix}'
 
-    if fragments.composite_function != 'IDT':  # For cube with temporal composition
-        folder = 'Mosaic'
+    fmt_kwargs['filename'] = file_name
+    fmt_kwargs['folder'] = folder
 
-    return Path(Config.DATA_DIR) / 'Repository' / folder / datacube / version_str / tile_id / date / file_name
+    return Path(FORMATTER.format(format_path_cube, **fmt_kwargs))
 
 
 def create_asset_definition(href: str, mime_type: str, role: List[str], absolute_path: str,
@@ -1404,74 +1559,6 @@ def create_asset_definition(href: str, mime_type: str, role: List[str], absolute
     return asset
 
 
-def save_as_cog(destination: str, raster, mode='w', tags=None, block_size=None, **profile):
-    """Save the raster file as Cloud Optimized GeoTIFF.
-
-    See Also:
-        Cloud Optimized GeoTiff https://gdal.org/drivers/raster/cog.html
-
-    Args:
-        destination: Path to store the data set.
-        raster: Numpy raster values to persist in disk
-        mode: Default rasterio mode. Default is 'w' but you also can set 'r+'.
-        tags: Tag values (Dict[str, str]) to write on dataset.
-        **profile: Rasterio profile values to add in dataset.
-    """
-    with rasterio.open(str(destination), mode, **profile) as dataset:
-        if profile.get('nodata'):
-            dataset.nodata = profile['nodata']
-
-        dataset.write_band(1, raster)
-
-        if tags:
-            dataset.update_tags(**tags)
-
-    generate_cogs(str(destination), str(destination), block_size=block_size)
-
-
-def generate_cogs(input_data_set_path, file_path, profile='deflate', block_size=None, profile_options=None, **options):
-    """Generate Cloud Optimized GeoTIFF files (COG).
-
-    Args:
-        input_data_set_path (str) - Path to the input data set
-        file_path (str) - Target data set filename
-        profile (str) - A COG profile based in `rio_cogeo.profiles`.
-        profile_options (dict) - Custom options to the profile.
-        block_size (int) - Custom block size.
-
-    Returns:
-        Path to COG.
-    """
-    if profile_options is None:
-        profile_options = dict()
-
-    output_profile = cog_profiles.get(profile)
-    output_profile.update(dict(BIGTIFF="IF_SAFER"))
-    output_profile.update(profile_options)
-
-    if block_size:
-        output_profile["blockxsize"] = block_size
-        output_profile["blockysize"] = block_size
-
-    # Dataset Open option (see gdalwarp `-oo` option)
-    config = dict(
-        GDAL_NUM_THREADS="ALL_CPUS",
-        GDAL_TIFF_INTERNAL_MASK=True,
-        GDAL_TIFF_OVR_BLOCKSIZE="128",
-    )
-
-    cog_translate(
-        str(input_data_set_path),
-        str(file_path),
-        output_profile,
-        config=config,
-        in_memory=False,
-        quiet=True,
-        **options,
-    )
-    return str(file_path)
-
-
 @contextmanager
 def rasterio_access_token(access_token=None):
     """Retrieve a context manager that wraps a temporary file containing the access token to be passed to STAC."""
@@ -1506,7 +1593,7 @@ def raster_convexhull(imagepath: str, epsg='EPSG:4326') -> dict:
         geoms = []
         res = {'val': []}
         for geom, val in rasterio.features.shapes(mask, mask=mask, transform=dataset.transform):
-            geom = rasterio.warp.transform_geom(dataset.crs, epsg, geom, precision=6)
+            geom = rasterio.warp.transform_geom(dataset.crs, epsg, geom)
 
             res['val'].append(val)
             geoms.append(shapely.geometry.shape(geom))
@@ -1530,4 +1617,4 @@ def raster_extent(imagepath: str, epsg = 'EPSG:4326') -> shapely.geometry.Polygo
     """
     with rasterio.open(imagepath) as dataset:
         _geom = shapely.geometry.mapping(shapely.geometry.box(*dataset.bounds))
-        return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom, precision=6))
+        return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom))

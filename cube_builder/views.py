@@ -1,11 +1,20 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
 #
-
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
+#
 """Define Brazil Data Cube Cube Builder routes."""
 
 from bdc_auth_client.decorators import oauth2
@@ -16,8 +25,8 @@ from flask import Blueprint, jsonify, request
 from .celery.utils import list_queues
 from .config import Config
 from .controller import CubeController
-from .forms import (CubeItemsForm, CubeStatusForm, DataCubeForm, DataCubeMetadataForm, DataCubeProcessForm,
-                    GridRefSysForm, PeriodForm)
+from .forms import (CubeItemsForm, CubeStatusForm, DataCubeForm, DataCubeMetadataForm, DataCubeProcessForm, GridForm,
+                    PeriodForm)
 from .version import __version__
 
 bp = Blueprint('cubes', import_name=__name__)
@@ -124,9 +133,9 @@ def update_cube_parameters(cube_id, **kwargs):
     """Update the data cube parameters execution."""
     parameters = request.get_json()
 
-    message, status_code = CubeController.configure_parameters(cube_id, **parameters)
+    message = CubeController.configure_parameters(int(cube_id), **parameters)
 
-    return jsonify(message), status_code
+    return jsonify(message)
 
 
 @bp.route('/cubes/<cube_id>/tiles/geom', methods=['GET'])
@@ -208,7 +217,13 @@ def list_merges(**kwargs):
 def list_grs_schemas(grs_id, **kwargs):
     """List all data cube Grids."""
     if grs_id is not None:
-        result, status_code = CubeController.get_grs_schema(grs_id)
+        args = request.args.to_dict()
+        bbox = args.get('bbox')
+        if bbox:
+            bbox = [float(elm) for elm in bbox.split(',')]
+        tiles = args.get('tiles')
+        tiles = tiles.split(',') if tiles else None
+        result, status_code = CubeController.get_grs_schema(grs_id, bbox=bbox, tiles=tiles)
     else:
         result, status_code = CubeController.list_grs_schemas()
 
@@ -219,7 +234,7 @@ def list_grs_schemas(grs_id, **kwargs):
 @oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def create_grs(**kwargs):
     """Create the grid reference system using HTTP Post method."""
-    form = GridRefSysForm()
+    form = GridForm()
 
     args = request.get_json()
 

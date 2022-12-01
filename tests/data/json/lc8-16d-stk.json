@@ -1,0 +1,96 @@
+{
+    "datacube": "LC8-16D",
+    "datacube_identity": "LC8",
+    "grs": "BDC_MD_TESTE",
+    "title": "Landsat-8 OLI Data Cube",
+    "resolution": 30,
+    "version": 1,
+    "temporal_composition": {
+        "schema": "Cyclic",
+        "step": 16,
+        "unit": "day",
+        "cycle": {
+            "unit": "year",
+            "step": 1
+        }
+    },
+    "composite_function": "LCF",
+    "bands_quicklook": [
+        "sr_band4",
+        "sr_band3",
+        "sr_band2"
+    ],
+    "bands": [
+        {
+            "name": "sr_band2",
+            "common_name": "blue",
+            "data_type": "int16",
+            "nodata": -9999
+        },
+        {
+            "name": "sr_band3",
+            "common_name": "green",
+            "data_type": "int16",
+            "nodata": -9999
+        },
+        {
+            "name": "sr_band4",
+            "common_name": "red",
+            "data_type": "int16",
+            "nodata": -9999
+        },
+        {
+            "name": "sr_band5",
+            "common_name": "nir",
+            "data_type": "int16",
+            "nodata": -9999
+        },
+        {
+            "name": "Fmask4",
+            "common_name": "quality",
+            "data_type": "uint8",
+            "nodata": 255
+        }
+    ],
+    "indexes": [
+        {
+            "name": "NDVI",
+            "common_name": "ndvi",
+            "data_type": "int16",
+            "nodata": -9999,
+            "metadata": {
+                "expression": {
+                    "bands": ["sr_band5", "sr_band4"],
+                    "value": "10000. * ((sr_band5 - sr_band4)/(sr_band5 + sr_band4))"
+                }
+            }
+        },
+        {
+            "name": "EVI",
+            "common_name": "evi",
+            "data_type": "int16",
+            "nodata": -9999,
+            "metadata": {
+                "expression": {
+                    "bands": ["sr_band5", "sr_band4", "sr_band2"],
+                    "value": "10000. * 2.5 * (sr_band5 - sr_band4) / (sr_band5 + 6. * sr_band4 - 7.5 * sr_band2 + 10000.)"
+                }
+            }
+        }
+
+    ],
+    "quality_band": "Fmask4",
+    "description": "Landsat-8 Composed in 16 days",
+    "metadata": {
+        "license": "MIT",
+        "platform": {
+            "code": "Landsat-8",
+            "instruments": [
+                "OLI"
+            ]
+        }
+    },
+    "parameters": {
+        "mask": {"nodata": 255, "clear_data": [0, 1], "not_clear_data": [2, 3, 4]}
+    }
+}

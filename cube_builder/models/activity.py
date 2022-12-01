@@ -1,9 +1,19 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 """Define Cube Builder Task Activity to track celery execution."""
@@ -42,17 +52,22 @@ class Activity(BaseModel):
     @classmethod
     def list_merge_files(cls, collection: str, tile: str,
                          start_date: Union[str, datetime],
-                         end_date: Union[str, datetime]) -> ResultProxy:
+                         end_date: Union[str, datetime],
+                         identity: bool = False) -> ResultProxy:
         """List all merge files used in data cube generation."""
+        field = 'collection_id'
+        if identity:
+            field = 'warped_collection_id'
         sql = """
         SELECT id, tile_id, band, date::VARCHAR as date, collection_id, args->>'file' AS file, args->'dataset'::VARCHAR AS data_set, (elem->>'link')::VARCHAR as link, status, traceback::TEXT
           FROM cube_builder.activities
          CROSS JOIN json_array_elements(args->'assets') elem
-         WHERE collection_id = '{}'
+         WHERE {} = '{}'
            AND tile_id = '{}'
            AND date BETWEEN '{}'::DATE AND '{}'::DATE
          ORDER BY id
         """.format(
+            field,
             collection,
             tile,
             start_date,

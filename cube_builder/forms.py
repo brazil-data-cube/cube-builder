@@ -1,9 +1,20 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 """Define Cube Builder forms used to validate both data input and data serialization."""
@@ -31,12 +42,6 @@ class GridRefSysForm(SQLAlchemyAutoSchema):
     """Form definition for the model GrsSchema."""
 
     id = fields.String(dump_only=True)
-    name = fields.String(required=True, load_only=True)
-    projection = fields.String(required=True, load_only=True)
-    meridian = fields.Integer(required=True, load_only=True)
-    degreesx = fields.Float(required=True, load_only=True)
-    degreesy = fields.Float(required=True, load_only=True)
-    bbox = fields.String(required=True, load_only=True)
 
     class Meta:
         """Internal meta information of form interface."""
@@ -44,6 +49,19 @@ class GridRefSysForm(SQLAlchemyAutoSchema):
         model = GridRefSys
         sqla_session = db.session
         exclude = ('table_id', )
+
+
+class GridForm(Schema):
+    """Form model to generate Hierarchical Grid."""
+
+    names = fields.List(fields.String(required=True), required=True)
+    description = fields.String()
+    projection = fields.String(required=True, load_only=True)
+    meridian = fields.Integer(required=True, load_only=True)
+    shape = fields.List(fields.Integer, required=True)
+    tile_factor = fields.List(fields.List(fields.Integer), required=True)
+    bbox = fields.List(fields.Float, required=True, load_only=True)
+    srid = fields.Integer(required=True, load_only=True)
 
 
 class BandForm(SQLAlchemyAutoSchema):
@@ -69,6 +87,7 @@ class BandDefinition(Schema):
     name = fields.String(required=True, allow_none=False)
     common_name = fields.String(required=True, allow_none=False)
     data_type = fields.String(required=True, allow_none=False, validate=OneOf(SUPPORTED_DATA_TYPES))
+    nodata = fields.Float(required=False, allow_none=False)
     metadata = fields.Dict(required=False, allow_none=False)
 
 
@@ -92,7 +111,7 @@ class CustomMaskDefinition(Schema):
 class CubeParametersSchema(Schema):
     """Represent the data cube parameters used to be attached to the cube execution."""
 
-    mask = fields.Nested(CustomMaskDefinition, required=True, allow_none=False, many=False)
+    mask = fields.Nested(CustomMaskDefinition, required=False, allow_none=False, many=False)
     reference_day = fields.Integer(required=False, allow_none=False)
     histogram_matching = fields.Bool(required=False, allow_none=False)
     no_post_process = fields.Bool(required=False, allow_none=False)
@@ -102,27 +121,28 @@ class CubeParametersSchema(Schema):
 class DataCubeForm(Schema):
     """Define parser for datacube creation."""
 
-    datacube = fields.String(required=True, allow_none=False, validate=Regexp('^[a-zA-Z0-9-]*$', error=INVALID_CUBE_NAME))
+    datacube = fields.String(required=True, allow_none=False, validate=Regexp('^[a-zA-Z0-9-_]*$', error=INVALID_CUBE_NAME))
+    datacube_identity = fields.String(required=False, allow_none=False, validate=Regexp('^[a-zA-Z0-9-_]*$', error=INVALID_CUBE_NAME))
     grs = fields.String(required=True, allow_none=False)
     resolution = fields.Integer(required=True, allow_none=False)
     temporal_composition = fields.Dict(required=True, allow_none=False)
     bands_quicklook = fields.List(fields.String, required=True, allow_none=False)
     composite_function = fields.String(required=True, allow_none=False)
     bands = fields.Nested(BandDefinition, required=True, allow_none=False, many=True)
-    quality_band = fields.String(required=True, allow_none=False)
+    quality_band = fields.String(required=False, allow_none=False)
     indexes = fields.Nested(BandDefinition, many=True)
     metadata = fields.Dict(required=True, allow_none=True)
     description = fields.String(required=True, allow_none=False)
-    version = fields.Integer(required=True, allow_none=False, default=1)
+    version = fields.Integer(required=True, allow_none=False, dump_default=1)
     title = fields.String(required=True, allow_none=False)
-    # Set cubes as public by default.
-    public = fields.Boolean(required=False, allow_none=False, default=True)
+    # Set cubes as public by dump_default.
+    public = fields.Boolean(required=False, allow_none=False, dump_default=True)
     # Is Data cube generated from Combined Collections?
-    is_combined = fields.Boolean(required=False, allow_none=False, default=False)
+    is_combined = fields.Boolean(required=False, allow_none=False, dump_default=False)
     parameters = fields.Nested(CubeParametersSchema, required=True, allow_none=False, many=False)
 
     @pre_load
-    def validate_indexes(self, data, **kwargs):
+    def validate_fields(self, data, **kwargs):
         """Ensure that both indexes and quality band is present in attribute 'bands'.
 
         Seeks for quality_band in attribute 'bands' and set as `common_name`.
@@ -138,7 +158,10 @@ class DataCubeForm(Schema):
             if band_index['name'] in band_names:
                 raise ValidationError(f'Duplicated band name in indices {band_index["name"]}')
 
-        if 'quality_band' in data:
+        if data['composite_function'] != 'IDT' and data.get('quality_band') is None:
+            raise ValidationError(f'Quality band is required for {data["composite_function"]}.')
+
+        if 'quality_band' in data and data.get('quality_band') is not None:
             if data['quality_band'] not in band_names:
                 raise ValidationError(f'Quality band "{data["quality_band"]}" not found in key "bands"')
 
@@ -157,7 +180,6 @@ class DataCubeForm(Schema):
                 schema['$id'] = schema['$id'].replace('#', '')
                 validate(instance=data['temporal_schema'], schema=schema, format_checker=draft7_format_checker)
             except Exception as e:
-                print(e)
                 raise
 
         return data
@@ -169,7 +191,7 @@ class DataCubeMetadataForm(Schema):
     metadata = fields.Dict(required=False, allow_none=True)
     description = fields.String(required=False, allow_none=False)
     title = fields.String(required=False, allow_none=False)
-    public = fields.Boolean(required=False, allow_none=False, default=True)
+    public = fields.Boolean(required=False, allow_none=False, dump_default=True)
     bands = fields.Nested(BandForm, required=False, many=True)
 
 
@@ -182,15 +204,15 @@ class DataCubeProcessForm(Schema):
     start_date = fields.Date()
     end_date = fields.Date()
     bands = fields.List(fields.String, required=False)
-    force = fields.Boolean(required=False, default=False)
-    with_rgb = fields.Boolean(required=False, default=False)
+    force = fields.Boolean(required=False, dump_default=False)
+    with_rgb = fields.Boolean(required=False, dump_default=False)
     token = fields.String(required=False, allow_none=True)
     stac_url = fields.String(required=False, allow_none=True)
     shape = fields.List(fields.Integer(required=False))
-    block_size = fields.Integer(required=False, default=512)
+    block_size = fields.Integer(required=False, dump_default=512)
     # Reuse data cube from another data cube
     reuse_from = fields.String(required=False, allow_none=True)
-    histogram_matching = fields.Boolean(required=False, default=False)
+    histogram_matching = fields.Boolean(required=False, dump_default=False)
     mask = fields.Dict()
 
 

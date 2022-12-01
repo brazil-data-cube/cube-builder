@@ -1,9 +1,19 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 """Define Cube Builder forms used to validate both data input and data serialization."""
@@ -11,16 +21,21 @@
 # Python
 import json
 import logging
+import warnings
 from contextlib import contextmanager
 from copy import deepcopy
+from pathlib import Path
 from time import time
 from typing import List
 
 # 3rdparty
 import numpy
-from bdc_catalog.models import Band, Collection, GridRefSys, Tile, db
+import shapely.geometry
+import sqlalchemy
+from bdc_catalog.models import Band, Collection, CollectionSRC, GridRefSys, Tile, db
 from celery import chain, group
 from geoalchemy2 import func
+from geoalchemy2.shape import to_shape
 from stac import STAC
 
 # Cube Builder
@@ -28,7 +43,8 @@ from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
 from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from .models import CubeParameters
-from .utils.processing import get_cube_id, get_or_create_activity
+from .utils import get_srid_column
+from .utils.processing import get_or_create_activity
 from .utils.timeline import Timeline
 
 
@@ -82,6 +98,7 @@ class Maestro:
     tiles = None
     mosaics = None
     cached_stacs = None
+    band_map = None
 
     def __init__(self, datacube: str, collections: List[str], tiles: List[str], start_date: str, end_date: str, **properties):
         """Build Maestro interface."""
@@ -104,8 +121,8 @@ class Maestro:
         self.mosaics = dict()
         self.cached_stacs = dict()
         self.bands = []
-        self.platforms = []
         self.tiles = []
+        self.export_files = self.properties.pop('export_files', None)
 
     def get_stac(self, collection: str) -> STAC:
         """Retrieve STAC client which provides the given collection.
@@ -163,7 +180,11 @@ class Maestro:
 
     def orchestrate(self):
         """Orchestrate datacube defintion and prepare temporal resolutions."""
-        self.datacube = Collection.query().filter(Collection.name == self.params['datacube']).one()
+        self.datacube = (
+            Collection.query()
+            .filter(Collection.name == self.params['datacube'])
+            .first_or_404(f'Cube {self.params["datacube"]} not found.')
+        )
 
         temporal_schema = self.datacube.temporal_composition_schema
 
@@ -188,12 +209,21 @@ class Maestro:
         cube_parameters.validate()
 
         # Pass the cube parameters to the data cube functions arguments
-        self.properties.update(cube_parameters.metadata_)
+        props = deepcopy(cube_parameters.metadata_)
+        props.update(self.properties)
+        self.properties = props
 
         dstart = self.params['start_date']
         dend = self.params['end_date']
 
-        timeline = Timeline(**temporal_schema, start_date=dstart, end_date=dend).mount()
+        if self.datacube.composite_function.alias == 'IDT':
+            timeline = [[dstart, dend]]
+        else:
+            if self.datacube.composite_function.alias == 'STK':
+                warnings.warn('The composite function STK is deprecated. Use LCF (Least Cloud Cover First) instead.',
+                              DeprecationWarning, stacklevel=2)
+
+            timeline = Timeline(**temporal_schema, start_date=dstart, end_date=dend).mount()
 
         where = [Tile.grid_ref_sys_id == self.datacube.grid_ref_sys_id]
 
@@ -204,7 +234,15 @@ class Maestro:
 
         self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
 
+        bands = self.datacube_bands
+        self.band_map = {b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata,
+                                      min_value=b.min_value, max_value=b.max_value) for b in bands}
+
         if self.properties.get('reuse_from'):
+            warnings.warn(
+                'The parameter `reuse_from` is deprecated and will be removed in next version. '
+                'Use `reuse_data_cube` instead.'
+            )
             common_bands = _common_bands()
             collection_bands = [b.name for b in self.datacube.bands if b.name not in common_bands]
 
@@ -219,19 +257,29 @@ class Maestro:
             # Extra filter to only use bands of Input data cube.
             self.bands = [b for b in self.bands if b.name in collection_bands]
 
+        if cube_parameters.reuse_cube:
+            self.reused_datacube = cube_parameters.reuse_cube
+
         for tile in self.tiles:
             tile_name = tile.name
 
             grs: GridRefSys = tile.grs
 
-            grid_geom = grs.geom_table
+            grid_geom: sqlalchemy.Table = grs.geom_table
+
+            srid_column = get_srid_column(grid_geom.c)
+
+            # TODO: Raise exception when using a native grid argument
+            #  Use bands resolution and match with SRID context (degree x degree) etc.
 
             tile_stats = db.session.query(
                 (func.ST_XMin(grid_geom.c.geom)).label('min_x'),
                 (func.ST_YMax(grid_geom.c.geom)).label('max_y'),
                 (func.ST_XMax(grid_geom.c.geom) - func.ST_XMin(grid_geom.c.geom)).label('dist_x'),
                 (func.ST_YMax(grid_geom.c.geom) - func.ST_YMin(grid_geom.c.geom)).label('dist_y'),
-                (func.ST_AsGeoJSON(func.ST_Transform(grid_geom.c.geom, 4326))).label('feature')
+                (func.ST_Transform(
+                    func.ST_SetSRID(grid_geom.c.geom, srid_column), 4326
+                )).label('feature')
             ).filter(grid_geom.c.tile == tile_name).first()
 
             self.mosaics[tile_name] = dict(
@@ -248,7 +296,6 @@ class Maestro:
                     continue
 
                 period = f'{startdate}_{enddate}'
-                cube_relative_path = f'{self.datacube.name}/v{self.datacube.version:03d}/{tile_name}/{period}'
 
                 self.mosaics[tile_name]['periods'][period] = {}
                 self.mosaics[tile_name]['periods'][period]['start'] = startdate.strftime('%Y-%m-%d')
@@ -257,8 +304,7 @@ class Maestro:
                 self.mosaics[tile_name]['periods'][period]['dist_y'] = tile_stats.dist_y
                 self.mosaics[tile_name]['periods'][period]['min_x'] = tile_stats.min_x
                 self.mosaics[tile_name]['periods'][period]['max_y'] = tile_stats.max_y
-                self.mosaics[tile_name]['periods'][period]['dirname'] = cube_relative_path
-                self.mosaics[tile_name]['periods'][period]['feature'] = json.loads(tile_stats.feature)
+                self.mosaics[tile_name]['periods'][period]['feature'] = tile_stats.feature
                 if self.properties.get('shape', None):
                     self.mosaics[tile_name]['periods'][period]['shape'] = self.properties['shape']
 
@@ -289,11 +335,51 @@ class Maestro:
 
                 self._warped = reused_datacube
             else:
-                datacube_warped = get_cube_id(self.datacube.name)
+                source = self.datacube
+                if self.datacube.composite_function.alias != 'IDT':
+                    source = self.source(self.datacube, composite_function='IDT')
+                    if source is None:
+                        raise RuntimeError(f'Missing Identity cube for {self.datacube.name}-{self.datacube.version}')
 
-                self._warped = Collection.query().filter(Collection.name == datacube_warped).first()
+                self._warped = source
 
         return self._warped
+
+    @staticmethod
+    def sources(cube: Collection) -> List[Collection]:
+        """Trace data cube collection origin.
+
+        It traces all the collection origin from the given datacube using
+        ``bdc_catalog.models.CollectionSRC``.
+        """
+        out = []
+        ref = cube
+        while ref is not None:
+            source: CollectionSRC = (
+                CollectionSRC.query()
+                .filter(CollectionSRC.collection_id == ref.id)
+                .first()
+            )
+            if source is None:
+                break
+
+            ref = Collection.query().get(source.collection_src_id)
+            out.append(ref)
+        return out
+
+    @staticmethod
+    def source(cube: Collection, composite_function=None):
+        """Trace the first data cube origin.
+
+        Args:
+            cube (Collection): Data cube to trace.
+            composite_function (str): String composite function to filter.
+        """
+        sources = Maestro.sources(cube)
+        for collection in sources:
+            if (composite_function and collection.composite_function and
+                    collection.composite_function.alias == composite_function):
+                return collection
 
     @property
     def datacube_bands(self) -> List[Band]:
@@ -301,23 +387,6 @@ class Maestro:
         if self.params.get('bands'):
             return list(filter(lambda band: band.name in self.params['bands'], self.bands))
         return [b for b in self.bands if b.name != DATASOURCE_NAME]
-
-    @staticmethod
-    def get_bbox(tile_id: str, grs: GridRefSys) -> str:
-        """Retrieve the bounding box representation as string."""
-        geom_table = grs.geom_table
-
-        bbox_result = db.session.query(
-            geom_table.c.tile,
-            func.ST_AsText(func.ST_BoundingDiagonal(func.ST_Transform(geom_table.c.geom, 4326)))
-        ).filter(
-            geom_table.c.tile == tile_id
-        ).first()
-
-        bbox = bbox_result[1][bbox_result[1].find('(') + 1:bbox_result[0].find(')')]
-        bbox = bbox.replace(' ', ',')
-
-        return bbox
 
     def dispatch_celery(self):
         """Dispatch datacube generation on celery workers.
@@ -327,6 +396,7 @@ class Maestro:
         with timing('Time total to dispatch'):
             bands = self.datacube_bands
             common_bands = _common_bands()
+            export = dict()
 
             band_str_list = [
                 band.name for band in bands if band.name not in common_bands
@@ -336,18 +406,28 @@ class Maestro:
 
             warped_datacube = self.warped_datacube.name
 
-            quality_band = self.properties['quality_band']
-            parameters = deepcopy(self.properties)
-            # Do not pass band_mapping to the function context
-            parameters.pop('band_map', None)
-
+            quality_band = None
             stac_kwargs = self.properties.get('stac_kwargs', dict())
+            if self.datacube.composite_function.alias != 'IDT':
+                quality_band = self.properties['quality_band']
 
-            quality = next(filter(lambda b: b.name == quality_band, bands))
-            self.properties['mask']['nodata'] = float(quality.nodata)
+                quality = next(filter(lambda b: b.name == quality_band, bands))
+                self.properties['mask']['nodata'] = float(quality.nodata)
+            else:
+                self.properties['quality_band'] = None
+                self.properties['mask'] = None
+
+            output = dict(merges=dict(), blends=dict())
+
+            if self.reused_datacube:
+                self.properties['reuse_data_cube'] = dict(
+                    name=self.reused_datacube.name,
+                    version=self.reused_datacube.version,
+                )
 
             for tileid in self.mosaics:
                 blends = []
+                export.setdefault(tileid, dict())
 
                 tile = next(filter(lambda t: t.name == tileid, self.tiles))
 
@@ -358,12 +438,16 @@ class Maestro:
                     start = self.mosaics[tileid]['periods'][period]['start']
                     end = self.mosaics[tileid]['periods'][period]['end']
 
-                    feature = self.mosaics[tileid]['periods'][period]['feature']
+                    output['merges'].setdefault(period, dict())
 
-                    assets_by_period = self.search_images(feature, start, end, tileid, **stac_kwargs)
+                    feature = to_shape(self.mosaics[tileid]['periods'][period]['feature'])
+
+                    assets_by_period = self.search_images(shapely.geometry.mapping(feature), start, end, tileid, **stac_kwargs)
 
                     if self.datacube.composite_function.alias == 'IDT':
-                        stats_bands = (TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME)
+                        stats_bands = [TOTAL_OBSERVATION_NAME, CLEAR_OBSERVATION_NAME, PROVENANCE_NAME, DATASOURCE_NAME]
+
+                        stats_bands.extend([b.name for b in bands if b.name not in stats_bands and _has_default_or_index_bands(b)])
                         # Mount list of True/False values
                         is_any_empty = list(map(lambda k: k not in stats_bands and len(assets_by_period[k]) == 0, assets_by_period.keys()))
                         # When no asset found in this period, skip it.
@@ -379,15 +463,16 @@ class Maestro:
                     start_date = self.mosaics[tileid]['periods'][period]['start']
                     end_date = self.mosaics[tileid]['periods'][period]['end']
                     period_start_end = '{}_{}'.format(start_date, end_date)
+                    export[tileid].setdefault(period_start_end, dict())
+                    merge_opts = dict()
 
                     for band in bands:
                         # Skip trigger/search for Vegetation Index
                         if _has_default_or_index_bands(band):
                             continue
 
+                        export[tileid][period_start_end].setdefault(band.name, [])
                         merges = assets_by_period[band.name]
-
-                        merge_opts = dict()
 
                         if not merges:
                             for _b in bands:
@@ -399,6 +484,7 @@ class Maestro:
                                         f'Unexpected Error: The band {_b.name} has scenes, however '
                                         f'there any bands ({band.name}) that don\'t have any scenes on provider.'
                                     )
+                                _m[start_date] = dict()
 
                             # Adapt to make the merge function to generate empty raster
                             merges[start_date] = dict()
@@ -409,6 +495,9 @@ class Maestro:
                             # Preserve collections order
                             for values in collections.values():
                                 assets.extend(values)
+
+                            export[tileid][period_start_end][band.name].extend(assets)
+                            output['merges'][period].setdefault(merge_date, [])
 
                             properties = dict(
                                 date=merge_date,
@@ -429,9 +518,6 @@ class Maestro:
                                 **merge_opts
                             )
 
-                            if self.reused_datacube:
-                                properties['reuse_datacube'] = self.reused_datacube.id
-
                             activity = get_or_create_activity(
                                 cube=self.datacube.name,
                                 warped=warped_datacube,
@@ -443,28 +529,37 @@ class Maestro:
                                 **properties
                             )
 
-                            task = warp_merge.s(activity, band_map, **parameters)
+                            output['merges'][period][merge_date].append(activity)
+
+                            task = warp_merge.s(activity, self.band_map, **self.properties)
                             merges_tasks.append(task)
 
                     if len(merges_tasks) > 0:
-                        task = chain(group(merges_tasks), prepare_blend.s(band_map, **parameters))
+                        task = chain(group(merges_tasks), prepare_blend.s(self.band_map, **self.properties))
                         blends.append(task)
+                        output['blends'][period] = task
 
                 if len(blends) > 0:
                     task = group(blends)
                     task.apply_async()
 
-        return self.mosaics
+            if self.export_files:
+                file_path = Path(self.export_files)
+                for tile, period_map in export.items():
+                    for period, assets in period_map.items():
+                        file_path_period = file_path.parent / f'{file_path.stem}-{tile}-{period}.json'
+                        file_path_period.parent.mkdir(exist_ok=True, parents=True)
+                        with open(file_path_period, 'w') as f:
+                            f.write(json.dumps(assets, indent=4))
 
-    def search_images(self, feature: str, start: str, end: str, tile_id: str, **kwargs):
+        return output
+
+    def search_images(self, feature: dict, start: str, end: str, tile_id: str, **kwargs):
         """Search and prepare images on STAC."""
         scenes = {}
-        t = f'{start}T00:00:00/{end}T23:59:59'
-
         options = dict(
             intersects=feature,
-            datetime=t,
-            time=t,
+            datetime='{}T00:00:00/{}T23:59:59'.format(start, end),
             limit=1000
         )
         options.update(kwargs)
@@ -491,9 +586,12 @@ class Maestro:
 
         for dataset in self.params['collections']:
             options['collections'] = [dataset]
-            options.setdefault('query', dict())
-            options['query']['collections'] = [dataset]
             stac = self.get_stac(dataset)
+            stac_collection = stac.collection(dataset)
+            if stac_collection.get('summaries') and stac_collection['summaries'].get('platform'):
+                platforms = platforms.union(set(stac_collection['summaries'].get('platform')))
+            elif stac_collection.properties.get('platform'):
+                platforms = platforms.union(set(stac_collection.properties.get('platform')))
 
             token = ''
 
@@ -506,12 +604,16 @@ class Maestro:
                 for feature in items['features']:
                     if feature['type'] == 'Feature':
                         date = feature['properties']['datetime'][0:10]
+                        stac_bands = feature['properties'].get('eo:bands', [])
                         identifier = feature['id']
                         # TODO: Add handler to deal with parse result serializer.
+                        platform = feature['properties'].get('platform')
                         if stac.url.startswith('https://landsatlook.usgs.gov'):
                             # Remove last SR sentence.
                             identifier = f'{identifier[:-3]}{identifier[-3:].replace("_SR", "")}'
-                        platform = feature['properties'].get('platform')
+                        # Special treatment for missing/invalid platform values
+                        if (platform is None or isinstance(platform, list)) and _is_landsat(identifier):
+                            platform = _detect_landsat_platform(identifier)
 
                         for band in bands:
                             band_name_href = band.name
@@ -533,13 +635,18 @@ class Maestro:
                                 elif f'sr_{band_name_href}' not in feature['assets']:
                                     continue
                                 else:
-                                    band_name_href = f'sr_{band_name_href}'
+                                    band_name_href = f'sr_{band.name}'
+
+                            feature_band = list(filter(lambda b: b['name'] == band_name_href, stac_bands))
+                            feature_band = feature_band[0] if len(feature_band) > 0 else dict()
 
                             scenes[band.name].setdefault(date, dict())
 
                             link = feature['assets'][band_name_href]['href']
 
                             scene = dict(**collection_bands[band.name])
+                            scene.update(**feature_band)
+
                             scene['sceneid'] = identifier
                             scene['band'] = band.name
                             scene['dataset'] = dataset
@@ -563,3 +670,26 @@ class Maestro:
         self.platforms = sorted(list(platforms))
 
         return scenes
+
+
+def _is_landsat(identifier: str) -> bool:
+    try:
+        _parse_landsat(identifier)
+        return True
+    except ValueError:
+        return False
+
+
+def _parse_landsat(identifier: str) -> List[str]:
+    entities = identifier.split('_')
+    if len(entities) != 7 or not entities[0].startswith('L') or not entities[0][-2:].isnumeric():
+        raise ValueError(f'Invalid landsat scene {identifier}')
+    return entities
+
+
+def _detect_landsat_platform(identifier: str):
+    entities = _parse_landsat(identifier)
+    satellite = int(entities[0][-2:])
+    for value in [4, 5, 7, 8, 9]:
+        if satellite == value:
+            return f'Landsat-{value}'

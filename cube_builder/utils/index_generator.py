@@ -1,9 +1,19 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 """Simple data cube band generator."""
@@ -14,13 +24,15 @@ from typing import Dict, List
 import numpy
 from bdc_catalog.models import Band, Collection
 
+from .image import SmartDataSet, generate_cogs
 from .interpreter import execute
 
 BandMapFile = Dict[str, str]
 """Type which a key (represented as data cube band name) points to generated file in disk."""
 
 
-def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: str) -> BandMapFile:
+def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: str, reuse_data_cube: Collection = None,
+                          **kwargs) -> BandMapFile:
     """Generate data cube custom bands based in string-expression on table `band_indexes`.
 
     This method seeks for custom bands on Collection Band definition. A custom band must have
@@ -35,7 +47,7 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
     Returns:
         A dict values with generated bands.
     """
-    from .processing import SmartDataSet, build_cube_path, generate_cogs
+    from .processing import build_cube_path
 
     cube_band_indexes: List[Band] = []
 
@@ -61,6 +73,11 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
         raise RuntimeError('Can\t generate band indexes since profile/blocks is None.')
 
     output = dict()
+    cube_name = cube.name
+    cube_version = cube.version
+    if reuse_data_cube:
+        cube_name = reuse_data_cube['name']
+        cube_version = reuse_data_cube['version']
 
     for band_index in cube_band_indexes:
         band_name = band_index.name
@@ -75,11 +92,13 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
         data_type_min_value = data_type_info.min
 
         profile['dtype'] = band_data_type
+        profile['nodata'] = float(band_index.nodata)
 
-        custom_band_path = build_cube_path(cube.name, period, tile_id, version=cube.version, band=band_name)
+        custom_band_path = build_cube_path(cube_name, period, tile_id, version=cube_version, band=band_name,
+                                           **kwargs)
 
         output_dataset = SmartDataSet(str(custom_band_path), mode='w', **profile)
-        logging.info(f'Generating band {band_name} for cube {cube.name} - {custom_band_path.stem}...')
+        logging.info(f'Generating band {band_name} for cube {cube_name} - {custom_band_path.stem}...')
 
         for _, window in blocks:
             machine_context = {
@@ -91,7 +110,6 @@ def generate_band_indexes(cube: Collection, scenes: dict, period: str, tile_id: 
 
             result = execute(expr, context=machine_context)
             raster = result[band_name]
-            raster[raster == numpy.ma.masked] = profile['nodata']
 
             # Persist the expected band data type to cast value safely.
             # TODO: Should we use consider band min_value/max_value?

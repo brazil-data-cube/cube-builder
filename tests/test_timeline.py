@@ -1,15 +1,26 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 """Define the unittests for data cube timeline."""
 
 import datetime
 
+import pytest
 from dateutil.relativedelta import relativedelta
 
 from cube_builder.utils.timeline import Timeline, temporal_priority_timeline
@@ -181,6 +192,13 @@ class TestTimeline:
         assert timeline[0][0] == datetime.date(year=2019, month=12, day=21)
         # Should match last time instant with next year
         assert timeline[-1][-1] == datetime.date(year=2021, month=3, day=20)
+
+    def test_invalid_date_limit(self):
+        start = datetime.datetime(year=2021, month=9, day=30)
+        end = datetime.datetime(year=2020, month=10, day=15)
+        with pytest.raises(ValueError) as e:
+            self._build_timeline(schema='Continuous', unit='month', step=1, start_date=start, end_date=end)
+        assert ' must not be lower than Start Date ' in str(e.value)
 
 
 class TestTemporalPriorityTimeline:

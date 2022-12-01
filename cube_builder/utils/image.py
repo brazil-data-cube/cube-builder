@@ -1,28 +1,38 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 """Define a utility to validate merge images."""
 
 import logging
 import os
-from collections import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Iterable, List, Optional, Union
 from urllib.parse import urlparse
 
 import numpy
 import rasterio
 from rasterio._warp import Affine
+from rio_cogeo.cogeo import cog_translate
+from rio_cogeo.profiles import cog_profiles
 from sqlalchemy.engine.result import ResultProxy, RowProxy
 
 from ..config import Config
-from .processing import SmartDataSet, generate_cogs, save_as_cog
 
 LANDSAT_BANDS = dict(
     int16=['band1', 'band2', 'band3', 'band4', 'band5', 'band6', 'band7', 'evi', 'ndvi'],
@@ -78,6 +88,12 @@ def validate(row: RowProxy):
 
 def _file_name(url: str) -> str:
     parsed = urlparse(url)
+    # IF SAFE: parent
+    if '.SAFE' in parsed.path:
+        safe_pos = parsed.path.index('.SAFE') + 5
+        abs_safe_folder = parsed.path[:safe_pos]
+        scene_id = os.path.basename(os.path.dirname(abs_safe_folder))
+        return scene_id
 
     return os.path.basename(parsed.path)
 
@@ -93,6 +109,7 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
         futures = executor.map(validate, images)
 
         output = dict()
+        error_map = dict()
 
         for row, errors in futures:
             if row is None:
@@ -107,9 +124,10 @@ def validate_merges(images: ResultProxy, num_threads: int = Config.MAX_THREADS_I
 
             output[row.date]['file'] = row.file
             output[row.date]['errors'].extend(errors)
-            if row.traceback:
+            if row.traceback and row.date not in error_map:
                 output[row.date]['errors'].append(dict(message=row.traceback, band=row.band,
                                                        filename=_file_name(row.link)))
+                error_map[row.date] = True
 
             output[row.date]['bands'].setdefault(row.band, list())
             output[row.date]['bands'][row.band].append(row.link)
@@ -168,14 +186,13 @@ def create_empty_raster(location: str, proj4: str, dtype: str, xmin: float, ymax
     return str(location)
 
 
-def match_histogram_with_merges(source: str, source_mask: str, reference: str, reference_mask: str, block_size: int = None):
+def match_histogram_with_merges(source: str, source_mask: str, reference: str, reference_mask: str, **kwargs):
     """Normalize the source image histogram with reference image.
 
     This functions implements the `skimage.exposure.match_histograms`, which consists in the manipulate the pixels of an
     input image and match the histogram with the reference image.
 
-    See Also:
-        - `Histogram Matching <https://scikit-image.org/docs/dev/auto_examples/color_exposure/plot_histogram_matching.html>`_.
+    See more in `Histogram Matching <https://scikit-image.org/docs/dev/auto_examples/color_exposure/plot_histogram_matching.html>`_.
 
     Note:
         It overwrites the source file.
@@ -187,6 +204,8 @@ def match_histogram_with_merges(source: str, source_mask: str, reference: str, r
         reference_mask (str): Path to the rasterio data set file
     """
     from skimage.exposure import match_histograms as _match_histograms
+
+    block_size = kwargs.get('block_size')
 
     with rasterio.open(source) as source_data_set, rasterio.open(source_mask) as source_mask_data_set:
         source_arr = source_data_set.read(1, masked=True)
@@ -263,6 +282,127 @@ def radsat_extract_bits(bit_value: Union[int, numpy.ndarray], bit_start: int, bi
     return res
 
 
+def check_file_integrity(file_path: Union[str, Path], read_bytes: bool = False) -> bool:
+    """Check Raster File integrity.
+
+    Args:
+        file_path (str|Path): Path to the raster file
+        read_bytes (bool): Read raster band entire. Default is False
+    """
+    try:
+        with rasterio.open(file_path) as data_set:
+            if read_bytes:
+                _ = data_set.read(1)
+            return True
+    except (rasterio.RasterioIOError, Exception):
+        return False
+
+
+def save_as_cog(destination: str, raster, mode='w', tags=None, block_size=None, **profile):
+    """Save the raster file as Cloud Optimized GeoTIFF.
+
+    See Also:
+        Cloud Optimized GeoTiff https://gdal.org/drivers/raster/cog.html
+
+    Args:
+        destination: Path to store the data set.
+        raster: Numpy raster values to persist in disk
+        mode: Default rasterio mode. Default is 'w' but you also can set 'r+'.
+        tags: Tag values (Dict[str, str]) to write on dataset.
+        **profile: Rasterio profile values to add in dataset.
+    """
+    with rasterio.open(str(destination), mode, **profile) as dataset:
+        if profile.get('nodata'):
+            dataset.nodata = profile['nodata']
+
+        dataset.write_band(1, raster)
+
+        if tags:
+            dataset.update_tags(**tags)
+
+    generate_cogs(str(destination), str(destination), block_size=block_size)
+
+
+def generate_cogs(input_data_set_path, file_path, profile='deflate', block_size=None, profile_options=None, **options):
+    """Generate Cloud Optimized GeoTIFF files (COG).
+
+    Args:
+        input_data_set_path (str) - Path to the input data set
+        file_path (str) - Target data set filename
+        profile (str) - A COG profile based in `rio_cogeo.profiles`.
+        profile_options (dict) - Custom options to the profile.
+        block_size (int) - Custom block size.
+
+    Returns:
+        Path to COG.
+    """
+    if profile_options is None:
+        profile_options = dict()
+
+    output_profile = cog_profiles.get(profile)
+    output_profile.update(dict(BIGTIFF="IF_SAFER"))
+    output_profile.update(profile_options)
+
+    if block_size:
+        output_profile["blockxsize"] = block_size
+        output_profile["blockysize"] = block_size
+
+    # Dataset Open option (see gdalwarp `-oo` option)
+    config = dict(
+        GDAL_NUM_THREADS="ALL_CPUS",
+        GDAL_TIFF_INTERNAL_MASK=True,
+        GDAL_TIFF_OVR_BLOCKSIZE="128",
+    )
+
+    cog_translate(
+        str(input_data_set_path),
+        str(file_path),
+        output_profile,
+        config=config,
+        in_memory=False,
+        quiet=True,
+        **options,
+    )
+    return str(file_path)
+
+
+class SmartDataSet:
+    """Defines utility class to auto close rasterio data set.
+
+    This class is class helper to avoid memory leak of opened data set in memory.
+    """
+
+    def __init__(self, file_path: str, mode='r', tags=None, **properties):
+        """Initialize SmartDataSet definition and open rasterio data set."""
+        self.path = Path(file_path)
+        self.mode = mode
+        self.dataset = rasterio.open(file_path, mode=mode, **properties)
+        self.tags = tags
+        self.mode = mode
+
+    def __del__(self):
+        """Close dataset on delete object."""
+        self.close()
+
+    def __enter__(self):
+        """Use data set context with operator ``with``."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Close data set on exit with clause."""
+        self.close()
+
+    def close(self):
+        """Close rasterio data set."""
+        if not self.dataset.closed:
+            logging.debug('Closing dataset {}'.format(str(self.path)))
+
+            if self.mode == 'w' and self.tags:
+                self.dataset.update_tags(**self.tags)
+
+            self.dataset.close()
+
+
 def extract_qa_bits(band_data, bit_location):
     """Get bit information from given position.
 
@@ -296,16 +436,16 @@ class QAConfidence:
     """Represent the Cirrus."""
     snow: Union[str, None]
     """Represent the Snow/Ice."""
-    landsat_8: Union[bool, numpy.ndarray]
-    """Flag to identify Landsat-8 Satellite."""
+    oli: Union[bool, numpy.ndarray]
+    """Flag to identify OLI/TIRS Satellite."""
 
-    def __init__(self, cloud=None, cloud_shadow=None, cirrus=None, snow=None, landsat_8=None):
+    def __init__(self, cloud=None, cloud_shadow=None, cirrus=None, snow=None, oli=None):
         """Build QA Confidence object."""
         self.cloud = cloud
         self.cloud_shadow = cloud_shadow
         self.cirrus = cirrus
         self.snow = snow
-        self.landsat_8 = landsat_8
+        self.oli = oli
 
     def apply(self, data):
         """Apply the Bit confidence to the Quality Assessment mask.
@@ -346,15 +486,15 @@ class QAConfidence:
             data = _invoke(self.snow, 'snow', 12, 14, data)
 
         if self.cirrus:
-            if isinstance(self.landsat_8, bool):
-                self.landsat_8 = numpy.full(data.shape,
+            if isinstance(self.oli, bool):
+                self.oli = numpy.full(data.shape,
                                             dtype=numpy.bool_,
-                                            fill_value=self.landsat_8)
+                                            fill_value=self.oli)
 
-            landsat_8_pixels = data[self.landsat_8]
-            res = _invoke(self.cirrus, 'cirrus', 14, 16, landsat_8_pixels)
+            oli_pixels = data[self.oli]
+            res = _invoke(self.cirrus, 'cirrus', 14, 16, oli_pixels)
 
-            data[self.landsat_8] = res
+            data[self.oli] = res
 
         return data
 
@@ -373,7 +513,7 @@ def get_qa_mask(data: numpy.ma.masked_array,
         >>> import numpy
         >>> from cube_builder.utils.image import QAConfidence, get_qa_mask
 
-        >>> mid_cloud_confidence = QAConfidence(cloud='cloud == MEDIUM', cloud_shadow=None, cirrus=None, snow=None, landsat_8=True)
+        >>> mid_cloud_confidence = QAConfidence(cloud='cloud == MEDIUM', cloud_shadow=None, cirrus=None, snow=None, oli=True)
         >>> clear = [6, 7]  # Clear and Water
         >>> not_clear = [1, 2, 3, 4]  # Dilated Cloud, Cirrus, Cloud, Cloud Shadow
         >>> get_qa_mask(numpy.ma.array([22080], dtype=numpy.int16, fill_value=1),
@@ -421,15 +561,15 @@ def get_qa_mask(data: numpy.ma.masked_array,
     # Mask all not clear data before get any valid data
     for value in not_clear_data:
         if value == 2 and confidence:
-            not_landsat_8_positions = numpy.where(numpy.invert(confidence.landsat_8))
+            not_oli_positions = numpy.where(numpy.invert(confidence.oli))
             tmp_result = numpy.ma.masked_where(data.mask, data)
-            tmp_result.mask[not_landsat_8_positions] = True
+            tmp_result.mask[not_oli_positions] = True
 
             masked = extract_qa_bits(tmp_result, value)
             if isinstance(masked.mask, numpy.bool_):
                 masked.mask = numpy.full(data.shape, fill_value=masked.mask, dtype=numpy.bool_)
 
-            masked.mask[not_landsat_8_positions] = data[not_landsat_8_positions].mask
+            masked.mask[not_oli_positions] = data[not_oli_positions].mask
 
             tmp_result = None
         else:
@@ -449,3 +589,4 @@ def get_qa_mask(data: numpy.ma.masked_array,
             data.mask = numpy.invert(clear_mask)
 
     return data
+

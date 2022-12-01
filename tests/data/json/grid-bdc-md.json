@@ -1,0 +1,14 @@
+{
+    "names": [
+        "BDC_MD_TESTE"
+    ],
+    "description": "Brazil Grids - Albers Equal Area",
+    "projection": "aea",
+    "meridian": -54,
+    "tile_factor": [
+        [20, 20]
+    ],
+    "shape": [10560, 10560],
+    "bbox": [-73.98318215899995, -33.75117799399993, -28.847770352999916, 5.269580833000035],
+    "srid": 100009
+}

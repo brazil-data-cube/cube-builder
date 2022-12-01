@@ -26,4 +26,5 @@ recursive-include docs *.ico
 recursive-include docs *.png
 recursive-include examples *.py
 recursive-include tests *.py
+recursive-include tests *.json
 recursive-include cube_builder *.yaml

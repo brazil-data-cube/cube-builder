@@ -1,17 +1,32 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2020 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 FROM python:3.8
+
+ARG GIT_COMMIT
+
+LABEL "org.brazildatacube.maintainer"="Brazil Data Cube <brazildatacube@inpe.br>"
+LABEL "org.brazildatacube.title"="Docker image for Data Cube Builder Service"
+LABEL "org.brazildatacube.git_commit"="${GIT_COMMIT}"
 
 ADD . /app
 
 WORKDIR /app
 
-RUN python -m pip install pip --upgrade && \
-    python -m pip install wheel && \
-    python -m pip install -e .[rabbitmq]
+RUN python3 -m pip install pip --upgrade setuptools wheel && \
+    python3 -m pip install -e .[rabbitmq]

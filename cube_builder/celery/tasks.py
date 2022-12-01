@@ -1,9 +1,19 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 """Define celery tasks for Cube Builder."""
@@ -13,18 +23,19 @@ import logging
 import traceback
 from collections.abc import Iterable
 from copy import deepcopy
+from pathlib import Path
 
-# 3rdparty
 from bdc_catalog.models import Collection, db
 from celery import chain, group
 
 # Cube Builder
+from ..config import Config
 from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
 from ..models import Activity
-from ..utils.image import create_empty_raster, match_histogram_with_merges
-from ..utils.processing import DataCubeFragments
+from ..utils import get_srid_column
+from ..utils.image import check_file_integrity, create_empty_raster, match_histogram_with_merges
 from ..utils.processing import blend as blend_processing
-from ..utils.processing import build_cube_path, compute_data_set_stats, get_or_create_model
+from ..utils.processing import build_cube_path, compute_data_set_stats, get_item_id, get_or_create_model
 from ..utils.processing import merge as merge_processing
 from ..utils.processing import post_processing_quality, publish_datacube, publish_merge
 from ..utils.timeline import temporal_priority_timeline
@@ -61,15 +72,15 @@ def create_execution(activity: dict) -> Activity:
     return model
 
 
-@celery_app.task(queue='merge-cube')
-def warp_merge(activity, band_map, mask, force=False, **kwargs):
+@celery_app.task(queue=Config.QUEUE_IDENTITY_CUBE)
+def warp_merge(activity, band_map, mask, force=False, data_dir=None, **kwargs):
     """Execute datacube merge task.
 
     This task consists in the following steps:
 
         - Prepare a raster using dimensions of datacube GRS schema.
         - Open collection dataset with RasterIO and reproject to datacube GRS Schema.
-        - Fill the respective pathrow into raster
+        - Fill the respective path row into raster
 
     Args:
         activity - Datacube Activity Model
@@ -78,9 +89,13 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
     Returns:
         Validated activity
     """
-    logging.warning('Executing merge {} - {}'.format(activity.get('warped_collection_id'), activity['band']))
+    logging.warning('Executing merge {} - {} - {}'.format(activity.get('warped_collection_id'),
+                                                          activity['band'],
+                                                          activity['date']))
 
     record = create_execution(activity)
+
+    data_dir = data_dir or Config.DATA_DIR
 
     record.warped_collection_id = activity['warped_collection_id']
     merge_date = activity['date']
@@ -89,115 +104,137 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
     version = activity['args']['version']
 
     merge_file_path = None
-    quality_band = kwargs['quality_band']
+    quality_band = kwargs.get('quality_band')
+    collection_id = f'{record.collection_id}-{version}'
 
-    if activity['args'].get('reuse_datacube'):
-        collection = Collection.query().filter(Collection.id == activity['args']['reuse_datacube']).first()
-
-        if not force:
-            # TODO: Should we search in Activity instead?
-            merge_file_path = build_cube_path(collection.name, merge_date, tile_id,
-                                              version=collection.version, band=record.band)
-
-            if not merge_file_path.exists():
-                # TODO: Should we raise exception??
-                logging.warning(f'Cube {record.warped_collection_id} requires {collection.name}, but the file {str(merge_file_path)} not found. Skipping')
-                raise RuntimeError(
-                    f"""Cube {record.warped_collection_id} is derived from {collection.name},
-                    but the file {str(merge_file_path)} was not found."""
-                )
-
-        else:
-            raise RuntimeError(
-                f'Cannot use option "force" for derived data cube - {record.warped_collection_id} of {collection.name}'
-            )
+    if kwargs.get('reuse_data_cube'):
+        ref_cube_idt = kwargs['reuse_data_cube']['name']
+        # TODO: Should we search in Activity instead?
+        merge_file_path = build_cube_path(ref_cube_idt, merge_date, tile_id,
+                                          version=kwargs['reuse_data_cube']['version'], band=record.band,
+                                          prefix=data_dir, composed=False, **kwargs)  # check published dir
 
     if merge_file_path is None:
         merge_file_path = build_cube_path(record.warped_collection_id, merge_date,
-                                          tile_id, version=version, band=record.band)
+                                          tile_id, version=version, band=record.band,
+                                          prefix=data_dir, composed=False, **kwargs)
 
-        if activity['band'] == quality_band and len(activity['args']['datasets']):
+        if activity['band'] == quality_band and (len(activity['args']['datasets']) or kwargs.get('combined')):
             kwargs['build_provenance'] = True
 
     reused = False
 
+    is_valid_or_exists = not force and merge_file_path.exists() and merge_file_path.is_file()
+
+    # When is false, we must change to Work_dir context
+    if not is_valid_or_exists:
+        merge_file_path = Path(Config.WORK_DIR) / merge_file_path.relative_to(data_dir)
+        is_valid_or_exists = not force and merge_file_path.exists() and merge_file_path.is_file()
+
     # Reuse merges already done. Rebuild only with flag ``--force``
-    if not force and merge_file_path.exists() and merge_file_path.is_file():
+    if is_valid_or_exists:
         efficacy = cloudratio = 0
 
-        if activity['band'] == quality_band:
-            # When file exists, compute the file statistics
-            efficacy, cloudratio = compute_data_set_stats(str(merge_file_path), mask=mask, compute=True)
-
-        reused = True
-
-        activity['args']['file'] = str(merge_file_path)
-        activity['args']['efficacy'] = efficacy
-        activity['args']['cloudratio'] = cloudratio
-        record.traceback = ''
-
-        args = deepcopy(record.args)
-        args.update(activity['args'])
-
-        activity['args'] = args
-
-        record.args = args
-        record.save()
-    else:
-        record.status = 'STARTED'
-        record.save()
-
-        record.args = activity['args']
-
         try:
-            args = deepcopy(activity.get('args'))
-            args.pop('period', None)
-            args['tile_id'] = tile_id
-            args['date'] = record.date.strftime('%Y-%m-%d')
-            args['cube'] = record.warped_collection_id
+            if not check_file_integrity(merge_file_path):
+                raise IOError('Invalid Merge File')
 
-            empty = args.get('empty', False)
+            if activity['band'] == quality_band:
+                # When file exists, compute the file statistics
+                efficacy, cloudratio = compute_data_set_stats(str(merge_file_path), mask=mask, compute=True)
+                datasets = activity['args']['datasets']
+                if len(datasets) > 1:
+                    # prepare datasource. TODO: Check with reuse data cube
+                    item_id = get_item_id(record.warped_collection_id, version, tile_id, merge_date)
+                    datasource_file = merge_file_path.parent / f'{item_id}_DATASOURCE.tif'
+                    if not datasource_file.exists():
+                        # remove cloud mask file
+                        merge_file_path.unlink()
+                        prefix = data_dir if merge_file_path.is_relative_to(data_dir) else Config.WORK_DIR
+                        # Reset to workdir
+                        merge_file_path = Path(Config.WORK_DIR) / merge_file_path.relative_to(prefix)
+                        raise IOError('Missing Datasource')
 
-            # Create base directory
-            merge_file_path.parent.mkdir(parents=True, exist_ok=True)
+            reused = True
 
-            if empty:
-                # create empty raster
-                file_path = create_empty_raster(str(merge_file_path),
-                                                proj4=args['srs'],
-                                                cog=True,
-                                                nodata=args['nodata'],
-                                                dtype='int16',  # TODO: Pass through args
-                                                dist=[args['dist_x'], args['dist_y']],
-                                                resolution=[args['resx'], args['resy']],
-                                                xmin=args['xmin'],
-                                                ymax=args['ymax'])
-                res = dict(
-                    file=str(file_path),
-                    efficacy=100,
-                    cloudratio=0,
-                    resolution=args['resx'],
-                    nodata=args['nodata']
-                )
-            else:
-                res = merge_processing(str(merge_file_path), mask, band_map=band_map, band=record.band, compute=True, **args, **kwargs)
-
-            merge_args = deepcopy(activity['args'])
-            merge_args.update(res)
-
+            activity['args']['file'] = str(merge_file_path)
+            activity['args']['efficacy'] = efficacy
+            activity['args']['cloudratio'] = cloudratio
             record.traceback = ''
-            record.status = 'SUCCESS'
-            record.args = merge_args
 
-            activity['args'].update(merge_args)
-        except BaseException as e:
-            record.status = 'FAILURE'
-            record.traceback = capture_traceback(e)
-            logging.error('Error in merge. Activity {}'.format(record.id), exc_info=True)
+            args = deepcopy(record.args)
+            args.update(activity['args'])
 
-            raise e
-        finally:
+            activity['args'] = args
+
+            record.args = args
             record.save()
+
+            logging.warning(f"Merge {str(merge_file_path)} executed successfully. "
+                            f"Efficacy={activity['args']['efficacy']}, "
+                            f"cloud_ratio={activity['args']['cloudratio']}")
+
+            activity['args']['reused'] = reused
+
+            return activity
+        except Exception as e:
+            logging.warning(f'{merge_file_path.name} not valid due {str(e)}. Recreating...')
+
+    record.status = 'STARTED'
+    record.save()
+
+    record.args = activity['args']
+
+    try:
+        args = deepcopy(activity.get('args'))
+        args.pop('period', None)
+        args['tile_id'] = tile_id
+        args['date'] = record.date.strftime('%Y-%m-%d')
+        args['cube'] = record.warped_collection_id
+
+        empty = args.get('empty', False)
+
+        # Create base directory
+        merge_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if empty:
+            # create empty raster
+            file_path = create_empty_raster(str(merge_file_path),
+                                            proj4=args['srs'],
+                                            cog=True,
+                                            nodata=args['nodata'],
+                                            dtype='int16',  # TODO: Pass through args
+                                            dist=[args['dist_x'], args['dist_y']],
+                                            resolution=[args['resx'], args['resy']],
+                                            xmin=args['xmin'],
+                                            ymax=args['ymax'])
+            res = dict(
+                file=str(file_path),
+                efficacy=100,
+                cloudratio=0,
+                resolution=args['resx'],
+                nodata=args['nodata']
+            )
+        else:
+            res = merge_processing(str(merge_file_path), mask, band_map=band_map, band=record.band, compute=True,
+                                   collection=collection_id, **args, **kwargs)
+
+        merge_args = deepcopy(activity['args'])
+        merge_args.update(res)
+
+        record.traceback = ''
+        record.status = 'SUCCESS'
+        record.args = merge_args
+
+        activity['args'].update(merge_args)
+    except BaseException as e:
+        record.status = 'FAILURE'
+        record.traceback = capture_traceback(e)
+        logging.error('Error in merge. Activity {}'.format(record.id), exc_info=True)
+
+        raise e
+    finally:
+        record.save()
 
     logging.warning('Merge {} executed successfully. Efficacy={}, cloud_ratio={}'.format(
         str(merge_file_path),
@@ -210,8 +247,8 @@ def warp_merge(activity, band_map, mask, force=False, **kwargs):
     return activity
 
 
-@celery_app.task(queue='prepare-cube')
-def prepare_blend(merges, band_map: dict, **kwargs):
+@celery_app.task(queue=Config.QUEUE_PREPARE_CUBE)
+def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
     """Receive merges by period and prepare task blend.
 
     This task aims to prepare celery task definition for blend.
@@ -226,10 +263,24 @@ def prepare_blend(merges, band_map: dict, **kwargs):
     # Prepare map of efficacy/cloud_ratio based in quality merge result
     quality_date_stats = {
         m['date']: (m['args']['efficacy'], m['args']['cloudratio'], m['args']['file'], m['args']['reused'])
-        for m in merges if m['band'] == quality_band
+        for m in merges if m['band'] == quality_band or quality_band is None  # Quality None means IDT without Mask
     }
 
     version = merges[0]['args']['version']
+    identity_cube = merges[0]['warped_collection_id']
+    collection_ref: Collection = (
+        Collection.query()
+        .filter(Collection.name == merges[0]['collection_id'],
+                Collection.version == version)
+        .first()
+    )
+    composite_function = collection_ref.composite_function.alias
+
+    if reuse_data_cube:
+        identity_cube = reuse_data_cube['name']
+        version = reuse_data_cube['version']
+
+    kwargs['mask'] = kwargs['mask'] or dict()
     bands = [b for b in band_map.keys() if b != kwargs['mask'].get('saturated_band')]
 
     if 'no_post_process' not in kwargs:
@@ -239,18 +290,23 @@ def prepare_blend(merges, band_map: dict, **kwargs):
             # Do not apply post-processing on reused data cube since it may be already processed.
             if not was_reused:
                 logging.info(f'Applying post-processing in {str(quality_file)}')
-                post_processing_quality(quality_file, bands, merges[0]['warped_collection_id'],
-                                        period, merges[0]['tile_id'], quality_band, band_map,
-                                        version=version, block_size=block_size)
+                post_processing_quality(quality_file, bands, identity_cube,
+                                        period, merges[0]['tile_id'],
+                                        band_map=band_map,
+                                        version=version, block_size=block_size,
+                                        datasets=merges[0]['args']['datasets'],
+                                        **kwargs)
             else:
                 logging.info(f'Skipping post-processing {str(quality_file)}')
 
-    def _is_not_stk(_merge):
+    def _is_not_stk(merge):
         """Control flag to generate cloud mask.
 
         This function is a utility to dispatch the cloud mask generation only for STK data cubes.
         """
-        return _merge['band'] == quality_band and not _merge['collection_id'].endswith('STK')
+        return merge['band'] == quality_band and composite_function not in ('STK', 'LCF')
+
+    platforms = []
 
     for _merge in merges:
         # Skip quality generation for MEDIAN, AVG
@@ -260,6 +316,7 @@ def prepare_blend(merges, band_map: dict, **kwargs):
 
         activity = activities.get(_merge['band'], dict(scenes=dict()))
 
+        activity['composite_function'] = composite_function
         activity['datacube'] = _merge['collection_id']
         activity['warped_datacube'] = _merge['warped_collection_id']
         activity['band'] = _merge['band']
@@ -281,14 +338,26 @@ def prepare_blend(merges, band_map: dict, **kwargs):
             activity['reuse_datacube'] = _merge['args']['reuse_datacube']
 
         activity['scenes'][_merge['args']['date']]['ARDfiles'] = {
-            quality_band: quality_file,
             _merge['band']: _merge['args']['file']
         }
+        if quality_band is not None:
+            activity['scenes'][_merge['args']['date']]['ARDfiles'][quality_band] = quality_file
 
         if _merge['args'].get(DATASOURCE_NAME):
             activity['scenes'][_merge['args']['date']]['ARDfiles'][DATASOURCE_NAME] = _merge['args'][DATASOURCE_NAME]
+            if _merge['args'].get('platforms'):
+                activity.setdefault('platforms', _merge['args'].get('platforms'))
+                platforms = _merge['args'].get('platforms')
 
         activities[_merge['band']] = activity
+
+    if platforms and kwargs.get('combined'):
+        # Add weights for platform order
+        weights = {p: 0.05 * i for i, p in enumerate(platforms)}
+        for activity in activities.values():
+            for ctx in activity['scenes'].values():
+                for platform in ctx['platforms_used']:
+                    ctx['efficacy'] += weights[platform]
 
     if kwargs.get('mask') and kwargs['mask'].get('saturated_band'):
         saturated_mask = kwargs['mask']['saturated_band']
@@ -332,14 +401,9 @@ def prepare_blend(merges, band_map: dict, **kwargs):
             for idx, date in enumerate(ordered_dates):
                 activity['scenes'][date]['efficacy'] = weights[idx]
 
-    # Prepare list of activities to dispatch
-    activity_list = list(activities.values())
-
-    datacube = activity_list[0]['datacube']
-
     # For IDENTITY data cube trigger, just publish
-    if DataCubeFragments(datacube).composite_function == 'IDENTITY':
-        task = publish.s(list(activities.values()))
+    if composite_function == 'IDT':
+        task = publish.s(list(activities.values()), reuse_data_cube=reuse_data_cube, band_map=band_map, **kwargs)
         return task.apply_async()
 
     logging.warning('Scheduling blend....')
@@ -349,22 +413,23 @@ def prepare_blend(merges, band_map: dict, **kwargs):
     # We must keep track of last activity to run
     # Since the Clear Observation must only be execute by single process. It is important
     # to avoid concurrent processes to write same data set in disk
-    last_activity = activity_list[-1]
+    last_activity = activities.pop(quality_band)
 
     # Trigger all except the last
-    for activity in activity_list[:-1]:
+    for activity in list(activities.values()):
         # TODO: Persist
-        blends.append(blend.s(activity, band_map, **kwargs))
+        blends.append(blend.s(activity, band_map, reuse_data_cube=reuse_data_cube, **kwargs))
 
     # Trigger last blend to execute Clear Observation
-    blends.append(blend.s(last_activity, band_map, build_clear_observation=True, **kwargs))
+    blends.append(blend.s(last_activity, band_map, build_clear_observation=True, reuse_data_cube=reuse_data_cube, **kwargs))
 
-    task = chain(group(blends), publish.s(band_map, **kwargs))
+    task = chain(group(blends), publish.s(band_map, reuse_data_cube=reuse_data_cube, **kwargs))
     task.apply_async()
+    return blends
 
 
-@celery_app.task(queue='blend-cube')
-def blend(activity, band_map, build_clear_observation=False, **kwargs):
+@celery_app.task(queue=Config.QUEUE_BLEND_CUBE)
+def blend(activity, band_map, build_clear_observation=False, reuse_data_cube=None, **kwargs):
     """Execute datacube blend task.
 
     Args:
@@ -379,11 +444,13 @@ def blend(activity, band_map, build_clear_observation=False, **kwargs):
 
     logging.warning('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
 
-    return blend_processing(activity, band_map, kwargs['quality_band'], build_clear_observation, block_size=block_size)
+    return blend_processing(activity, band_map,
+                            build_clear_observation=build_clear_observation,
+                            block_size=block_size, reuse_data_cube=reuse_data_cube, **kwargs)
 
 
-@celery_app.task(queue='publish-cube')
-def publish(blends, band_map, quality_band: str, **kwargs):
+@celery_app.task(queue=Config.QUEUE_PUBLISH_CUBE)
+def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs):
     """Execute publish task and catalog datacube result.
 
     Args:
@@ -418,12 +485,12 @@ def publish(blends, band_map, quality_band: str, **kwargs):
     merges = dict()
     blend_files = dict()
 
-    composite_function = DataCubeFragments(cube.name).composite_function
+    composite_function = cube.composite_function.alias
 
     quality_blend = dict(efficacy=100, cloudratio=0)
 
     for blend_result in blends:
-        if composite_function != 'IDENTITY':
+        if composite_function != 'IDT':
             blend_files[blend_result['band']] = blend_result['blends']
 
         if blend_result.get('clear_observation_file'):
@@ -448,14 +515,24 @@ def publish(blends, band_map, quality_band: str, **kwargs):
         if blend_result['band'] == quality_band:
             quality_blend = blend_result
 
+    _blend_result = []
+    cube_geom_table = cube.grs.geom_table
+    srid_column = get_srid_column(cube_geom_table.c)
+    srid = None
+    result = db.session.query(srid_column.label('srid')).first()
+    if result is not None:
+        srid = result.srid
+
     if composite_function != 'IDT':
         cloudratio = quality_blend['cloudratio']
 
         # Generate quick looks for cube scenes
-        publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, band_map, **kwargs)
+        _blend_result = publish_datacube(cube, quick_look_bands, tile_id, period, blend_files, cloudratio, reuse_data_cube=reuse_data_cube, srid=srid, **kwargs)
 
     # Generate quick looks of irregular cube
     wcube = Collection.query().filter(Collection.name == warped_datacube, Collection.version == version).first()
+
+    _merge_result = dict()
 
     if not reused_cube:
         for merge_date, definition in merges.items():
@@ -464,9 +541,13 @@ def publish(blends, band_map, quality_band: str, **kwargs):
                 clear_merge(merge_date, definition)
                 continue
 
-            publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition, band_map)
+            _merge_result[merge_date] = publish_merge(quick_look_bands, wcube, tile_id, merge_date, definition,
+                                                      reuse_data_cube=reuse_data_cube, srid=srid,
+                                                      **kwargs)
 
         try:
             db.session.commit()
         except:
             db.session.rollback()
+
+    return _blend_result, _merge_result

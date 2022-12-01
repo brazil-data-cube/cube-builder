@@ -1,9 +1,19 @@
 ..
-    This file is part of Python Module for Cube Builder.
-    Copyright (C) 2019-2021 INPE.
+    This file is part of Cube Builder.
+    Copyright (C) 2022 INPE.
 
-    Cube Builder is free software; you can redistribute it and/or modify it
-    under the terms of the MIT License; see LICENSE file for more details.
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 
 
 Deploying
@@ -17,21 +27,50 @@ If you do not have Docker installed, take a look at `this tutorial on how to ins
 See also the `tutorial on how to install Docker Compose <https://docs.docker.com/compose/install/>`_.
 
 
+Compatibility
+-------------
+
+Before deploy/install ``Cube-Builder``, please, take a look into compatibility table:
+
++--------------+-------------+
+| Cube-Builder | BDC-Catalog |
++==============+=============+
+| 0.8.x        | 0.8.2       |
++--------------+-------------+
+| 0.4.x, 0.6.x | 0.8.1       |
++--------------+-------------+
+| 0.2.x        | 0.2.x       |
++--------------+-------------+
+
+
 Configuration
 -------------
 
-docker-compose.yml
-~~~~~~~~~~~~~~~~~~
+Before proceed to the ``DEPLOY`` step, we have prepared a minimal ``docker-compose.yml`` file
+with config to launch ``Cube-Builder``.
+By default, it will generate data cubes in directories ``./volumes/data`` and ``./volumes/workdir``, respectively.
+You may set a different location editing the ``docker-compose.yml`` file. Please refer to the page :doc:`configuration`
+for further details.
 
-Open and edit **docker-compose.yml** with the following variables:
+.. note::
 
-1. **DATA_DIR** - Path to store collections.
-2. **SQLALCHEMY_DATABASE_URI** - Database URI.
-3. **RABBIT_MQ_URL** - URI to connect on RabbitMQ protocol.
+    Take a look into ``docker-compose.yml`` the variables ``DATA_DIR`` and ``WORK_DIR``
+    and make sure you have enough space in disk for data cubes.
 
 
 Running the Docker Containers
 -----------------------------
+
+.. note::
+
+    Make sure you have a machine with at least the following requirements:
+
+        - 4 vCPU or more
+        - 8 GB RAM
+        - 40 GB free space
+
+    It may change according the type/volume size of collections used to generate data cube.
+
 
 .. note::
 
@@ -99,14 +138,13 @@ If the above command runs successfully, you will be able to list the launched co
 
 .. note::
 
-    Refer to the `USING.rst <USING.rst>`_ documentation in order to use the cube builder services.
+    Refer to the page :doc:`usage` documentation in order to use the cube builder services.
 
 
 .. rubric:: Footnotes
 
 .. [#f1]
 
-    | For now you will need to login into the BDC registry:
+    | By default, the docker compose will try to build a new Docker image
+    | If you have account in the BDC registry, you may use as following:
     | ``$ docker login registry.dpi.inpe.br``
-    |
-    | In the next releases we will get ride of this internal registry.

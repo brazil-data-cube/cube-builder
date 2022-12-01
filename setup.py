@@ -1,9 +1,19 @@
 #
-# This file is part of Python Module for Cube Builder.
-# Copyright (C) 2019-2021 INPE.
+# This file is part of Cube Builder.
+# Copyright (C) 2022 INPE.
 #
-# Cube Builder is free software; you can redistribute it and/or modify it
-# under the terms of the MIT License; see LICENSE file for more details.
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
 """Python Module for Cube Builder."""
@@ -51,7 +61,7 @@ extras_require['all'] = [ req for exts, reqs in extras_require.items() for req i
 setup_requires = []
 
 install_requires = [
-    'bdc-catalog @ git+git://github.com/brazil-data-cube/bdc-catalog.git@v0.8.1#egg=bdc-catalog',
+    'bdc-catalog @ git+https://github.com/brazil-data-cube/bdc-catalog.git@v0.8.2#egg=bdc-catalog',
     'celery>=4.3.0,<5',
     'Flask>=1.1.1,<2',
     'flask-redoc>=0.2.1',
@@ -59,13 +69,15 @@ install_requires = [
     'numpy>=1.17.2',
     'numpngw>=0.0.8',
     'python-dateutil>=2.8,<3',
-    'rasterio[s3]>=1.1.2,<2',
+    'pyproj==3.3.1',
+    'rasterio[s3]==1.2.1',
     'requests>=2.25.1',
-    'rio_cogeo>=1.1,<2',
+    'rio_cogeo==3.0.2',
     'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
     'stac.py==0.9.0.post12',
-    'bdc-auth-client @ git+git://github.com/brazil-data-cube/bdc-auth-client.git@v0.2.1#egg=bdc-auth-client'
+    'MarkupSafe==2.0.1',
+    'bdc-auth-client @ git+https://github.com/brazil-data-cube/bdc-auth-client.git@v0.2.1#egg=bdc-auth-client'
 ]
 
 packages = find_packages()
@@ -80,8 +92,8 @@ setup(
     version=version,
     description=__doc__,
     long_description=readme + '\n\n' + history,
-    keywords=('Cube Builder', 'Datacube', ),
-    license='MIT',
+    keywords=['Cube Builder', 'Datacube'],
+    license='GPLv3',
     author='Brazil Data Cube Team',
     author_email='brazildatacube@inpe.br',
     url='https://github.com/brazil-data-cube/cube-builder',
@@ -112,7 +124,7 @@ setup(
         'Environment :: Web Environment',
         'Intended Audience :: Education',
         'Intended Audience :: Science/Research',
-        'License :: OSI Approved :: MIT License',
+        'License :: OSI Approved :: GPL v3 License',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 3 :: Only',
         'Topic :: Scientific/Engineering :: GIS',
