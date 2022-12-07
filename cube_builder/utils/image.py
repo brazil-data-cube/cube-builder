@@ -210,15 +210,17 @@ def match_histogram_with_merges(source: str, source_mask: str, reference: str, r
     with rasterio.open(source) as source_data_set, rasterio.open(source_mask) as source_mask_data_set:
         source_arr = source_data_set.read(1, masked=True)
         source_mask_arr = source_mask_data_set.read(1)
+        source_nodata = kwargs.get('source_nodata', source_mask_data_set.nodata)
         source_options = source_data_set.profile.copy()
 
     with rasterio.open(reference) as reference_data_set, rasterio.open(reference_mask) as reference_mask_data_set:
         reference_arr = reference_data_set.read(1, masked=True)
+        reference_nodata = kwargs.get('reference_nodata', reference_mask_data_set.nodata)
         reference_mask_arr = reference_mask_data_set.read(1)
 
     intersect_mask = numpy.logical_and(
-        source_mask_arr < 255,  # CHECK: Use only valid data? numpy.isin(source_mask_arr, [0, 1, 3]),
-        reference_mask_arr < 255,   # CHECK: Use only valid data? numpy.isin(reference_mask_arr, [0, 1, 3]),
+        source_mask_arr != source_nodata,  # CHECK: Use only valid data? numpy.isin(source_mask_arr, [0, 1, 3]),
+        reference_mask_arr != reference_nodata,   # CHECK: Use only valid data? numpy.isin(reference_mask_arr, [0, 1, 3]),
     )
 
     valid_positions = numpy.where(intersect_mask)
@@ -404,10 +406,10 @@ class SmartDataSet:
 
 
 def extract_qa_bits(band_data, bit_location):
-    """Get bit information from given position.
+    """Retrieve the bit information from given position.
 
     Args:
-        band_data (numpy.ma.masked_array) - The QA Raster Data
+        band_data (int|numpy.ma.masked_array) - The QA Raster Data
         bit_location (int) - The band bit value
     """
     return band_data & (1 << bit_location)
@@ -488,8 +490,8 @@ class QAConfidence:
         if self.cirrus:
             if isinstance(self.oli, bool):
                 self.oli = numpy.full(data.shape,
-                                            dtype=numpy.bool_,
-                                            fill_value=self.oli)
+                                      dtype=numpy.bool_,
+                                      fill_value=self.oli)
 
             oli_pixels = data[self.oli]
             res = _invoke(self.cirrus, 'cirrus', 14, 16, oli_pixels)
@@ -504,10 +506,15 @@ def get_qa_mask(data: numpy.ma.masked_array,
                 not_clear_data: List[float] = None,
                 nodata: float = None,
                 confidence: QAConfidence = None) -> numpy.ma.masked_array:
-    """Extract Quality Assessment Bits from Landsat-8 Collection 2 Level-2 products.
+    """Extract Quality Assessment Bits from Landsat Collection 2 Level-2 products.
 
     This method uses the bitwise operation to extract bits according to the document
     `Landsat 8 Collection 2 (C2) Level 2 Science Product (L2SP) Guide <https://prd-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/atoms/files/LSDS-1619_Landsat8-C2-L2-ScienceProductGuide-v2.pdf>`_, page 13.
+
+    Note:
+        This method supports the products Landsat-4 (or more) Collection 2 Science products.
+        Please take a look into :class:`cube_builder.utils.image.QAConfidence` if you are dealing
+        with multiple sensors.
 
     Example:
         >>> import numpy
@@ -540,7 +547,7 @@ def get_qa_mask(data: numpy.ma.masked_array,
         confidence (QAConfidence): The confidence rules mapping. See more in :class:`~cube_builder.utils.image.QAConfidence`.
 
     Returns:
-        numpy.ma.masked_array: An array which the values represents `clear_data` and the masked values represents `not_clear_data`.
+        numpy.ma.masked_array: An array which the values represent ``clear_data`` and the masked values represents ``not_clear_data``.
     """
     is_numpy_or_masked_array = type(data) in (numpy.ndarray, numpy.ma.masked_array)
     if type(data) in (float, int,):

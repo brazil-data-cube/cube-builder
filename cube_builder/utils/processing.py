@@ -1384,12 +1384,33 @@ def parse_mask(mask: dict):
 
 
 def _qa_statistics(raster, mask: dict, compute: bool = False, confidence=None) -> Tuple[float, float]:
-    """Retrieve raster statistics efficacy and not clear ratio, based in Fmask values.
+    """Retrieve raster statistics efficacy and cloud factor.
+
+    This method uses the evidence of ``mask`` attribute to category the raster
+    efficacy and cloud factor using ``clear_data``, ``not_clear_data`` and
+    ``saturated_data`` as described in `Temporal Compositing <https://brazil-data-cube.github.io/products/specifications/processing-flow.html#temporal-compositing>`_
+
+    Args:
+        raster (numpy.ndarray|numpy.ma.MaskedArray): Image Raster values
+        mask (dict): A mask dictionary containing the values described in ``Temporal Compositing``.
+            The supported values are:
+            - ``clear_data``: Raster values used to be considered as valid data.
+            - ``not_clear_data``: Raster values used to be considered as invalid data.
+            - ``saturated_data``: Raster values used describe as saturated.
+            - ``saturated_band``: Band used to read and match saturated values. Usually referred for
+                Landsat. Defaults to ``None``.
+            - ``nodata``: Cloud Mask nodata value
+            - ``bits``: Flag to deal with Bitwise cloud factor. Defaults to ``False``.
 
     Note:
-        Values 0 and 1 are considered `clear data`.
-        Values 2 and 4 are considered as `not clear data`
-        The values for snow `3` and nodata `255` is not used to count efficacy and not clear ratio
+        The efficacy is based on `non nodata` pixels.
+
+    Note:
+        When the ``bits`` is set on mask parameter, the values referred in ``clear_data`` and ``not_clear_data``
+        will be used as Bit factor.
+
+    Returns:
+        Tuple[float, float]: Tuple of efficacy and cloud cover, respectively.
     """
     from .image import get_qa_mask
 
