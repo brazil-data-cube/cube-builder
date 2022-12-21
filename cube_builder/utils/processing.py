@@ -50,7 +50,8 @@ from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, C
                          TOTAL_OBSERVATION_NAME)
 # Builder
 from . import get_srid_column
-from .image import SmartDataSet, generate_cogs, raster_convexhull, raster_extent, rescale, save_as_cog
+from .image import (SmartDataSet, generate_cogs, linear_raster_scale, raster_convexhull,
+                    raster_extent, rescale, save_as_cog)
 from .index_generator import generate_band_indexes
 from .strings import StringFormatter
 
@@ -970,18 +971,24 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     return activity
 
 
-def generate_rgb(rgb_file: Path, qlfiles: List[str]):
+def generate_rgb(rgb_file: Path, qlfiles: List[str], input_range, output_range=(0, 255,), **kwargs):
     """Generate a raster file that stack the quick look files into RGB channel."""
     # TODO: Save RGB definition on Database
     with rasterio.open(str(qlfiles[0])) as dataset:
         profile = dataset.profile
 
     profile['count'] = 3
+    profile['dtype'] = 'uint8'
     with rasterio.open(str(rgb_file), 'w', **profile) as dataset:
         for band_index in range(len(qlfiles)):
             with rasterio.open(str(qlfiles[band_index])) as band_dataset:
-                data = band_dataset.read(1)
-                dataset.write(data, band_index + 1)
+                windows = band_dataset.block_windows()
+
+                for _, window in windows:
+                    data = band_dataset.read(1, window=window)
+                    data = linear_raster_scale(data, input_range=input_range, output_range=output_range)
+
+                    dataset.write(data.astype(numpy.uint8), band_index + 1, window=window)
 
     logging.info(f'Done RGB {str(rgb_file)}')
 
@@ -1062,7 +1069,7 @@ def publish_datacube(cube: Collection, bands, tile_id, period, scenes, cloudrati
 
         if kwargs.get('with_rgb'):
             rgb_file = build_cube_path(datacube, period, tile_id, version=version, band='RGB', composed=True, **kwargs)
-            generate_rgb(rgb_file, ql_files)
+            generate_rgb(rgb_file, ql_files, **kwargs)
 
         map_band_scene = {name: composite_map[composite_function] for name, composite_map in scenes.items()}
 

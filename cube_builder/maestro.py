@@ -409,6 +409,13 @@ class Maestro:
 
             warped_datacube = self.warped_datacube.name
 
+            if self.properties.get('with_rgb'):
+                input_range = self.properties.get('input_range')
+                if input_range is None:
+                    raise ValueError('Missing valid range for RGB.')
+                if type(input_range) not in (list, tuple,):
+                    raise TypeError(f'Invalid input range for RGB. Expects Tuple[int, int], got {type(input_range)}')
+
             quality_band = None
             stac_kwargs = self.properties.get('stac_kwargs', dict())
             if self.datacube.composite_function.alias != 'IDT':

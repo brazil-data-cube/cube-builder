@@ -110,7 +110,7 @@ def worker(ctx: click.Context):
 @click.option('--export-files', type=click.Path(writable=True), help='Export Identity Merges in file')
 @with_appcontext
 def build(datacube: str, collections: str, tiles: str, start: str, end: str, bands: str = None,
-          stac_url: str = None, force=False, with_rgb=False, shape=None, export_files=None, **kwargs):
+          stac_url: str = None, force=False, shape=None, export_files=None, **kwargs):
     """Build data cube through command line.
 
     Args:
@@ -138,7 +138,6 @@ def build(datacube: str, collections: str, tiles: str, start: str, end: str, ban
         end_date=end,
         tiles=tiles.split(','),
         force=force,
-        with_rgb=with_rgb,
         stac_url=stac_url,
         **kwargs
     )

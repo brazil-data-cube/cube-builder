@@ -22,7 +22,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Iterable, List, Optional, Union
+from typing import Iterable, List, Optional, Union, Tuple
 from urllib.parse import urlparse
 
 import numpy
@@ -41,6 +41,8 @@ LANDSAT_BANDS = dict(
     int16=['band1', 'band2', 'band3', 'band4', 'band5', 'band6', 'band7', 'evi', 'ndvi'],
     uint16=['pixel_qa']
 )
+
+ArrayType = Union[numpy.ndarray, numpy.ma.MaskedArray]
 
 
 def validate(row: RowProxy):
@@ -601,7 +603,7 @@ def get_qa_mask(data: numpy.ma.masked_array,
     return data
 
 
-def rescale(array: Union[numpy.ndarray, numpy.ma.MaskedArray], multiplier: float, new_scale: float,
+def rescale(array: ArrayType, multiplier: float, new_scale: float,
             origin_additive: float = 0, dtype=None):
     """Rescale an array into new range.
 
@@ -690,3 +692,32 @@ def raster_extent(imagepath: str, epsg = 'EPSG:4326') -> shapely.geometry.Polygo
     with rasterio.open(imagepath) as dataset:
         _geom = shapely.geometry.mapping(shapely.geometry.box(*dataset.bounds))
         return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom))
+
+
+def linear_raster_scale(array: ArrayType,
+                        input_range: Tuple[int, int],
+                        output_range: Tuple[int, int] = (0, 255)) -> ArrayType:
+    """Clip the values in an array and apply linear rescaling.
+
+    Note:
+        This function is compatible with
+        `numpy.ma module <https://numpy.org/doc/stable/reference/maskedarray.generic.html>`_
+
+    Args:
+        array (ArrayType): Input raster
+        input_range: The array min and max values
+        output_range: The output min and max values to rescale to. Defaults to ``0, 255``.
+
+    Returns:
+        ArrayType: scaled array (in float)
+    """
+    clip = numpy.clip
+    if isinstance(array, numpy.ma.MaskedArray):
+        clip = numpy.ma.clip
+
+    data = clip(array, input_range[0], input_range[1]) - input_range[0]
+    data = data / numpy.float32(input_range[1] - input_range[0])
+
+    data = data * (output_range[1] - output_range[0]) + output_range[0]
+
+    return data
