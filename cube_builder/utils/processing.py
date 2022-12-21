@@ -35,8 +35,6 @@ import rasterio
 import rasterio.features
 import rasterio.windows
 import requests
-import shapely
-import shapely.geometry
 from bdc_catalog.models import Collection, Item, SpatialRefSys, Tile, db
 from bdc_catalog.utils import multihash_checksum_sha256
 from geoalchemy2 import func
@@ -52,11 +50,10 @@ from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, C
                          TOTAL_OBSERVATION_NAME)
 # Builder
 from . import get_srid_column
-from .image import SmartDataSet, generate_cogs, save_as_cog
+from .image import SmartDataSet, generate_cogs, raster_convexhull, raster_extent, rescale, save_as_cog
 from .index_generator import generate_band_indexes
 from .strings import StringFormatter
 
-VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 FORMATTER = StringFormatter()
 
 
@@ -318,6 +315,17 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
                                     dst_nodata=nodata,
                                     resampling=resampling)
 
+                            if kwargs.get('scale') and band != quality_band:
+                                new_scale = multiplier = float(band_map[band].get('scale', band_map.get('scale_mult')))
+                                additive = float(band_map[band].get('scale_add') or 0)
+                                if isinstance(kwargs['scale'], dict):
+                                    multiplier = kwargs['scale']['mult']
+                                    additive = kwargs['scale'].get('add')
+
+                                raster_ma = numpy.ma.array(raster, dtype=raster.dtype, mask=raster == nodata)
+                                raster_ma = rescale(raster_ma, multiplier, new_scale=new_scale, origin_additive=additive)
+                                raster = raster_ma.data
+
                             # For combined collections, we must merge only valid data into final data set
                             if is_combined_collection:
                                 positions_todo = numpy.where(raster_merge == nodata)
@@ -382,7 +390,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
         dataset=dataset,
         resolution=resx,
         nodata=nodata,
-        platforms_used=platforms_used
+        platforms_used=list(set(platforms_used))
     )
 
     if band == quality_band and build_provenance:
@@ -780,7 +788,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
                 saturated = saturated_list[order].dataset.read(1, window=window)
                 # TODO: Get the original band order and apply to the extract function instead.
                 saturated = radsat_extract_bits(saturated, 1, 7).astype(numpy.bool_)
-                # masked.mask = saturated.astype(numpy.bool_)
                 masked.mask[saturated] = True
 
             if mask_values['bits']:
@@ -807,8 +814,11 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             stackMA[order] = numpy.ma.masked_where(bmask, raster)
 
             # Copy Masked values in order to stack total observation
-            copy_mask[copy_mask != nodata] = 1
+            # Use numpy where before to locate positions to change
+            # mask all and then apply the valid data over copy mask count
+            valid_pos = numpy.where(copy_mask != nodata)
             copy_mask[copy_mask == nodata] = 0
+            copy_mask[valid_pos] = 1
 
             stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask.astype(numpy.uint8)
 
@@ -1593,49 +1603,3 @@ def rasterio_access_token(access_token=None):
             options.update(GDAL_HTTP_HEADER_FILE=str(tmp_file))
 
         yield options
-
-
-def raster_convexhull(imagepath: str, epsg='EPSG:4326') -> dict:
-    """Get a raster image footprint.
-
-    Args:
-        imagepath (str): image file
-        epsg (str): geometry EPSG
-
-    See:
-        https://rasterio.readthedocs.io/en/latest/topics/masks.html
-    """
-    with rasterio.open(imagepath) as dataset:
-        # Read raster data, masking nodata values
-        data = dataset.read(1, masked=True)
-        # Create mask, which 1 represents valid data and 0 nodata
-        mask = numpy.invert(data.mask).astype(numpy.uint8)
-
-        geoms = []
-        res = {'val': []}
-        for geom, val in rasterio.features.shapes(mask, mask=mask, transform=dataset.transform):
-            geom = rasterio.warp.transform_geom(dataset.crs, epsg, geom)
-
-            res['val'].append(val)
-            geoms.append(shapely.geometry.shape(geom))
-
-        if len(geoms) == 1:
-            return geoms[0]
-
-        multi_polygons = shapely.geometry.MultiPolygon(geoms)
-
-        return multi_polygons.convex_hull
-
-
-def raster_extent(imagepath: str, epsg = 'EPSG:4326') -> shapely.geometry.Polygon:
-    """Get raster extent in arbitrary CRS.
-
-    Args:
-        imagepath (str): Path to image
-        epsg (str): EPSG Code of result crs
-    Returns:
-        dict: geojson-like geometry
-    """
-    with rasterio.open(imagepath) as dataset:
-        _geom = shapely.geometry.mapping(shapely.geometry.box(*dataset.bounds))
-        return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom))

@@ -235,8 +235,13 @@ class Maestro:
         self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
 
         bands = self.datacube_bands
-        self.band_map = {b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata,
-                                      min_value=b.min_value, max_value=b.max_value) for b in bands}
+        self.band_map = {
+            b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata,
+                         min_value=b.min_value, max_value=b.max_value,
+                         scale=b.scale,
+                         scale_add=b._metadata.get('scale_add') if b._metadata else None)
+            for b in bands
+        }
 
         if self.properties.get('reuse_from'):
             warnings.warn(
@@ -401,8 +406,6 @@ class Maestro:
             band_str_list = [
                 band.name for band in bands if band.name not in common_bands
             ]
-
-            band_map = {b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata) for b in bands}
 
             warped_datacube = self.warped_datacube.name
 

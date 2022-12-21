@@ -351,14 +351,6 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
 
         activities[_merge['band']] = activity
 
-    if platforms and kwargs.get('combined'):
-        # Add weights for platform order
-        weights = {p: 0.05 * i for i, p in enumerate(platforms)}
-        for activity in activities.values():
-            for ctx in activity['scenes'].values():
-                for platform in ctx['platforms_used']:
-                    ctx['efficacy'] += weights[platform]
-
     if kwargs.get('mask') and kwargs['mask'].get('saturated_band'):
         saturated_mask = kwargs['mask']['saturated_band']
 

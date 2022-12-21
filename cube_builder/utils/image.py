@@ -27,6 +27,9 @@ from urllib.parse import urlparse
 
 import numpy
 import rasterio
+import rasterio.features
+import rasterio.warp
+import shapely.geometry
 from rasterio._warp import Affine
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
@@ -597,3 +600,93 @@ def get_qa_mask(data: numpy.ma.masked_array,
 
     return data
 
+
+def rescale(array: Union[numpy.ndarray, numpy.ma.MaskedArray], multiplier: float, new_scale: float,
+            origin_additive: float = 0, dtype=None):
+    """Rescale an array into new range.
+
+    To prevent any data loss or invalid data while casting, both maximum and minimum
+    values of ``dtype`` will be set when overflow limits.
+
+    Tip:
+        When dealing with negative ``origin_additive`` factor or values which may be negative,
+        make sure to use right numpy dtype and
+        `Numpy Masked Arrays <https://numpy.org/doc/stable/reference/maskedarray.html>`_
+        to mask ``nodata`` values to avoid value limit coercion.
+
+    Args:
+        array: Input array
+        multiplier: Origin array scale multiplier
+        new_scale: Target scale factor.
+        origin_additive: Origin additive factor
+        dtype: New data type for casting. Default is original array.
+
+    Examples:
+        This example covers the rescaling Landsat Collection 2 arrays
+        (1-65535, scale=0.0000275 - 0.2) into 0-10000 values.
+            >>> import numpy
+            >>> from cube_builder.utils.image import rescale
+            >>> arr3d = numpy.random.randint(1, 65535, (3, 3), dtype=numpy.uint16)
+            >>> rescale(arr3d, 0.0000275, new_scale=0.0001, origin_additive=-0.2)
+            array([[15065.675,  6057.5  ,  2893.075],
+                   [ 3523.375, 14349.3  ,  9762.3  ],
+                   [14221.425, -1438.725,  -363.75 ]])
+    """
+    dtype = dtype or array.dtype
+    array = (array * multiplier) + origin_additive
+
+    data_type_info = numpy.iinfo(dtype)
+
+    data_type_max_value = data_type_info.max
+    data_type_min_value = data_type_info.min
+
+    array[array < data_type_min_value] = data_type_min_value
+    array[array > data_type_max_value] = data_type_max_value
+
+    return (array / new_scale).astype(dtype)
+
+
+def raster_convexhull(imagepath: str, epsg='EPSG:4326') -> dict:
+    """Get a raster image footprint.
+
+    Args:
+        imagepath (str): image file
+        epsg (str): geometry EPSG
+
+    See:
+        https://rasterio.readthedocs.io/en/latest/topics/masks.html
+    """
+    with rasterio.open(imagepath) as dataset:
+        # Read raster data, masking nodata values
+        data = dataset.read(1, masked=True)
+        # Create mask, which 1 represents valid data and 0 nodata
+        mask = numpy.invert(data.mask).astype(numpy.uint8)
+
+        geoms = []
+        res = {'val': []}
+        for geom, val in rasterio.features.shapes(mask, mask=mask, transform=dataset.transform):
+            geom = rasterio.warp.transform_geom(dataset.crs, epsg, geom)
+
+            res['val'].append(val)
+            geoms.append(shapely.geometry.shape(geom))
+
+        if len(geoms) == 1:
+            return geoms[0]
+
+        multi_polygons = shapely.geometry.MultiPolygon(geoms)
+
+        return multi_polygons.convex_hull
+
+
+def raster_extent(imagepath: str, epsg = 'EPSG:4326') -> shapely.geometry.Polygon:
+    """Get raster extent in arbitrary CRS.
+
+    Args:
+        imagepath (str): Path to image
+        epsg (str): EPSG Code of result crs
+    Returns:
+        dict: geojson-like geometry
+    """
+    with rasterio.open(imagepath) as dataset:
+        _geom = shapely.geometry.mapping(shapely.geometry.box(*dataset.bounds))
+        return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom))
