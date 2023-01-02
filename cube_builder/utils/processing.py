@@ -57,6 +57,11 @@ from .strings import StringFormatter
 
 FORMATTER = StringFormatter()
 
+Limit = Tuple[int, int]
+"""Represent the type for Image range."""
+ChannelLimits = Tuple[Limit, Limit, Limit]
+"""Represent the band channels (R, G, B) for quick look generation."""
+
 
 def get_rasterio_config() -> dict:
     """Retrieve cube-builder global config for the rasterio module."""
@@ -1065,7 +1070,7 @@ def publish_datacube(cube: Collection, bands, tile_id, period, scenes, cloudrati
         for band in bands:
             ql_files.append(scenes[band][composite_function])
 
-        quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
+        quick_look_file = generate_quick_look(str(quick_look_file), ql_files, **kwargs)
 
         if kwargs.get('with_rgb'):
             rgb_file = build_cube_path(datacube, period, tile_id, version=version, band='RGB', composed=True, **kwargs)
@@ -1197,7 +1202,7 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
         ql_files.append(scenes['ARDfiles'][band])
 
     quick_look_file.parent.mkdir(exist_ok=True, parents=True)
-    quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
+    quick_look_file = generate_quick_look(str(quick_look_file), ql_files, **kwargs)
 
     # Generate VI
     custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id, reuse_data_cube=reuse_data_cube,
@@ -1313,25 +1318,33 @@ def cleanup(directory: Union[str, Path]):
         pass
 
 
-def generate_quick_look(file_path, qlfiles):
+def generate_quick_look(file_path, qlfiles, channel_limits: ChannelLimits = None, **kwargs):
     """Generate quicklook on disk."""
+    default_range = 0, 10000
+    if channel_limits is None:
+        channel_limits = default_range, default_range, default_range
+
+    if len(channel_limits) != 3:
+        raise ValueError(f'Invalid value for channels in quicklook. Expects 3 elements (r, g, b), but got {len(channel_limits)}')
+
     with rasterio.open(qlfiles[0]) as src:
         profile = src.profile
 
     numlin = 768
     numcol = int(float(profile['width'])/float(profile['height'])*numlin)
-    image = numpy.ones((numlin,numcol,len(qlfiles),), dtype=numpy.uint8)
+    image = numpy.ones((numlin, numcol, len(qlfiles),), dtype=numpy.uint8)
     pngname = '{}.png'.format(file_path)
 
     nb = 0
-    for file in qlfiles:
+    for idx, file in enumerate(qlfiles):
         with rasterio.open(file) as src:
             raster = src.read(1, out_shape=(numlin, numcol))
 
             # Rescale to 0-255 values
             nodata = raster <= 0
+            limit = channel_limits[idx]
             if raster.min() != 0 or raster.max() != 0:
-                raster = raster.astype(numpy.float32)/10000.*255.
+                raster = raster.astype(numpy.float32) / float(limit[1]) * 255.
                 raster[raster < 0] = 0
                 raster[raster > 255] = 255
             image[:, :, nb] = raster.astype(numpy.uint8) * numpy.invert(nodata)

@@ -22,6 +22,7 @@
 import json
 import logging
 import warnings
+from collections.abc import Iterable
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
@@ -62,6 +63,12 @@ def days_in_month(date):
     ndate = '{0:4d}-{1:02d}-{2:02d}'.format(nyear,nmonth,nday)
     td = numpy.datetime64(ndate) - numpy.datetime64(date)
     return td
+
+
+def _valid_channel_limit(value, expects):
+    if not isinstance(value, Iterable) or len(value) != expects:
+        raise ValueError('Invalid type for "channel_limits". '
+                         f'Expects Iterable of {expects} elements, but got "{value}"')
 
 
 @contextmanager
@@ -207,6 +214,13 @@ class Maestro:
 
         # Validate parameters
         cube_parameters.validate()
+
+        if self.properties.get('channel_limits'):
+            channel_limits = self.properties['channel_limits']
+            # Validate the entire signature (Tuple of 3 limit elements)
+            _valid_channel_limit(channel_limits, expects=3)
+            # Validate each RGB channel (Tuple of 2 int elements)
+            _ = [_valid_channel_limit(channel, expects=2) for channel in channel_limits]
 
         # Pass the cube parameters to the data cube functions arguments
         props = deepcopy(cube_parameters.metadata_)
