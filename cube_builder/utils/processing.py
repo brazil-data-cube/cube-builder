@@ -1205,9 +1205,10 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
     quick_look_file = generate_quick_look(str(quick_look_file), ql_files, **kwargs)
 
     # Generate VI
-    custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id, reuse_data_cube=reuse_data_cube,
-                                         composed=False, **kwargs)
-    scenes['ARDfiles'].update(custom_bands)
+    if not kwargs.get('skip_vi_identity'):
+        custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id, reuse_data_cube=reuse_data_cube,
+                                             composed=False, **kwargs)
+        scenes['ARDfiles'].update(custom_bands)
 
     tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == datacube.grid_ref_sys_id).first()
 
