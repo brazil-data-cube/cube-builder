@@ -22,11 +22,14 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Iterable, List, Optional, Union, Tuple
 from urllib.parse import urlparse
 
 import numpy
 import rasterio
+import rasterio.features
+import rasterio.warp
+import shapely.geometry
 from rasterio._warp import Affine
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
@@ -38,6 +41,8 @@ LANDSAT_BANDS = dict(
     int16=['band1', 'band2', 'band3', 'band4', 'band5', 'band6', 'band7', 'evi', 'ndvi'],
     uint16=['pixel_qa']
 )
+
+ArrayType = Union[numpy.ndarray, numpy.ma.MaskedArray]
 
 
 def validate(row: RowProxy):
@@ -210,15 +215,17 @@ def match_histogram_with_merges(source: str, source_mask: str, reference: str, r
     with rasterio.open(source) as source_data_set, rasterio.open(source_mask) as source_mask_data_set:
         source_arr = source_data_set.read(1, masked=True)
         source_mask_arr = source_mask_data_set.read(1)
+        source_nodata = kwargs.get('source_nodata', source_mask_data_set.nodata)
         source_options = source_data_set.profile.copy()
 
     with rasterio.open(reference) as reference_data_set, rasterio.open(reference_mask) as reference_mask_data_set:
         reference_arr = reference_data_set.read(1, masked=True)
+        reference_nodata = kwargs.get('reference_nodata', reference_mask_data_set.nodata)
         reference_mask_arr = reference_mask_data_set.read(1)
 
     intersect_mask = numpy.logical_and(
-        source_mask_arr < 255,  # CHECK: Use only valid data? numpy.isin(source_mask_arr, [0, 1, 3]),
-        reference_mask_arr < 255,   # CHECK: Use only valid data? numpy.isin(reference_mask_arr, [0, 1, 3]),
+        source_mask_arr != source_nodata,  # CHECK: Use only valid data? numpy.isin(source_mask_arr, [0, 1, 3]),
+        reference_mask_arr != reference_nodata,   # CHECK: Use only valid data? numpy.isin(reference_mask_arr, [0, 1, 3]),
     )
 
     valid_positions = numpy.where(intersect_mask)
@@ -401,3 +408,316 @@ class SmartDataSet:
                 self.dataset.update_tags(**self.tags)
 
             self.dataset.close()
+
+
+def extract_qa_bits(band_data, bit_location):
+    """Retrieve the bit information from given position.
+
+    Args:
+        band_data (int|numpy.ma.masked_array) - The QA Raster Data
+        bit_location (int) - The band bit value
+    """
+    return band_data & (1 << bit_location)
+
+
+NO_CONFIDENCE = 0
+LOW = 1  # 0b01
+MEDIUM = RESERVED = 2  # 0b10
+HIGH = 3  # 0b11
+
+
+class QAConfidence:
+    """Type for Quality Assessment definition for Landsat Collection 2.
+
+    These properties will be evaluated using Python Virtual Machine like::
+
+        # Define that will discard all cloud values which has confidence greater or equal MEDIUM.
+        qa = QAConfidence(cloud='cloud >= MEDIUM', cloud_shadow=None, cirrus=None, snow=None)
+    """
+
+    cloud: Union[str, None]
+    """Represent the Cloud Confidence."""
+    cloud_shadow: Union[str, None]
+    """Represent the Cloud Shadow Confidence."""
+    cirrus: Union[str, None]
+    """Represent the Cirrus."""
+    snow: Union[str, None]
+    """Represent the Snow/Ice."""
+    oli: Union[bool, numpy.ndarray]
+    """Flag to identify OLI/TIRS Satellite."""
+
+    def __init__(self, cloud=None, cloud_shadow=None, cirrus=None, snow=None, oli=None):
+        """Build QA Confidence object."""
+        self.cloud = cloud
+        self.cloud_shadow = cloud_shadow
+        self.cirrus = cirrus
+        self.snow = snow
+        self.oli = oli
+
+    def apply(self, data):
+        """Apply the Bit confidence to the Quality Assessment mask.
+
+        Args:
+            data (numpy.ma.MaskedArray): The Masked raster QA Pixel
+
+        Returns:
+            numpy.ma.MaskedArray - The masked pixels with satisfy the confidence attributes.
+        """
+        from .interpreter import execute
+
+        # Define the context variables available for cloud confidence processing
+        ctx = dict(
+            NO_CONFIDENCE=NO_CONFIDENCE,
+            LOW=LOW,
+            MEDIUM=MEDIUM,
+            RESERVED=RESERVED,
+            HIGH=HIGH
+        )
+
+        def _invoke(conf, context_var, start_offset, end_offset, qa):
+            var_name = f'_{context_var}'
+            expression = f'{var_name} = {conf}'
+            array = (qa >> start_offset) - ((qa >> end_offset) << 2)
+            ctx[context_var] = array
+
+            _res = execute(expression, context=ctx)
+            res = _res[var_name]
+
+            return numpy.ma.masked_where(numpy.ma.getdata(res), qa)
+
+        if self.cloud:
+            data = _invoke(self.cloud, 'cloud', 8, 10, data)
+        if self.cloud_shadow:
+            data = _invoke(self.cloud_shadow, 'cloud_shadow', 10, 12, data)
+        if self.snow:
+            data = _invoke(self.snow, 'snow', 12, 14, data)
+
+        if self.cirrus:
+            if isinstance(self.oli, bool):
+                self.oli = numpy.full(data.shape,
+                                      dtype=numpy.bool_,
+                                      fill_value=self.oli)
+
+            oli_pixels = data[self.oli]
+            res = _invoke(self.cirrus, 'cirrus', 14, 16, oli_pixels)
+
+            data[self.oli] = res
+
+        return data
+
+
+def get_qa_mask(data: numpy.ma.masked_array,
+                clear_data: List[float] = None,
+                not_clear_data: List[float] = None,
+                nodata: float = None,
+                confidence: QAConfidence = None) -> numpy.ma.masked_array:
+    """Extract Quality Assessment Bits from Landsat Collection 2 Level-2 products.
+
+    This method uses the bitwise operation to extract bits according to the document
+    `Landsat 8 Collection 2 (C2) Level 2 Science Product (L2SP) Guide <https://prd-wret.s3.us-west-2.amazonaws.com/assets/palladium/production/atoms/files/LSDS-1619_Landsat8-C2-L2-ScienceProductGuide-v2.pdf>`_, page 13.
+
+    Note:
+        This method supports the products Landsat-4 (or more) Collection 2 Science products.
+        Please take a look into :class:`cube_builder.utils.image.QAConfidence` if you are dealing
+        with multiple sensors.
+
+    Example:
+        >>> import numpy
+        >>> from cube_builder.utils.image import QAConfidence, get_qa_mask
+
+        >>> mid_cloud_confidence = QAConfidence(cloud='cloud == MEDIUM', cloud_shadow=None, cirrus=None, snow=None, oli=True)
+        >>> clear = [6, 7]  # Clear and Water
+        >>> not_clear = [1, 2, 3, 4]  # Dilated Cloud, Cirrus, Cloud, Cloud Shadow
+        >>> get_qa_mask(numpy.ma.array([22080], dtype=numpy.int16, fill_value=1),
+        ...             clear_data=clear, not_clear_data=not_clear,
+        ...             nodata=1, confidence=mid_cloud_confidence)
+        masked_array(data=[--],
+                     mask=[ True],
+               fill_value=1,
+                    dtype=int16)
+        >>> # When no cloud confidence set, this value will be Clear since Cloud Pixel is off.
+        >>> get_qa_mask(numpy.ma.array([22080], dtype=numpy.int16, fill_value=1),
+        ...             clear_data=clear, not_clear_data=not_clear,
+        ...             nodata=1)
+        masked_array(data=[22080],
+                     mask=[False],
+               fill_value=1,
+                    dtype=int16)
+
+    Args:
+        data (numpy.ma.masked_array): The QA Raster Data
+        clear_data (List[float]): The bits values to be considered as Clear. Default is [].
+        not_clear_data (List[float]): The bits values to be considered as Not Clear Values (Cloud,Shadow, etc).
+        nodata (float): Pixel nodata value.
+        confidence (QAConfidence): The confidence rules mapping. See more in :class:`~cube_builder.utils.image.QAConfidence`.
+
+    Returns:
+        numpy.ma.masked_array: An array which the values represent ``clear_data`` and the masked values represents ``not_clear_data``.
+    """
+    is_numpy_or_masked_array = type(data) in (numpy.ndarray, numpy.ma.masked_array)
+    if type(data) in (float, int,):
+        data = numpy.ma.masked_array([data])
+    elif (isinstance(data, Iterable) and not is_numpy_or_masked_array) or (
+            isinstance(data, numpy.ndarray) and not hasattr(data, 'mask')):
+        data = numpy.ma.masked_array(data, mask=data == nodata, fill_value=nodata)
+    elif not is_numpy_or_masked_array:
+        raise TypeError(f'Expected a number or numpy masked array for {data}')
+
+    if nodata is not None:
+        data[data == nodata] = numpy.ma.masked
+
+    # Cloud Confidence only once
+    if confidence:
+        data = confidence.apply(data)
+
+    # Mask all not clear data before get any valid data
+    for value in not_clear_data:
+        if value == 2 and confidence:
+            not_oli_positions = numpy.where(numpy.invert(confidence.oli))
+            tmp_result = numpy.ma.masked_where(data.mask, data)
+            tmp_result.mask[not_oli_positions] = True
+
+            masked = extract_qa_bits(tmp_result, value)
+            if isinstance(masked.mask, numpy.bool_):
+                masked.mask = numpy.full(data.shape, fill_value=masked.mask, dtype=numpy.bool_)
+
+            masked.mask[not_oli_positions] = data[not_oli_positions].mask
+
+            tmp_result = None
+        else:
+            masked = extract_qa_bits(data, value)
+
+        data = numpy.ma.masked_where(masked > 0, data)
+
+    clear_mask = data.mask.copy()
+    for value in clear_data:
+        masked = numpy.ma.getdata(extract_qa_bits(data, value))
+        clear_mask = numpy.ma.logical_or(masked > 0, clear_mask)
+
+    if len(data.mask.shape) > 0:
+        data = numpy.ma.masked_where(numpy.invert(clear_mask), data)
+    else:  # Adapt to work with single value
+        if clear_mask[0]:
+            data.mask = numpy.invert(clear_mask)
+
+    return data
+
+
+def rescale(array: ArrayType, multiplier: float, new_scale: float,
+            origin_additive: float = 0, dtype=None):
+    """Rescale an array into new range.
+
+    To prevent any data loss or invalid data while casting, both maximum and minimum
+    values of ``dtype`` will be set when overflow limits.
+
+    Tip:
+        When dealing with negative ``origin_additive`` factor or values which may be negative,
+        make sure to use right numpy dtype and
+        `Numpy Masked Arrays <https://numpy.org/doc/stable/reference/maskedarray.html>`_
+        to mask ``nodata`` values to avoid value limit coercion.
+
+    Args:
+        array: Input array
+        multiplier: Origin array scale multiplier
+        new_scale: Target scale factor.
+        origin_additive: Origin additive factor
+        dtype: New data type for casting. Default is original array.
+
+    Examples:
+        This example covers the rescaling Landsat Collection 2 arrays
+        (1-65535, scale=0.0000275 - 0.2) into 0-10000 values.
+            >>> import numpy
+            >>> from cube_builder.utils.image import rescale
+            >>> arr3d = numpy.random.randint(1, 65535, (3, 3), dtype=numpy.uint16)
+            >>> rescale(arr3d, 0.0000275, new_scale=0.0001, origin_additive=-0.2)
+            array([[15065.675,  6057.5  ,  2893.075],
+                   [ 3523.375, 14349.3  ,  9762.3  ],
+                   [14221.425, -1438.725,  -363.75 ]])
+    """
+    dtype = dtype or array.dtype
+    array = (array * multiplier) + origin_additive
+
+    data_type_info = numpy.iinfo(dtype)
+
+    data_type_max_value = data_type_info.max
+    data_type_min_value = data_type_info.min
+
+    array[array < data_type_min_value] = data_type_min_value
+    array[array > data_type_max_value] = data_type_max_value
+
+    return (array / new_scale).astype(dtype)
+
+
+def raster_convexhull(imagepath: str, epsg='EPSG:4326') -> dict:
+    """Get a raster image footprint.
+
+    Args:
+        imagepath (str): image file
+        epsg (str): geometry EPSG
+
+    See:
+        https://rasterio.readthedocs.io/en/latest/topics/masks.html
+    """
+    with rasterio.open(imagepath) as dataset:
+        # Read raster data, masking nodata values
+        data = dataset.read(1, masked=True)
+        # Create mask, which 1 represents valid data and 0 nodata
+        mask = numpy.invert(data.mask).astype(numpy.uint8)
+
+        geoms = []
+        res = {'val': []}
+        for geom, val in rasterio.features.shapes(mask, mask=mask, transform=dataset.transform):
+            geom = rasterio.warp.transform_geom(dataset.crs, epsg, geom)
+
+            res['val'].append(val)
+            geoms.append(shapely.geometry.shape(geom))
+
+        if len(geoms) == 1:
+            return geoms[0]
+
+        multi_polygons = shapely.geometry.MultiPolygon(geoms)
+
+        return multi_polygons.convex_hull
+
+
+def raster_extent(imagepath: str, epsg = 'EPSG:4326') -> shapely.geometry.Polygon:
+    """Get raster extent in arbitrary CRS.
+
+    Args:
+        imagepath (str): Path to image
+        epsg (str): EPSG Code of result crs
+    Returns:
+        dict: geojson-like geometry
+    """
+    with rasterio.open(imagepath) as dataset:
+        _geom = shapely.geometry.mapping(shapely.geometry.box(*dataset.bounds))
+        return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom))
+
+
+def linear_raster_scale(array: ArrayType,
+                        input_range: Tuple[int, int],
+                        output_range: Tuple[int, int] = (0, 255)) -> ArrayType:
+    """Clip the values in an array and apply linear rescaling.
+
+    Note:
+        This function is compatible with
+        `numpy.ma module <https://numpy.org/doc/stable/reference/maskedarray.generic.html>`_
+
+    Args:
+        array (ArrayType): Input raster
+        input_range: The array min and max values
+        output_range: The output min and max values to rescale to. Defaults to ``0, 255``.
+
+    Returns:
+        ArrayType: scaled array (in float)
+    """
+    clip = numpy.clip
+    if isinstance(array, numpy.ma.MaskedArray):
+        clip = numpy.ma.clip
+
+    data = clip(array, input_range[0], input_range[1]) - input_range[0]
+    data = data / numpy.float32(input_range[1] - input_range[0])
+
+    data = data * (output_range[1] - output_range[0]) + output_range[0]
+
+    return data

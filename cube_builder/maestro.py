@@ -22,6 +22,7 @@
 import json
 import logging
 import warnings
+from collections.abc import Iterable
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
@@ -62,6 +63,12 @@ def days_in_month(date):
     ndate = '{0:4d}-{1:02d}-{2:02d}'.format(nyear,nmonth,nday)
     td = numpy.datetime64(ndate) - numpy.datetime64(date)
     return td
+
+
+def _valid_channel_limit(value, expects):
+    if not isinstance(value, Iterable) or len(value) != expects:
+        raise ValueError('Invalid type for "channel_limits". '
+                         f'Expects Iterable of {expects} elements, but got "{value}"')
 
 
 @contextmanager
@@ -131,10 +138,10 @@ class Maestro:
         When collection not found, search on INPE STAC.
 
         Args:
-            collection - Collection name to search
+            collection (str): Collection name to search
 
         Returns:
-            STAC client
+            STAC: The STAC which offers the given collection.
         """
         if self.properties.get('stac_url'):
             return self._stac(collection, self.properties['stac_url'], **self.properties)
@@ -158,7 +165,7 @@ class Maestro:
             url - STAC URL
 
         Returns:
-            STAC client
+            STAC: STAC instance
         """
         try:
             options = dict()
@@ -208,6 +215,13 @@ class Maestro:
         # Validate parameters
         cube_parameters.validate()
 
+        if self.properties.get('channel_limits'):
+            channel_limits = self.properties['channel_limits']
+            # Validate the entire signature (Tuple of 3 limit elements)
+            _valid_channel_limit(channel_limits, expects=3)
+            # Validate each RGB channel (Tuple of 2 int elements)
+            _ = [_valid_channel_limit(channel, expects=2) for channel in channel_limits]
+
         # Pass the cube parameters to the data cube functions arguments
         props = deepcopy(cube_parameters.metadata_)
         props.update(self.properties)
@@ -235,8 +249,13 @@ class Maestro:
         self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
 
         bands = self.datacube_bands
-        self.band_map = {b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata,
-                                      min_value=b.min_value, max_value=b.max_value) for b in bands}
+        self.band_map = {
+            b.name: dict(name=b.name, data_type=b.data_type, nodata=b.nodata,
+                         min_value=b.min_value, max_value=b.max_value,
+                         scale=b.scale,
+                         scale_add=b._metadata.get('scale_add') if b._metadata else None)
+            for b in bands
+        }
 
         if self.properties.get('reuse_from'):
             warnings.warn(
@@ -404,6 +423,13 @@ class Maestro:
 
             warped_datacube = self.warped_datacube.name
 
+            if self.properties.get('with_rgb'):
+                input_range = self.properties.get('input_range')
+                if input_range is None:
+                    raise ValueError('Missing valid range for RGB.')
+                if type(input_range) not in (list, tuple,):
+                    raise TypeError(f'Invalid input range for RGB. Expects Tuple[int, int], got {type(input_range)}')
+
             quality_band = None
             stac_kwargs = self.properties.get('stac_kwargs', dict())
             if self.datacube.composite_function.alias != 'IDT':
@@ -509,6 +535,7 @@ class Maestro:
                                 srs=grid_crs,
                                 tile_id=tileid,
                                 assets=assets,
+                                platforms=self.platforms,
                                 nodata=float(band.nodata),
                                 bands=band_str_list,
                                 version=self.datacube.version,
@@ -563,6 +590,9 @@ class Maestro:
 
         bands = self.datacube_bands
 
+        band_mapping = self.properties.get('band_map', dict())
+        platforms = set()
+
         # Retrieve band definition in dict format.
         # TODO: Should we use from STAC?
         collection_bands = dict()
@@ -581,6 +611,11 @@ class Maestro:
         for dataset in self.params['collections']:
             options['collections'] = [dataset]
             stac = self.get_stac(dataset)
+            stac_collection = stac.collection(dataset)
+            if stac_collection.get('summaries') and stac_collection['summaries'].get('platform'):
+                platforms = platforms.union(set(stac_collection['summaries'].get('platform')))
+            elif stac_collection.properties.get('platform'):
+                platforms = platforms.union(set(stac_collection.properties.get('platform')))
 
             token = ''
 
@@ -593,21 +628,40 @@ class Maestro:
                 for feature in items['features']:
                     if feature['type'] == 'Feature':
                         date = feature['properties']['datetime'][0:10]
-                        identifier = feature['id']
                         stac_bands = feature['properties'].get('eo:bands', [])
+                        identifier = feature['id']
+                        # TODO: Add handler to deal with parse result serializer.
+                        platform = feature['properties'].get('platform')
+                        if stac.url.startswith('https://landsatlook.usgs.gov'):
+                            # Remove last SR sentence.
+                            identifier = f'{identifier[:-3]}{identifier[-3:].replace("_SR", "")}'
+                        # Special treatment for missing/invalid platform values
+                        if (platform is None or isinstance(platform, list)) and _is_landsat(identifier):
+                            platform = _detect_landsat_platform(identifier)
 
                         for band in bands:
                             band_name_href = band.name
+
+                            if platform and band_mapping:
+                                platforms.add(platform)
+                                if platform not in band_mapping or not band_mapping[platform].get(band_name_href):
+                                    continue
+
+                                band_name_href = band_mapping[platform].get(band_name_href)
+
                             if 'CBERS' in dataset and band.common_name not in ('evi', 'ndvi'):
                                 band_name_href = band.common_name
 
                             elif band.name not in feature['assets']:
-                                if f'sr_{band.name}' not in feature['assets']:
+                                # TODO: Implement asset resolver
+                                if f'{band_name_href}.TIF' in feature['assets']:
+                                    band_name_href = f'{band_name_href}.TIF'
+                                elif f'sr_{band_name_href}' not in feature['assets']:
                                     continue
                                 else:
                                     band_name_href = f'sr_{band.name}'
 
-                            feature_band = list(filter(lambda b: b['name'] == band_name_href,stac_bands))
+                            feature_band = list(filter(lambda b: b['name'] == band_name_href, stac_bands))
                             feature_band = feature_band[0] if len(feature_band) > 0 else dict()
 
                             scenes[band.name].setdefault(date, dict())
@@ -620,6 +674,9 @@ class Maestro:
                             scene['sceneid'] = identifier
                             scene['band'] = band.name
                             scene['dataset'] = dataset
+                            scene['platform'] = platform
+                            if band_mapping:
+                                scene['original_band_name'] = band_name_href
 
                             link = link.replace(Config.CBERS_SOURCE_URL_PREFIX, Config.CBERS_TARGET_URL_PREFIX)
 
@@ -634,4 +691,29 @@ class Maestro:
                             scenes[band.name][date].setdefault(dataset, [])
                             scenes[band.name][date][dataset].append(scene)
 
+        self.platforms = sorted(list(platforms))
+
         return scenes
+
+
+def _is_landsat(identifier: str) -> bool:
+    try:
+        _parse_landsat(identifier)
+        return True
+    except ValueError:
+        return False
+
+
+def _parse_landsat(identifier: str) -> List[str]:
+    entities = identifier.split('_')
+    if len(entities) != 7 or not entities[0].startswith('L') or not entities[0][-2:].isnumeric():
+        raise ValueError(f'Invalid landsat scene {identifier}')
+    return entities
+
+
+def _detect_landsat_platform(identifier: str):
+    entities = _parse_landsat(identifier)
+    satellite = int(entities[0][-2:])
+    for value in [4, 5, 7, 8, 9]:
+        if satellite == value:
+            return f'Landsat-{value}'

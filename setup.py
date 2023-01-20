@@ -120,7 +120,7 @@ setup(
     setup_requires=setup_requires,
     tests_require=tests_require,
     classifiers=[
-        'Development Status :: 1 - Planning',
+        'Development Status :: 1 - Stable',
         'Environment :: Web Environment',
         'Intended Audience :: Education',
         'Intended Audience :: Science/Research',

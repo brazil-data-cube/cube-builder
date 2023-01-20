@@ -105,6 +105,7 @@ class CustomMaskDefinition(Schema):
     nodata = fields.Integer(required=True, allow_none=False)
     saturated_data = fields.List(fields.Integer, required=False, allow_none=False)
     saturated_band = fields.String(required=False, allow_none=False)
+    bits = fields.Boolean(required=False, allow_none=False, default=False)
 
 
 class CubeParametersSchema(Schema):
@@ -114,6 +115,7 @@ class CubeParametersSchema(Schema):
     reference_day = fields.Integer(required=False, allow_none=False)
     histogram_matching = fields.Bool(required=False, allow_none=False)
     no_post_process = fields.Bool(required=False, allow_none=False)
+    band_map = fields.Dict(required=False, allow_none=False)
 
 
 class DataCubeForm(Schema):
