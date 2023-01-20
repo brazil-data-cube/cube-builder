@@ -22,7 +22,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Iterable, List, Optional, Union, Tuple
+from typing import Iterable, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import numpy
@@ -401,7 +401,7 @@ class SmartDataSet:
 
     def close(self):
         """Close rasterio data set."""
-        if not self.dataset.closed:
+        if hasattr(self, 'dataset') and not self.dataset.closed:
             logging.debug('Closing dataset {}'.format(str(self.path)))
 
             if self.mode == 'w' and self.tags:
@@ -613,8 +613,13 @@ def rescale(array: ArrayType, multiplier: float, new_scale: float,
     Tip:
         When dealing with negative ``origin_additive`` factor or values which may be negative,
         make sure to use right numpy dtype and
-        `Numpy Masked Arrays <https://numpy.org/doc/stable/reference/maskedarray.html>`_
+        `Numpy Masked Arrays`_
         to mask ``nodata`` values to avoid value limit coercion.
+
+    Note:
+        When the result value overflow the data type,
+        the value is coerced to the data type limits.
+        See more in `numpy.iinfo <https://numpy.org/doc/stable/reference/generated/numpy.iinfo.html>`_.
 
     Args:
         array: Input array
@@ -626,6 +631,10 @@ def rescale(array: ArrayType, multiplier: float, new_scale: float,
     Examples:
         This example covers the rescaling Landsat Collection 2 arrays
         (1-65535, scale=0.0000275 - 0.2) into 0-10000 values.
+
+        .. doctest::
+           :skipif: True
+
             >>> import numpy
             >>> from cube_builder.utils.image import rescale
             >>> arr3d = numpy.random.randint(1, 65535, (3, 3), dtype=numpy.uint16)
