@@ -50,8 +50,8 @@ from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, C
                          TOTAL_OBSERVATION_NAME)
 # Builder
 from . import get_srid_column
-from .image import (SmartDataSet, generate_cogs, linear_raster_scale, raster_convexhull,
-                    raster_extent, rescale, save_as_cog)
+from .image import (SmartDataSet, generate_cogs, linear_raster_scale, raster_convexhull, raster_extent, rescale,
+                    save_as_cog)
 from .index_generator import generate_band_indexes
 from .strings import StringFormatter
 
