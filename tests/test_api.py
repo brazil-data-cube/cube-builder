@@ -59,11 +59,12 @@ def test_load_initial_data():
 
 
 def test_create_cube(client, json_data):
-    json_cube = json_data['lc8-16d-stk.json']
-    response = client.post('/cubes', json=json_cube)
+    for filename in ['lc8-16d-stk.json', 's2-16d-lcf.json']:
+        json_cube = json_data[filename]
+        response = client.post('/cubes', json=json_cube)
 
-    cubes = _assert_json_request(response, status_code=201)
-    assert isinstance(cubes, list)
+        cubes = _assert_json_request(response, status_code=201)
+        assert isinstance(cubes, list)
     # TODO: validate json response with jsonschema api
 
 

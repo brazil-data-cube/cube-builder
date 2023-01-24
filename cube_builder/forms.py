@@ -122,6 +122,11 @@ class CubeParametersSchema(Schema):
     format = fields.String(required=False, allow_none=False)
     pattern = fields.String(required=False, allow_none=False)
     band_map = fields.Dict(required=False, allow_none=False)
+    channel_limits = fields.List(
+        fields.List(fields.Integer, required=True, validate=validate.Length(min=2, max=2)),
+        required=False,
+        validate=validate.Length(min=3, max=3)
+    )
 
 
 class DataCubeForm(Schema):

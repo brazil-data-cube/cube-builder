@@ -21,6 +21,7 @@
 import datetime
 import os
 from copy import deepcopy
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -101,51 +102,16 @@ class TestCubeCreation:
     @pytest.mark.skipif(not _supported_collection(**CUBE_PARAMS),
                         reason=f"collection is not supported in {CUBE_PARAMS['stac_url']}")
     def test_cube_workflow(self, maestro):
-        res = maestro.dispatch_celery()
-        band_map = maestro.band_map
-
-        for period in res['blends'].values():
-            blend_bands_result = period.apply()
-            blend_bands = blend_bands_result.get()
-
-            publish_result = chain(group(blend_bands), publish.s(band_map, **maestro.properties)).apply()
-
-            blend_files, merge_files = publish_result.get()
-
-            cube_stats = set()
-            cube_proj4 = set()
-
-            # Validate Rasters
-            for entry in blend_files:
-                assert check_file_integrity(entry, read_bytes=True)
-                if str(entry).endswith('.tif'):
-                    with rasterio.open(str(entry)) as ds:
-                        # check resolution
-                        transform = ds.transform
-                        resx, resy, xmin, ymax = transform.a, transform.e, transform.c, transform.f
-                        cube_stats.add((resx, resy, xmin, ymax))
-                        cube_proj4.add(ds.crs.to_wkt())
-            # All files must have same pixel origin and resolution
-            assert len(cube_stats) == 1
-            # All files must have same proj4
-            assert len(cube_proj4) == 1
+        for blend_files, merge_files in _make_cube(maestro):
+            _assert_datacube_period_valid(blend_files, merge_files)
 
     def test_cube_workflow_empty_timeline(self, app):
         params = deepcopy(CUBE_PARAMS)
         params['tiles'] = ['024016']
         maestro = Maestro(**params)
         maestro.orchestrate()
-        res = maestro.dispatch_celery()
-        band_map = maestro.band_map
 
-        for period in res['blends'].values():
-            blend_bands_result = period.apply()
-            blend_bands = blend_bands_result.get()
-
-            publish_result = chain(group(blend_bands), publish.s(band_map, **maestro.properties)).apply()
-
-            blend_files, merge_files = publish_result.get()
-
+        for blend_files, merge_files in _make_cube(maestro):
             # Empty timeline must not have published Identity Files
             assert len(merge_files) == 0
 
@@ -153,3 +119,49 @@ class TestCubeCreation:
             for entry in blend_files:
                 assert check_file_integrity(entry, read_bytes=True)
                 # check all == nodata
+
+    def test_create_cube_sentinel(self, app):
+        params = deepcopy(CUBE_PARAMS)
+        params['collections'] = ['S2_L2A-1']
+        params['datacube'] = 'S2-16D-1'
+        params['tiles'] = ['031018']
+        control = Maestro(**params)
+        control.orchestrate()
+
+        for blend_files, merge_files in _make_cube(control):
+            _assert_datacube_period_valid(blend_files, merge_files)
+
+
+def _make_cube(control: Maestro):
+    res = control.dispatch_celery()
+    band_map = control.band_map
+
+    for period in res['blends'].values():
+        blend_bands_result = period.apply()
+        blend_bands = blend_bands_result.get()
+
+        publish_result = chain(group(blend_bands), publish.s(band_map, **control.properties)).apply()
+
+        blend_files, merge_files = publish_result.get()
+
+        yield blend_files, merge_files
+
+
+def _assert_datacube_period_valid(blend_files: Any, merge_files: Any):
+    cube_stats = set()
+    cube_proj4 = set()
+
+    # Validate Rasters
+    for entry in blend_files:
+        assert check_file_integrity(entry, read_bytes=True)
+        if str(entry).endswith('.tif'):
+            with rasterio.open(str(entry)) as ds:
+                # check resolution
+                transform = ds.transform
+                resx, resy, xmin, ymax = transform.a, transform.e, transform.c, transform.f
+                cube_stats.add((resx, resy, xmin, ymax))
+                cube_proj4.add(ds.crs.to_wkt())
+    # All files must have same pixel origin and resolution
+    assert len(cube_stats) == 1
+    # All files must have same proj4
+    assert len(cube_proj4) == 1

@@ -166,7 +166,7 @@ class STACLegacy(BaseSTAC):
 
 def build_stac(uri, headers=None, **parameters) -> BaseSTAC:
     """Build a STAC instance according versions."""
-    response = requests.get(uri, headers=headers, params=parameters)
+    response = requests.get(uri, timeout=15, headers=headers, params=parameters)
 
     response.raise_for_status()
 

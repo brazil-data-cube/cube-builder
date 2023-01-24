@@ -1,0 +1,106 @@
+{
+    "datacube": "S2-16D",
+    "datacube_identity": "S2",
+    "grs": "BDC_SM_TESTE",
+    "title": "Sentinel-2 - MSI - Sen2cor - Cube LCF 16 days",
+    "resolution": 10,
+    "version": 1,
+    "temporal_composition": {
+        "schema": "Cyclic",
+        "step": 16,
+        "unit": "day",
+        "cycle": {
+            "unit": "year",
+            "step": 1
+        }
+    },
+    "composite_function": "LCF",
+    "bands_quicklook": [
+        "B04",
+        "B03",
+        "B02"
+    ],
+    "bands": [
+        {
+            "name": "B02",
+            "common_name": "blue",
+            "data_type": "int16",
+            "nodata": 0
+        },
+        {
+            "name": "B03",
+            "common_name": "green",
+            "data_type": "int16",
+            "nodata": 0
+        },
+        {
+            "name": "B04",
+            "common_name": "red",
+            "data_type": "int16",
+            "nodata": 0
+        },
+        {
+            "name": "B8A",
+            "common_name": "nir08",
+            "data_type": "int16",
+            "nodata": 0
+        },
+        {
+            "name": "SCL",
+            "common_name": "quality",
+            "data_type": "uint8",
+            "nodata": 0
+        }
+    ],
+    "indexes": [
+        {
+            "name": "NDVI",
+            "common_name": "ndvi",
+            "data_type": "int16",
+            "nodata": -9999,
+            "metadata": {
+                "expression": {
+                    "bands": ["B8A", "B04"],
+                    "value": "10000. * ((B8A - B04)/(B8A + B04))"
+                }
+            }
+        },
+        {
+            "name": "EVI",
+            "common_name": "evi",
+            "data_type": "int16",
+            "nodata": -9999,
+            "metadata": {
+                "expression": {
+                    "bands": ["B8A", "B04", "B02"],
+                    "value": "10000. * 2.5 * (B8A - B04) / (B8A + 6. * B04 - 7.5 * B02 + 10000.)"
+                }
+            }
+        }
+
+    ],
+    "quality_band": "SCL",
+    "description": "This datacube was generated with all available surface reflectance images processed using Sen2cor.",
+    "metadata": {
+        "license": "proprietary",
+        "platform": {
+            "code": "Sentinel-2",
+            "instruments": [
+                "MSI"
+            ]
+        }
+    },
+    "parameters": {
+        "mask": {
+            "nodata": 0,
+            "clear_data": [4, 5, 6],
+            "not_clear_data": [2, 3, 7, 8, 9, 10, 11],
+            "saturated_data": [1]
+        },
+        "channel_limits": [
+            [0, 2000],
+            [0, 2000],
+            [0, 2000]
+        ]
+    }
+}
