@@ -298,7 +298,7 @@ class CubeController:
             cube = cls.get_cube_or_404(cube_id=cube_id)
 
             cube.title = params.get('title') or cube.title
-            cube._metadata = params.get('metadata') or cube._metadata
+            cube.metadata_ = params.get('metadata') or cube.metadata_
             cube.description = params.get('description') or cube.description
             cube.is_available = params.get('is_available') or cube.is_available
 
@@ -356,7 +356,7 @@ class CubeController:
     @classmethod
     def list_cubes(cls):
         """Retrieve the list of data cubes from Brazil Data Cube database."""
-        cubes = Collection.query().filter(Collection.collection_type == 'cube').all()
+        cubes = Collection.query().filter(Collection.collection_type == 'cube').order_by(Collection.id).all()
 
         serializer = CollectionForm()
 

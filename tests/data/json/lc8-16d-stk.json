@@ -91,6 +91,10 @@
         }
     },
     "parameters": {
-        "mask": {"nodata": 255, "clear_data": [0, 1], "not_clear_data": [2, 3, 4]}
+        "mask": {
+            "nodata": 255,
+            "clear_data": [0, 1],
+            "not_clear_data": [2, 3, 4]
+        }
     }
 }

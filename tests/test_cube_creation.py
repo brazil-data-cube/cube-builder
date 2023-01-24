@@ -32,7 +32,7 @@ from cube_builder.maestro import Maestro
 from cube_builder.utils.image import check_file_integrity
 
 CUBE_PARAMS = dict(
-    datacube='LC8-16D',
+    datacube='LC8-16D-1',
     tiles=['007011'],
     collections=['LC8_SR-1'],
     start_date=datetime.date(year=2020, month=1, day=1),
@@ -40,6 +40,29 @@ CUBE_PARAMS = dict(
     stac_url=os.getenv('STAC_URL', 'https://brazildatacube.dpi.inpe.br/stac/'),
     token=os.getenv('STAC_ACCESS_TOKEN')
 )
+
+
+def _supported_collection(stac_url: str, collections: list, token: str = None, **kwargs) -> bool:
+    from cube_builder._adapter import build_stac
+
+    headers = {}
+    if token:
+        headers['x-api-key'] = token
+    stac = build_stac(stac_url, headers=headers)
+
+    for collection in collections:
+        if not _get_stac_collection(stac, collection):
+            return False
+
+    return True
+
+
+def _get_stac_collection(stac, collection: str) -> bool:
+    try:
+        _ = stac.collection(collection)
+        return True
+    except:
+        return False
 
 
 @pytest.fixture()
@@ -75,6 +98,8 @@ class TestCubeCreation:
         mock_prepare_blend.s.assert_called_once()
         mock_group.assert_called_with([mock_chain()])
 
+    @pytest.mark.skipif(not _supported_collection(**CUBE_PARAMS),
+                        reason=f"collection is not supported in {CUBE_PARAMS['stac_url']}")
     def test_cube_workflow(self, maestro):
         res = maestro.dispatch_celery()
         band_map = maestro.band_map
@@ -107,7 +132,7 @@ class TestCubeCreation:
 
     def test_cube_workflow_empty_timeline(self, app):
         params = deepcopy(CUBE_PARAMS)
-        params['tiles'] = ['035060']
+        params['tiles'] = ['024016']
         maestro = Maestro(**params)
         maestro.orchestrate()
         res = maestro.dispatch_celery()
