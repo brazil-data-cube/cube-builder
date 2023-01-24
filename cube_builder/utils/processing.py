@@ -266,7 +266,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
                 dataset = asset['dataset']
                 platform = asset.get('platform', '')
 
-                if platform and 'landsat' in platform.lower():
+                if platform and 'landsat' in platform.lower() and kwargs.get('combined'):
                     _, platform_version = platform.split('-' if '-' in platform else '_')
                     is_oli = int(platform_version) > 7
                     if is_oli:
