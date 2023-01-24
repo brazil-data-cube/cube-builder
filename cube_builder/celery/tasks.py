@@ -118,7 +118,7 @@ def warp_merge(activity, band_map, mask, force=False, data_dir=None, **kwargs):
         merge_file_path = build_cube_path(record.warped_collection_id, merge_date,
                                           tile_id, version=version, band=record.band,
                                           prefix=data_dir, composed=False, **kwargs)
-
+        # Enable Provenance for combined datasets like Landsat Program
         if activity['band'] == quality_band and (len(activity['args']['datasets']) >= 2 or kwargs.get('combined')):
             kwargs['build_provenance'] = True
 
@@ -482,7 +482,7 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
     quality_blend = dict(efficacy=100, cloudratio=0)
 
     for blend_result in blends:
-        if composite_function != IDENTITY:
+        if composite_function != 'IDT':
             blend_files[blend_result['band']] = blend_result['blends']
 
         if blend_result.get('clear_observation_file'):
