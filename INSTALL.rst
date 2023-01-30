@@ -86,6 +86,13 @@ Install in development mode:
     If you have problems with the ``librabbitmq`` installation, please, see [#f1]_.
 
 
+.. note::
+
+    The `setuptools v67+ <https://setuptools.pypa.io/en/latest/history.html>`_ has breaking changes related
+    Pip versions requirements. For now, you should install ``setuptools<67`` for compatibility.
+    The packages in ``Cube-Builder`` will be upgraded to support latest version.
+
+
 Running in Development Mode
 ---------------------------
 
@@ -197,12 +204,14 @@ You may need to replace the definition of some parameters:
     The command line ``cube-builder worker`` is an auxiliary tool that wraps celery command line
     using ``cube_builder`` as context. In this way, all ``celery worker`` parameters are currently supported.
     See more in `Celery Workers Guide <https://docs.celeryproject.org/en/stable/userguide/workers.html>`_.
+    If you keep parameters ``WORK_DIR`` and ``DATA_DIR``, just make sure its writable in order to works, otherwise,
+    you may see issues related ``Permission Denied``.
 
 
 .. warning::
 
     The ``Cube Builder`` can use a lot of memory for each concurrent process, since it opens multiple images in memory.
-    You can limit the concurrent processes in order to prevent it.
+    You can limit the concurrent processes with ``--concurrency NUMBER`` in order to prevent it.
 
 
 .. rubric:: Footnotes

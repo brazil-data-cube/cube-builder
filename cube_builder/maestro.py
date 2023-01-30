@@ -37,9 +37,9 @@ from bdc_catalog.models import Band, Collection, CollectionSRC, GridRefSys, Tile
 from celery import chain, group
 from geoalchemy2 import func
 from geoalchemy2.shape import to_shape
-from stac import STAC
 
 # Cube Builder
+from ._adapter import BaseSTAC, build_stac
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
 from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
@@ -131,7 +131,7 @@ class Maestro:
         self.tiles = []
         self.export_files = self.properties.pop('export_files', None)
 
-    def get_stac(self, collection: str) -> STAC:
+    def get_stac(self, collection: str) -> BaseSTAC:
         """Retrieve STAC client which provides the given collection.
 
         By default, it searches for given collection on Brazil Data Cube STAC.
@@ -152,7 +152,7 @@ class Maestro:
             # Search in INPE STAC
             return self._stac(collection, 'http://cdsr.dpi.inpe.br/inpe-stac/stac')
 
-    def _stac(self, collection: str, url: str, **kwargs) -> STAC:
+    def _stac(self, collection: str, url: str, **kwargs) -> BaseSTAC:
         """Check if collection is provided by given STAC url.
 
         The provided STAC must follow the `SpatioTemporal Asset Catalogs spec <https://stacspec.org/>`_.
@@ -172,9 +172,7 @@ class Maestro:
             if kwargs.get('token'):
                 options['access_token'] = kwargs.get('token')
 
-            stac = self.cached_stacs.get(url) or STAC(url, **options)
-
-            _ = stac.catalog
+            stac = self.cached_stacs.get(url) or build_stac(url, **options)
 
             _ = stac.collection(collection)
 
@@ -614,16 +612,16 @@ class Maestro:
             stac_collection = stac.collection(dataset)
             if stac_collection.get('summaries') and stac_collection['summaries'].get('platform'):
                 platforms = platforms.union(set(stac_collection['summaries'].get('platform')))
-            elif stac_collection.properties.get('platform'):
-                platforms = platforms.union(set(stac_collection.properties.get('platform')))
+            elif stac_collection.get('properties').get('platform'):
+                platforms = platforms.union(set(stac_collection.get('properties').get('platform')))
 
             token = ''
 
             print('Searching for {} - {} ({}, {}) using {}...'.format(dataset, tile_id, start,
-                                                                      end, stac.url), end='', flush=True)
+                                                                      end, stac.uri), end='', flush=True)
 
             with timing(' total'):
-                items = stac.search(filter=options)
+                items = stac.search(**options)
 
                 for feature in items['features']:
                     if feature['type'] == 'Feature':
@@ -632,7 +630,7 @@ class Maestro:
                         identifier = feature['id']
                         # TODO: Add handler to deal with parse result serializer.
                         platform = feature['properties'].get('platform')
-                        if stac.url.startswith('https://landsatlook.usgs.gov'):
+                        if stac.uri.startswith('https://landsatlook.usgs.gov'):
                             # Remove last SR sentence.
                             identifier = f'{identifier[:-3]}{identifier[-3:].replace("_SR", "")}'
                         # Special treatment for missing/invalid platform values

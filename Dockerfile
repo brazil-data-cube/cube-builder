@@ -34,7 +34,7 @@ ADD . ${CUBE_BUILDER_INSTALL_PATH}
 
 WORKDIR ${CUBE_BUILDER_INSTALL_PATH}
 
-RUN python3 -m pip install pip --upgrade setuptools wheel && \
+RUN python3 -m pip install pip --upgrade "setuptools<67" wheel && \
     python3 -m pip install -e .[rabbitmq] && \
     python3 -m pip install gunicorn
 

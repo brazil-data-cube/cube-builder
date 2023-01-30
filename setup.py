@@ -75,7 +75,7 @@ install_requires = [
     'rio_cogeo==3.0.2',
     'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
-    'stac.py==0.9.0.post12',
+    'pystac-client>=0.5',
     'MarkupSafe==2.0.1',
     'bdc-auth-client @ git+https://github.com/brazil-data-cube/bdc-auth-client.git@v0.2.1#egg=bdc-auth-client'
 ]
