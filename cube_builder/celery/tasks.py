@@ -89,7 +89,9 @@ def warp_merge(activity, band_map, mask, force=False, data_dir=None, **kwargs):
     Returns:
         Validated activity
     """
-    logging.warning('Executing merge {} - {}'.format(activity.get('warped_collection_id'), activity['band']))
+    logging.warning('Executing merge {} - {} - {}'.format(activity.get('warped_collection_id'),
+                                                          activity['band'],
+                                                          activity['date']))
 
     record = create_execution(activity)
 
@@ -116,8 +118,8 @@ def warp_merge(activity, band_map, mask, force=False, data_dir=None, **kwargs):
         merge_file_path = build_cube_path(record.warped_collection_id, merge_date,
                                           tile_id, version=version, band=record.band,
                                           prefix=data_dir, composed=False, **kwargs)
-
-        if activity['band'] == quality_band and len(activity['args']['datasets']):
+        # Enable Provenance for combined datasets like Landsat Program
+        if activity['band'] == quality_band and (len(activity['args']['datasets']) >= 2 or kwargs.get('combined')):
             kwargs['build_provenance'] = True
 
     reused = False
@@ -304,6 +306,8 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
         """
         return merge['band'] == quality_band and composite_function not in ('STK', 'LCF')
 
+    platforms = []
+
     for _merge in merges:
         # Skip quality generation for MEDIAN, AVG
         if _merge['band'] in activities and _merge['args']['date'] in activities[_merge['band']]['scenes'] or \
@@ -341,6 +345,9 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
 
         if _merge['args'].get(DATASOURCE_NAME):
             activity['scenes'][_merge['args']['date']]['ARDfiles'][DATASOURCE_NAME] = _merge['args'][DATASOURCE_NAME]
+            if _merge['args'].get('platforms'):
+                activity.setdefault('platforms', _merge['args'].get('platforms'))
+                platforms = _merge['args'].get('platforms')
 
         activities[_merge['band']] = activity
 
@@ -386,9 +393,6 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
             for idx, date in enumerate(ordered_dates):
                 activity['scenes'][date]['efficacy'] = weights[idx]
 
-    # Prepare list of activities to dispatch
-    activity_list = list(activities.values())
-
     # For IDENTITY data cube trigger, just publish
     if composite_function == 'IDT':
         task = publish.s(list(activities.values()), reuse_data_cube=reuse_data_cube, band_map=band_map, **kwargs)
@@ -401,10 +405,10 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
     # We must keep track of last activity to run
     # Since the Clear Observation must only be execute by single process. It is important
     # to avoid concurrent processes to write same data set in disk
-    last_activity = activity_list[-1]
+    last_activity = activities.pop(quality_band)
 
     # Trigger all except the last
-    for activity in activity_list[:-1]:
+    for activity in list(activities.values()):
         # TODO: Persist
         blends.append(blend.s(activity, band_map, reuse_data_cube=reuse_data_cube, **kwargs))
 
@@ -478,7 +482,7 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
     quality_blend = dict(efficacy=100, cloudratio=0)
 
     for blend_result in blends:
-        if composite_function != IDENTITY:
+        if composite_function != 'IDT':
             blend_files[blend_result['band']] = blend_result['blends']
 
         if blend_result.get('clear_observation_file'):

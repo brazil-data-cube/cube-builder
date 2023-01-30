@@ -95,7 +95,7 @@ def create_cube(**kwargs):
     return jsonify(cubes), status
 
 
-@bp.route('/cubes/<cube_id>', methods=['PUT'])
+@bp.route('/cubes/<int:cube_id>', methods=['PUT'])
 @oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def update_cube_matadata(cube_id, **kwargs):
     """Define PUT handler for datacube Updation.

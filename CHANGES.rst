@@ -20,6 +20,22 @@
 Changes
 =======
 
+Version 1.0.0a2 (2023-01-30)
+----------------------------
+
+- Improve docs setup
+- Add integration with 0.8.4 and generate data cubes for EO Landsat combined sensors (`#172 <https://github.com/brazil-data-cube/cube-builder/issues/172>`_)
+- Add support for interoperability of STAC clients: 0.9.x and 1.0
+
+
+Version 0.8.4 (2023-01-23)
+--------------------------
+
+- Add support to generate data cube from Landsat Collection 2 (`#172 <https://github.com/brazil-data-cube/cube-builder/issues/172>`_)
+- Add support to combine Landsat Collection 2 sensors (L5/L7, L7/L8, L7/L8/L9) using single collection (`#172 <https://github.com/brazil-data-cube/cube-builder/issues/172>`_)
+- Review API error when no parameter is set.
+- Review unittests for cube creation and code coverage.
+
 
 Version 1.0.0a1 (2022-10-20)
 ----------------------------

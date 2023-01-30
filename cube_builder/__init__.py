@@ -21,7 +21,6 @@
 from json import JSONEncoder
 
 from bdc_catalog.ext import BDCCatalog
-from bdc_catalog.models import db
 from flask import Flask, abort, request
 from flask_redoc import Redoc
 from werkzeug.exceptions import HTTPException, InternalServerError
@@ -108,3 +107,9 @@ def setup_app(app):
 
     from .views import bp
     app.register_blueprint(bp)
+
+
+__all__ = (
+    'create_app',
+    '__version__',
+)

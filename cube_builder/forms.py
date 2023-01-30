@@ -107,6 +107,7 @@ class CustomMaskDefinition(Schema):
     nodata = fields.Integer(required=True, allow_none=False)
     saturated_data = fields.List(fields.Integer, required=False, allow_none=False)
     saturated_band = fields.String(required=False, allow_none=False)
+    bits = fields.Boolean(required=False, allow_none=False, dump_default=False)
 
 
 class CubeParametersSchema(Schema):
@@ -120,6 +121,12 @@ class CubeParametersSchema(Schema):
     recursive = fields.Boolean(required=False, allow_none=False)
     format = fields.String(required=False, allow_none=False)
     pattern = fields.String(required=False, allow_none=False)
+    band_map = fields.Dict(required=False, allow_none=False)
+    channel_limits = fields.List(
+        fields.List(fields.Integer, required=True, validate=validate.Length(min=2, max=2)),
+        required=False,
+        validate=validate.Length(min=3, max=3)
+    )
 
 
 class DataCubeForm(Schema):

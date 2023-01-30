@@ -18,9 +18,9 @@
 """Brazil Data Cube Configuration."""
 
 import os
-from distutils.util import strtobool
 
 from .version import __version__
+from .constants import to_bool
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -99,7 +99,7 @@ class Config:
     BDC_AUTH_ACCESS_TOKEN_URL = os.getenv('BDC_AUTH_ACCESS_TOKEN_URL', None)
     """Access token url used for retrieving user info in BDC-Auth
     Defaults to ``None``. Used when ``BDC_AUTH_REQUIRED`` is set."""
-    BDC_AUTH_REQUIRED = strtobool(os.getenv('BDC_AUTH_REQUIRED', '0'))
+    BDC_AUTH_REQUIRED = to_bool(os.getenv('BDC_AUTH_REQUIRED', '0'))
     """Flag to manage when a Auth is required.
     Defaults to ``0``, that means that there is not authorization request to access ``Cube Builder`` API."""
 

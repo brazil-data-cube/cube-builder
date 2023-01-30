@@ -19,6 +19,7 @@
 """Define Cube Builder celery module initialization."""
 
 import logging
+import os
 
 import flask
 from bdc_catalog.models import db
@@ -27,6 +28,7 @@ from celery import Celery
 from flask import Flask
 
 from cube_builder.config import Config
+from ..constants import to_bool
 
 CELERY_TASKS = [
     'cube_builder.celery.tasks',
@@ -59,6 +61,7 @@ def create_celery_app(flask_app: Flask) -> Celery:
 
     always_eager = flask_app.config.get('TESTING', False)
     celery.conf.update(dict(
+        CELERY_ACKS_LATE=to_bool(os.getenv('CELERY_ACKS_LATE', '1')),
         CELERY_TASK_ALWAYS_EAGER=always_eager,
         CELERYD_PREFETCH_MULTIPLIER=Config.CELERYD_PREFETCH_MULTIPLIER,
         CELERY_RESULT_BACKEND='db+{}'.format(flask_app.config.get('SQLALCHEMY_DATABASE_URI')),

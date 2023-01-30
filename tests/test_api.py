@@ -20,8 +20,12 @@
 
 import datetime
 
+from click.testing import CliRunner
 from dateutil.relativedelta import relativedelta
 from flask import Response
+
+from cube_builder import __version__
+from cube_builder.cli import cli
 
 
 def _assert_json_request(response: Response, status_code=200):
@@ -29,6 +33,12 @@ def _assert_json_request(response: Response, status_code=200):
     assert response.is_json
 
     return response.json
+
+
+def test_index_api(client):
+    response = client.get('/')
+    assert response.status_code == 200
+    assert response.json['description'] == 'Cube Builder' and response.json['version'] == __version__
 
 
 def test_create_grid(client, json_data):
@@ -43,12 +53,18 @@ def test_get_grid(client, json_data):
     assert len(grids) > 0
 
 
-def test_create_cube(client, json_data):
-    json_cube = json_data['lc8-16d-stk.json']
-    response = client.post('/cubes', json=json_cube)
+def test_load_initial_data():
+    res = CliRunner().invoke(cli, args=['load-data'])
+    assert res.exit_code == 0
 
-    cubes = _assert_json_request(response, status_code=201)
-    assert isinstance(cubes, list)
+
+def test_create_cube(client, json_data):
+    for filename in ['lc8-16d-stk.json', 's2-16d-lcf.json']:
+        json_cube = json_data[filename]
+        response = client.post('/cubes', json=json_cube)
+
+        cubes = _assert_json_request(response, status_code=201)
+        assert isinstance(cubes, list)
     # TODO: validate json response with jsonschema api
 
 
@@ -81,3 +97,57 @@ def test_list_periods_continuous_month(client):
         assert end == (ref_date + offset)
 
         ref_date += offset + relativedelta(days=1)
+
+
+def test_datacube_status(client, json_data):
+    json_cube = json_data['lc8-16d-stk.json']
+    identifier = f"{json_cube['datacube']}-{json_cube['version']}"
+    response = client.get('/cube-status', query_string={'cube_name': identifier})
+    _assert_json_request(response, status_code=200)
+
+    # Test invalid request
+    response = client.get('/cube-status')
+    _assert_json_request(response, status_code=400)
+
+
+def test_list_cubes(client):
+    cube_info = _get_first_cube(client)
+
+    response = client.get(f'/cubes/{cube_info["id"]}')
+    cube = _assert_json_request(response, 200)
+    assert cube['name'] == cube_info['name']
+
+
+def test_update_cube_meta(client):
+    cube = _get_first_cube(client)
+
+    props = dict(
+        title="New Cube - Updated",
+        public=True
+    )
+    response = client.put(f'/cubes/{cube["id"]}', json=props)
+    res = _assert_json_request(response, 200)
+    assert res['message'] == 'Updated cube!'
+    updated_cube = _get_first_cube(client)
+
+    assert updated_cube['title'] == props['title']
+    assert updated_cube['is_public'] == props['public']
+
+    # invalid parameter
+    props['public'] = 'invalid'
+    response = client.put(f'/cubes/{cube["id"]}', json=props)
+    _assert_json_request(response, 400)
+
+
+def test_list_cube_tiles(client):
+    cube = _get_first_cube(client)
+
+    response = client.get(f'/cubes/{cube["id"]}/tiles')
+    _assert_json_request(response, 200)
+
+
+def _get_first_cube(client):
+    response = client.get('/cubes')
+    cubes = _assert_json_request(response, 200)
+    assert len(cubes) > 0
+    return cubes[0]
