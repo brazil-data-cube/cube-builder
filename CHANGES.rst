@@ -20,13 +20,10 @@
 Changes
 =======
 
-Version 1.0.0
--------------
+Version 1.0.0a2 (2023-01-30)
+----------------------------
 
-- Add integration with BDC-Catalog 1.0 `#233 <https://github.com/brazil-data-cube/cube-builder/issues/233>`_.
-- Add support to generate datacube from Sentinel-2 Zip (experimental) `#222 <https://github.com/brazil-data-cube/cube-builder/issues/222>`_.
 - Improve docs setup
-- Add support to generate data cube from local directories (`#25 <https://github.com/brazil-data-cube/cube-builder/issues/25>`_)
 - Add integration with 0.8.4 and generate data cubes for EO Landsat combined sensors (`#172 <https://github.com/brazil-data-cube/cube-builder/issues/172>`_)
 - Add support for interoperability of STAC clients: 0.9.x and 1.0
 
