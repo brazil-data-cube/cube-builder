@@ -21,11 +21,12 @@
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from typing import List
+from urllib.parse import urljoin
 
 import requests
 import shapely.geometry
 from pystac_client import Client
-from stac import STAC as _STAC
+from werkzeug.exceptions import abort
 
 
 class BaseSTAC(ABC):
@@ -119,27 +120,33 @@ class STACV1(BaseSTAC):
 class STACLegacy(BaseSTAC):
     """Define structure to add support for legacy versions of STAC server..
 
-    This implementation uses `stac.py <https://github.com/brazil-data-cube/stac.py>`_
-    to communicate with STAC legacy versions 0.8x, 0.9x.
+    This implementation uses `requests.Session <https://requests.readthedocs.io/en/latest/user/advanced/#session-objects>`_
+    to communicate with STAC legacy versions 0.8x, 0.9x directly.
+
+    By default, the ssl entries are ignored. You may override this setting using ``verify=False``.
     """
 
-    def __init__(self, uri: str, params=None, headers=None, **kwargs):
+    def __init__(self, uri: str, params=None, headers=None, verify=False, **kwargs):
         """Build STAC instance."""
         super(STACLegacy, self).__init__(uri, params, headers, **kwargs)
 
         params = params or {}
         headers = headers or {}
-        token = params.get('access_token') or (headers.get('x-api-key') or headers.get('X-Api-Key'))
 
-        self._instance = _STAC(uri, access_token=token)
+        self._params = params
+        self._headers = headers
+        self._session = requests.session()
+        self._session.verify = verify
 
     def search(self, **parameters) -> dict:
         """Search for collection items on STAC server."""
         options = deepcopy(parameters)
         # Remove unsupported values
         options.pop('query', None)
+        url = self._url_resource('search')
+
         try:
-            return self._instance.search(filter=options)
+            response = self._request(url, method='POST', data=options, headers=self._headers, params=self._params)
         except:
             # Use bbox instead
             geom = options.pop('intersects', None)
@@ -148,20 +155,34 @@ class STACLegacy(BaseSTAC):
 
             options['bbox'] = shapely.geometry.shape(geom).bounds
 
-            return self._instance.search(filter=options)
+            response = self._request(url, method='POST', data=options, headers=self._headers, params=self._params)
+
+        return response
+
+    def _request(self, uri: str, method: str = 'GET', data=None, headers=None, params=None):
+        response = self._session.request(method, uri, headers=headers, params=params, json=data)
+        if response.status_code != 200:
+            abort(response.status_code, response.content)
+        return response.json()
 
     def collections(self) -> List[dict]:
         """Retrieve the collections from STAC."""
-        collections = self._instance.collections
-        return list(collections.values())
+        uri = self._url_resource('collections')
+        collections = self._request(uri, params=self._params, headers=self._headers)
+        return collections
 
     def collection(self, collection_id: str) -> dict:
         """Access STAC Collection."""
-        return self._instance.collection(collection_id)
+        uri = self._url_resource(f'collections/{collection_id}')
+        collection = self._request(uri, params=self._params, headers=self._headers)
+        return collection
 
     def items(self, collection_id: str, **kwargs) -> dict:
         """Access STAC Collection Items."""
         return self.search(collections=[collection_id], limit=1)
+
+    def _url_resource(self, resource: str) -> str:
+        return urljoin(self.uri + '/', resource)
 
 
 def build_stac(uri, headers=None, **parameters) -> BaseSTAC:

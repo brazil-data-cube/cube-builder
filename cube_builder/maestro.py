@@ -38,7 +38,6 @@ from bdc_catalog.models import Band, Collection, CollectionSRC, GridRefSys, Tile
 from celery import chain, group
 from geoalchemy2 import func
 from geoalchemy2.shape import to_shape
-from stac import STAC
 
 # Cube Builder
 from werkzeug.exceptions import abort
