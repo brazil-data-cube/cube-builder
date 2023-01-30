@@ -46,7 +46,7 @@ Compatibility
 +--------------+-------------+
 | Cube-Builder | BDC-Catalog |
 +==============+=============+
-| 1.0.x        | 1.0.0       |
+| 1.0.x        | 1.0.x       |
 +--------------+-------------+
 | 0.8.x        | 0.8.2       |
 +--------------+-------------+
@@ -79,13 +79,20 @@ Install in development mode:
 
 .. code-block:: shell
 
-    $ pip3 install -U pip setuptools wheel
+    $ pip3 install -U pip "setuptools<67" wheel
     $ pip3 install -e .[all]
 
 
 .. note::
 
     If you have problems with the ``librabbitmq`` installation, please, see [#f1]_.
+
+
+.. note::
+
+    The `setuptools v67+ <https://setuptools.pypa.io/en/latest/history.html>`_ has breaking changes related
+    Pip versions requirements. For now, you should install ``setuptools<67`` for compatibility.
+    The packages in ``Cube-Builder`` will be upgraded to support latest version.
 
 
 Running in Development Mode
