@@ -1,9 +1,9 @@
 {
-    "datacube": "LC8-16D",
-    "datacube_identity": "LC8",
-    "grs": "BDC_MD_TESTE",
-    "title": "Landsat-8 OLI Data Cube",
-    "resolution": 30,
+    "datacube": "S2-16D",
+    "datacube_identity": "S2",
+    "grs": "BDC_SM_TESTE",
+    "title": "Sentinel-2 - MSI - Sen2cor - Cube LCF 16 days",
+    "resolution": 10,
     "version": 1,
     "temporal_composition": {
         "schema": "Cyclic",
@@ -16,40 +16,40 @@
     },
     "composite_function": "LCF",
     "bands_quicklook": [
-        "sr_band4",
-        "sr_band3",
-        "sr_band2"
+        "B04",
+        "B03",
+        "B02"
     ],
     "bands": [
         {
-            "name": "sr_band2",
+            "name": "B02",
             "common_name": "blue",
             "data_type": "int16",
-            "nodata": -9999
+            "nodata": 0
         },
         {
-            "name": "sr_band3",
+            "name": "B03",
             "common_name": "green",
             "data_type": "int16",
-            "nodata": -9999
+            "nodata": 0
         },
         {
-            "name": "sr_band4",
+            "name": "B04",
             "common_name": "red",
             "data_type": "int16",
-            "nodata": -9999
+            "nodata": 0
         },
         {
-            "name": "sr_band5",
-            "common_name": "nir",
+            "name": "B8A",
+            "common_name": "nir08",
             "data_type": "int16",
-            "nodata": -9999
+            "nodata": 0
         },
         {
-            "name": "Fmask4",
+            "name": "SCL",
             "common_name": "quality",
             "data_type": "uint8",
-            "nodata": 255
+            "nodata": 0
         }
     ],
     "indexes": [
@@ -60,8 +60,8 @@
             "nodata": -9999,
             "metadata": {
                 "expression": {
-                    "bands": ["sr_band5", "sr_band4"],
-                    "value": "10000. * ((sr_band5 - sr_band4)/(sr_band5 + sr_band4))"
+                    "bands": ["B8A", "B04"],
+                    "value": "10000. * ((B8A - B04)/(B8A + B04))"
                 }
             }
         },
@@ -72,29 +72,35 @@
             "nodata": -9999,
             "metadata": {
                 "expression": {
-                    "bands": ["sr_band5", "sr_band4", "sr_band2"],
-                    "value": "10000. * 2.5 * (sr_band5 - sr_band4) / (sr_band5 + 6. * sr_band4 - 7.5 * sr_band2 + 10000.)"
+                    "bands": ["B8A", "B04", "B02"],
+                    "value": "10000. * 2.5 * (B8A - B04) / (B8A + 6. * B04 - 7.5 * B02 + 10000.)"
                 }
             }
         }
 
     ],
-    "quality_band": "Fmask4",
-    "description": "Landsat-8 Composed in 16 days",
+    "quality_band": "SCL",
+    "description": "This datacube was generated with all available surface reflectance images processed using Sen2cor.",
     "metadata": {
-        "license": "MIT",
+        "license": "proprietary",
         "platform": {
-            "code": "Landsat-8",
+            "code": "Sentinel-2",
             "instruments": [
-                "OLI"
+                "MSI"
             ]
         }
     },
     "parameters": {
         "mask": {
-            "nodata": 255,
-            "clear_data": [0, 1],
-            "not_clear_data": [2, 3, 4]
-        }
+            "nodata": 0,
+            "clear_data": [4, 5, 6],
+            "not_clear_data": [2, 3, 7, 8, 9, 10, 11],
+            "saturated_data": [1]
+        },
+        "channel_limits": [
+            [0, 2000],
+            [0, 2000],
+            [0, 2000]
+        ]
     }
 }

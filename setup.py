@@ -61,8 +61,8 @@ extras_require['all'] = [ req for exts, reqs in extras_require.items() for req i
 setup_requires = []
 
 install_requires = [
-    'bdc-auth-client @ git+https://github.com/brazil-data-cube/bdc-auth-client.git@v0.4.2#egg=bdc-auth-client',
-    'bdc-catalog @ git+https://github.com/brazil-data-cube/bdc-catalog.git@v1.0.0#egg=bdc-catalog',
+    'bdc-auth-client @ git+https://github.com/brazil-data-cube/bdc-auth-client.git@v0.4.3#egg=bdc-auth-client',
+    'bdc-catalog @ git+https://github.com/brazil-data-cube/bdc-catalog.git@v1.0.1#egg=bdc-catalog',
     'celery>=4.3.0,<5',
     'Flask>=1.1.1,<2',
     'flask-redoc>=0.2.1',
@@ -71,6 +71,7 @@ install_requires = [
     'numpngw>=0.0.8',
     'python-dateutil>=2.8,<3',
     'pyproj==3.3.1',
+    'pystac-client>0.3,<1.0',
     'rasterio[s3]==1.2.1',
     'requests>=2.25.1',
     'rio_cogeo==3.0.2',
@@ -120,7 +121,7 @@ setup(
     setup_requires=setup_requires,
     tests_require=tests_require,
     classifiers=[
-        'Development Status :: 1 - Planning',
+        'Development Status :: 1 - Stable',
         'Environment :: Web Environment',
         'Intended Audience :: Education',
         'Intended Audience :: Science/Research',

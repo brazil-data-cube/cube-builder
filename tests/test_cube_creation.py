@@ -21,6 +21,7 @@
 import datetime
 import os
 from copy import deepcopy
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -32,7 +33,7 @@ from cube_builder.maestro import Maestro
 from cube_builder.utils.image import check_file_integrity
 
 CUBE_PARAMS = dict(
-    datacube='LC8-16D',
+    datacube='LC8-16D-1',
     tiles=['007011'],
     collections=['LC8_SR-1'],
     start_date=datetime.date(year=2020, month=1, day=1),
@@ -40,6 +41,29 @@ CUBE_PARAMS = dict(
     stac_url=os.getenv('STAC_URL', 'https://brazildatacube.dpi.inpe.br/stac/'),
     token=os.getenv('STAC_ACCESS_TOKEN')
 )
+
+
+def _supported_collection(stac_url: str, collections: list, token: str = None, **kwargs) -> bool:
+    from cube_builder._adapter import build_stac
+
+    headers = {}
+    if token:
+        headers['x-api-key'] = token
+    stac = build_stac(stac_url, headers=headers)
+
+    for collection in collections:
+        if not _get_stac_collection(stac, collection):
+            return False
+
+    return True
+
+
+def _get_stac_collection(stac, collection: str) -> bool:
+    try:
+        _ = stac.collection(collection)
+        return True
+    except:
+        return False
 
 
 @pytest.fixture()
@@ -69,58 +93,25 @@ class TestCubeCreation:
     @patch(f'cube_builder.maestro.group')
     @patch(f'cube_builder.maestro.warp_merge')
     @patch(f'cube_builder.maestro.prepare_blend')
-    def test_mock_dispatch_celery(self, mock_prepare_blend, mock_merge, mock_group, mock_chain, maestro):
-        maestro.dispatch_celery()
+    def test_mock_run(self, mock_prepare_blend, mock_merge, mock_group, mock_chain, maestro):
+        maestro.run()
         mock_merge.s.assert_called()
         mock_prepare_blend.s.assert_called_once()
         mock_group.assert_called_with([mock_chain()])
 
+    @pytest.mark.skipif(not _supported_collection(**CUBE_PARAMS),
+                        reason=f"collection is not supported in {CUBE_PARAMS['stac_url']}")
     def test_cube_workflow(self, maestro):
-        res = maestro.dispatch_celery()
-        band_map = maestro.band_map
-
-        for period in res['blends'].values():
-            blend_bands_result = period.apply()
-            blend_bands = blend_bands_result.get()
-
-            publish_result = chain(group(blend_bands), publish.s(band_map, **maestro.properties)).apply()
-
-            blend_files, merge_files = publish_result.get()
-
-            cube_stats = set()
-            cube_proj4 = set()
-
-            # Validate Rasters
-            for entry in blend_files:
-                assert check_file_integrity(entry, read_bytes=True)
-                if str(entry).endswith('.tif'):
-                    with rasterio.open(str(entry)) as ds:
-                        # check resolution
-                        transform = ds.transform
-                        resx, resy, xmin, ymax = transform.a, transform.e, transform.c, transform.f
-                        cube_stats.add((resx, resy, xmin, ymax))
-                        cube_proj4.add(ds.crs.to_wkt())
-            # All files must have same pixel origin and resolution
-            assert len(cube_stats) == 1
-            # All files must have same proj4
-            assert len(cube_proj4) == 1
+        for blend_files, merge_files in _make_cube(maestro):
+            _assert_datacube_period_valid(blend_files, merge_files)
 
     def test_cube_workflow_empty_timeline(self, app):
         params = deepcopy(CUBE_PARAMS)
-        params['tiles'] = ['035060']
+        params['tiles'] = ['024016']
         maestro = Maestro(**params)
         maestro.orchestrate()
-        res = maestro.dispatch_celery()
-        band_map = maestro.band_map
 
-        for period in res['blends'].values():
-            blend_bands_result = period.apply()
-            blend_bands = blend_bands_result.get()
-
-            publish_result = chain(group(blend_bands), publish.s(band_map, **maestro.properties)).apply()
-
-            blend_files, merge_files = publish_result.get()
-
+        for blend_files, merge_files in _make_cube(maestro):
             # Empty timeline must not have published Identity Files
             assert len(merge_files) == 0
 
@@ -128,3 +119,49 @@ class TestCubeCreation:
             for entry in blend_files:
                 assert check_file_integrity(entry, read_bytes=True)
                 # check all == nodata
+
+    def test_create_cube_sentinel(self, app):
+        params = deepcopy(CUBE_PARAMS)
+        params['collections'] = ['S2_L2A-1']
+        params['datacube'] = 'S2-16D-1'
+        params['tiles'] = ['031018']
+        control = Maestro(**params)
+        control.orchestrate()
+
+        for blend_files, merge_files in _make_cube(control):
+            _assert_datacube_period_valid(blend_files, merge_files)
+
+
+def _make_cube(control: Maestro):
+    res = control.run()
+    band_map = control.band_map
+
+    for period in res['blends'].values():
+        blend_bands_result = period.apply()
+        blend_bands = blend_bands_result.get()
+
+        publish_result = chain(group(blend_bands), publish.s(band_map, **control.properties)).apply()
+
+        blend_files, merge_files = publish_result.get()
+
+        yield blend_files, merge_files
+
+
+def _assert_datacube_period_valid(blend_files: Any, merge_files: Any):
+    cube_stats = set()
+    cube_proj4 = set()
+
+    # Validate Rasters
+    for entry in blend_files:
+        assert check_file_integrity(entry, read_bytes=True)
+        if str(entry).endswith('.tif'):
+            with rasterio.open(str(entry)) as ds:
+                # check resolution
+                transform = ds.transform
+                resx, resy, xmin, ymax = transform.a, transform.e, transform.c, transform.f
+                cube_stats.add((resx, resy, xmin, ymax))
+                cube_proj4.add(ds.crs.to_wkt())
+    # All files must have same pixel origin and resolution
+    assert len(cube_stats) == 1
+    # All files must have same proj4
+    assert len(cube_proj4) == 1

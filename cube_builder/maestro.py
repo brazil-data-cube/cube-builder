@@ -23,6 +23,7 @@ import datetime
 import json
 import logging
 import warnings
+from collections.abc import Iterable
 from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
@@ -40,6 +41,9 @@ from geoalchemy2.shape import to_shape
 from stac import STAC
 
 # Cube Builder
+from werkzeug.exceptions import abort
+
+from ._adapter import BaseSTAC, build_stac
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
 from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, IDENTITY, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
@@ -64,6 +68,12 @@ def days_in_month(date):
     ndate = '{0:4d}-{1:02d}-{2:02d}'.format(nyear,nmonth,nday)
     td = numpy.datetime64(ndate) - numpy.datetime64(date)
     return td
+
+
+def _valid_channel_limit(value, expects):
+    if not isinstance(value, Iterable) or len(value) != expects:
+        raise ValueError('Invalid type for "channel_limits". '
+                         f'Expects Iterable of {expects} elements, but got "{value}"')
 
 
 @contextmanager
@@ -126,17 +136,17 @@ class Maestro:
         self.tiles = []
         self.export_files = self.properties.pop('export_files', None)
 
-    def get_stac(self, collection: str) -> STAC:
+    def get_stac(self, collection: str) -> BaseSTAC:
         """Retrieve STAC client which provides the given collection.
 
         By default, it searches for given collection on Brazil Data Cube STAC.
         When collection not found, search on INPE STAC.
 
         Args:
-            collection - Collection name to search
+            collection (str): Collection name to search
 
         Returns:
-            STAC client
+            STAC: The STAC which offers the given collection.
         """
         if self.properties.get('stac_url'):
             return self._stac(collection, self.properties['stac_url'], **self.properties)
@@ -147,7 +157,7 @@ class Maestro:
             # Search in INPE STAC
             return self._stac(collection, 'http://cdsr.dpi.inpe.br/inpe-stac/stac')
 
-    def _stac(self, collection: str, url: str, **kwargs) -> STAC:
+    def _stac(self, collection: str, url: str, **kwargs) -> BaseSTAC:
         """Check if collection is provided by given STAC url.
 
         The provided STAC must follow the `SpatioTemporal Asset Catalogs spec <https://stacspec.org/>`_.
@@ -160,16 +170,14 @@ class Maestro:
             url - STAC URL
 
         Returns:
-            STAC client
+            STAC: STAC instance
         """
         try:
             options = dict()
             if kwargs.get('token'):
                 options['access_token'] = kwargs.get('token')
 
-            stac = self.cached_stacs.get(url) or STAC(url, **options)
-
-            _ = stac.catalog
+            stac = self.cached_stacs.get(url) or build_stac(url, **options)
 
             _ = stac.collection(collection)
 
@@ -206,11 +214,6 @@ class Maestro:
             timeline = Timeline(**temporal_schema, start_date=dstart, end_date=dend).mount()
 
         where = [Tile.grid_ref_sys_id == self.datacube.grid_ref_sys_id]
-
-        if self.params.get('tiles'):
-            where.append(Tile.name.in_(self.params['tiles']))
-
-        self.tiles = db.session.query(Tile).filter(*where).all()
 
         self.bands = Band.query().filter(Band.collection_id == self.warped_datacube.id).all()
 
@@ -257,6 +260,18 @@ class Maestro:
                 version=self.reused_datacube.version,
             )
 
+        if not self.params.get('tiles'):
+            abort(400, 'Missing tiles in data cube generation')
+
+        where.append(Tile.name.in_(self.params['tiles']))
+        tiles = db.session.query(Tile).filter(*where).all()
+
+        if len(tiles) != len(self.params['tiles']):
+            tiles_not_found = set(self.params['tiles']) - set([t.name for t in tiles])
+            abort(400, f'Tiles not found {tiles_not_found}')
+
+        self.tiles = tiles
+
         for tile in self.tiles:
             tile_name = tile.name
 
@@ -302,7 +317,7 @@ class Maestro:
                 self.mosaics[tile_name]['periods'][period]['dist_y'] = tile_stats.dist_y
                 self.mosaics[tile_name]['periods'][period]['min_x'] = tile_stats.min_x
                 self.mosaics[tile_name]['periods'][period]['max_y'] = tile_stats.max_y
-                self.mosaics[tile_name]['periods'][period]['feature'] = tile_stats.feature
+                self.mosaics[tile_name]['periods'][period]['feature'] = to_shape(tile_stats.feature)
                 self.mosaics[tile_name]['periods'][period]['geom'] = to_shape(tile_stats.geom)
                 if self.properties.get('shape', None):
                     self.mosaics[tile_name]['periods'][period]['shape'] = self.properties['shape']
@@ -333,6 +348,13 @@ class Maestro:
 
         if self.properties.get('stac_url') and self.params.get('collections') is None:
             raise RuntimeError(f'Missing parameter "collections" for STAC {self.properties.get("stac_url")}')
+
+        if self.properties.get('channel_limits'):
+            channel_limits = self.properties['channel_limits']
+            # Validate the entire signature (Tuple of 3 limit elements)
+            _valid_channel_limit(channel_limits, expects=3)
+            # Validate each RGB channel (Tuple of 2 int elements)
+            _ = [_valid_channel_limit(channel, expects=2) for channel in channel_limits]
 
         return cube_parameters
 
@@ -416,7 +438,7 @@ class Maestro:
             return list(filter(lambda band: band.name in self.params['bands'], self.bands))
         return [b for b in self.bands if b.name != DATASOURCE_NAME]
 
-    def dispatch_celery(self):
+    def run(self):
         """Dispatch datacube generation on celery workers.
 
         Make sure celery is running. Check RUNNING.rst for further details.
@@ -440,6 +462,31 @@ class Maestro:
 
             warped_datacube = self.warped_datacube.name
 
+            if self.properties.get('with_rgb'):
+                input_range = self.properties.get('input_range')
+                if input_range is None:
+                    raise ValueError('Missing valid range for RGB.')
+                if type(input_range) not in (list, tuple,):
+                    raise TypeError(f'Invalid input range for RGB. Expects Tuple[int, int], got {type(input_range)}')
+
+            quality_band = None
+            if self.datacube.composite_function.alias != 'IDT':
+                quality_band = self.properties['quality_band']
+
+                quality = next(filter(lambda b: b.name == quality_band, bands))
+                self.properties['mask']['nodata'] = float(quality.nodata)
+            else:
+                self.properties['quality_band'] = None
+                self.properties['mask'] = None
+
+            output = dict(merges=dict(), blends=dict())
+
+            if self.reused_datacube:
+                self.properties['reuse_data_cube'] = dict(
+                    name=self.reused_datacube.name,
+                    version=self.reused_datacube.version,
+                )
+
             for tileid in self.mosaics:
                 blends = []
                 export.setdefault(tileid, dict())
@@ -455,7 +502,7 @@ class Maestro:
 
                     output['merges'].setdefault(period, dict())
 
-                    feature = to_shape(self.mosaics[tileid]['periods'][period]['feature'])
+                    feature = self.mosaics[tileid]['periods'][period]['feature']
 
                     if local and fmt:
                         start = datetime.datetime.strptime(start, '%Y-%m-%d')
@@ -539,6 +586,7 @@ class Maestro:
                                 srs=grid_crs,
                                 tile_id=tileid,
                                 assets=assets,
+                                platforms=self.platforms,
                                 nodata=float(band.nodata),
                                 bands=band_str_list,
                                 version=self.datacube.version,
@@ -592,6 +640,8 @@ class Maestro:
         options.update(kwargs)
 
         bands = self.datacube_bands
+        band_mapping = self.properties.get('band_map', dict())
+        platforms = set()
 
         # Retrieve band definition in dict format.
         # TODO: Should we use from STAC?
@@ -611,33 +661,58 @@ class Maestro:
         for dataset in self.params['collections']:
             options['collections'] = [dataset]
             stac = self.get_stac(dataset)
+            stac_collection = stac.collection(dataset)
+            if stac_collection.get('summaries') and stac_collection['summaries'].get('platform'):
+                platforms = platforms.union(set(stac_collection['summaries'].get('platform')))
+            elif stac_collection.get('properties').get('platform'):
+                plt = stac_collection.get('properties').get('platform')
+                platforms = platforms.union(set([plt] if isinstance(plt, str) else plt))
 
             token = ''
 
             print('Searching for {} - {} ({}, {}) using {}...'.format(dataset, tile_id, start,
-                                                                      end, stac.url), end='', flush=True)
+                                                                      end, stac.uri), end='', flush=True)
 
             with timing(' total'):
-                items = stac.search(filter=options)
+                items = stac.search(**options)
 
                 for feature in items['features']:
                     if feature['type'] == 'Feature':
                         date = feature['properties']['datetime'][0:10]
-                        identifier = feature['id']
                         stac_bands = feature['properties'].get('eo:bands', [])
+                        identifier = feature['id']
+                        # TODO: Add handler to deal with parse result serializer.
+                        platform = feature['properties'].get('platform')
+                        if stac.uri.startswith('https://landsatlook.usgs.gov'):
+                            # Remove last SR sentence.
+                            identifier = f'{identifier[:-3]}{identifier[-3:].replace("_SR", "")}'
+                        # Special treatment for missing/invalid platform values
+                        if (platform is None or isinstance(platform, list)) and _is_landsat(identifier):
+                            platform = _detect_landsat_platform(identifier)
 
                         for band in bands:
                             band_name_href = band.name
+
+                            if platform and band_mapping:
+                                platforms.add(platform)
+                                if platform not in band_mapping or not band_mapping[platform].get(band_name_href):
+                                    continue
+
+                                band_name_href = band_mapping[platform].get(band_name_href)
+
                             if 'CBERS' in dataset and band.common_name not in ('evi', 'ndvi'):
                                 band_name_href = band.common_name
 
                             elif band.name not in feature['assets']:
-                                if f'sr_{band.name}' not in feature['assets']:
+                                # TODO: Implement asset resolver
+                                if f'{band_name_href}.TIF' in feature['assets']:
+                                    band_name_href = f'{band_name_href}.TIF'
+                                elif f'sr_{band_name_href}' not in feature['assets']:
                                     continue
                                 else:
                                     band_name_href = f'sr_{band.name}'
 
-                            feature_band = list(filter(lambda b: b['name'] == band_name_href,stac_bands))
+                            feature_band = list(filter(lambda b: b['name'] == band_name_href, stac_bands))
                             feature_band = feature_band[0] if len(feature_band) > 0 else dict()
 
                             scenes[band.name].setdefault(date, dict())
@@ -650,6 +725,9 @@ class Maestro:
                             scene['sceneid'] = identifier
                             scene['band'] = band.name
                             scene['dataset'] = dataset
+                            scene['platform'] = platform
+                            if band_mapping:
+                                scene['original_band_name'] = band_name_href
 
                             link = link.replace(Config.CBERS_SOURCE_URL_PREFIX, Config.CBERS_TARGET_URL_PREFIX)
 
@@ -664,4 +742,29 @@ class Maestro:
                             scenes[band.name][date].setdefault(dataset, [])
                             scenes[band.name][date][dataset].append(scene)
 
+        self.platforms = sorted(list(platforms))
+
         return scenes
+
+
+def _is_landsat(identifier: str) -> bool:
+    try:
+        _parse_landsat(identifier)
+        return True
+    except ValueError:
+        return False
+
+
+def _parse_landsat(identifier: str) -> List[str]:
+    entities = identifier.split('_')
+    if len(entities) != 7 or not entities[0].startswith('L') or not entities[0][-2:].isnumeric():
+        raise ValueError(f'Invalid landsat scene {identifier}')
+    return entities
+
+
+def _detect_landsat_platform(identifier: str):
+    entities = _parse_landsat(identifier)
+    satellite = int(entities[0][-2:])
+    for value in [4, 5, 7, 8, 9]:
+        if satellite == value:
+            return f'Landsat-{value}'

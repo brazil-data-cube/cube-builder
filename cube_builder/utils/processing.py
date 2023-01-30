@@ -35,8 +35,6 @@ import rasterio
 import rasterio.features
 import rasterio.windows
 import requests
-import shapely
-import shapely.geometry
 from bdc_catalog.models import Collection, Item, SpatialRefSys, Tile, db
 from geoalchemy2 import func
 from geoalchemy2.shape import from_shape, to_shape
@@ -52,12 +50,17 @@ from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, C
 from ..datasets import dataset_from_uri
 # Builder
 from . import get_srid_column
-from .image import SmartDataSet, generate_cogs, save_as_cog
+from .image import (SmartDataSet, generate_cogs, linear_raster_scale, raster_convexhull, raster_extent, rescale,
+                    save_as_cog)
 from .index_generator import generate_band_indexes
 from .strings import StringFormatter
 
-VEGETATION_INDEX_BANDS = {'red', 'nir', 'blue'}
 FORMATTER = StringFormatter()
+
+Limit = Tuple[int, int]
+"""Represent the type for Image range."""
+ChannelLimits = Tuple[Limit, Limit, Limit]
+"""Represent the band channels (R, G, B) for quick look generation."""
 
 
 def get_rasterio_config() -> dict:
@@ -129,18 +132,6 @@ def get_item_id(datacube: str, version: int, tile: str, date: str, fmt=None) -> 
     )
 
 
-def prepare_asset_url(url: str) -> str:
-    """Define a simple function to change CBERS url to local INPE provider.
-
-    TODO: Remove it
-    """
-    from urllib.parse import urljoin, urlparse
-
-    parsed_url = urlparse(url)
-
-    return urljoin(url, parsed_url.path)
-
-
 def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
           band_map: dict, quality_band: str, collection: str, build_provenance=False, compute=False,
           native_grid: bool = False, **kwargs):
@@ -160,11 +151,13 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
         build_provenance: Build a provenance file for Merge (Used in combined collections)
         **kwargs: Extra properties
     """
+    from .image import QAConfidence
     xmin = kwargs.get('xmin')
     ymax = kwargs.get('ymax')
     dist_x = kwargs.get('dist_x')
     dist_y = kwargs.get('dist_y')
     datasets = kwargs.get('datasets')
+    platforms = kwargs.get('platforms', [])
     resx, resy = kwargs['resx'], kwargs['resy']
     block_size = kwargs.get('block_size')
     shape = kwargs.get('shape', None)
@@ -237,23 +230,39 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
 
     raster = numpy.zeros((rows, cols,), dtype=data_type)
     raster_merge = numpy.full((rows, cols,), dtype=data_type, fill_value=nodata)
+    confidence = None
 
     if build_provenance:
         raster_provenance = numpy.full((rows, cols,),
                                        dtype=DATASOURCE_ATTRIBUTES['data_type'],
                                        fill_value=DATASOURCE_ATTRIBUTES['nodata'])
+        if mask.get('bits') and mask.get('confidence'):
+            conf = mask['confidence']
+            conf.setdefault('oli', True)
+            confidence = QAConfidence(**conf)
 
     template = None
-    is_combined_collection = len(datasets) > 1
+    is_combined_collection = len(datasets) > 1 or (len(platforms) > 1 and kwargs.get('combined'))
+    index_landsat_oli = []
+    platforms_used = []
 
     with rasterio_access_token(kwargs.get('token')) as options:
         with rasterio.Env(CPL_CURL_VERBOSE=False, **get_rasterio_config(), **options):
             for asset in assets:
-                link = prepare_asset_url(asset['link'])
+                link = asset['link']
 
                 dataset = asset['dataset']
+                platform = asset.get('platform', '')
+
+                if platform and 'landsat' in platform.lower() and kwargs.get('combined'):
+                    _, platform_version = platform.split('-' if '-' in platform else '_')
+                    is_oli = int(platform_version) > 7
+                    if is_oli:
+                        index_landsat_oli.append(platforms.index(platform))
 
                 _check_rio_file_access(link, access_token=kwargs.get('token'))
+                if platform:
+                    platforms_used.append(platform)
 
                 src = dataset_from_uri(link, band=band)
 
@@ -302,6 +311,17 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
                                     dst_nodata=nodata,
                                     resampling=resampling)
 
+                            if kwargs.get('scale') and band != quality_band:
+                                new_scale = multiplier = float(band_map[band].get('scale', band_map.get('scale_mult')))
+                                additive = float(band_map[band].get('scale_add') or 0)
+                                if isinstance(kwargs['scale'], dict):
+                                    multiplier = kwargs['scale']['mult']
+                                    additive = kwargs['scale'].get('add')
+
+                                raster_ma = numpy.ma.array(raster, dtype=raster.dtype, mask=raster == nodata)
+                                raster_ma = rescale(raster_ma, multiplier, new_scale=new_scale, origin_additive=additive)
+                                raster = raster_ma.data
+
                             # For combined collections, we must merge only valid data into final data set
                             if is_combined_collection:
                                 positions_todo = numpy.where(raster_merge == nodata)
@@ -330,17 +350,30 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
 
                             if template is None:
                                 template = dst.profile
-                                # Ensure type is >= int16
+
+                            if build_provenance:
+                                raster_masked = numpy.ma.masked_where(raster == nodata, raster)
+
+                                where_valid = numpy.invert(raster_masked.mask)
+                                # TODO: Review and validate this step.
+                                # Using according to the given collections order.
+                                raster_provenance[where_valid] = platforms.index(platform)
+
+                                where_valid = None
+                                raster_masked = None
 
     template['dtype'] = data_type
     template['nodata'] = nodata
+
+    if build_provenance and mask.get('bits') and mask.get('confidence'):
+        confidence.oli = numpy.isin(raster_provenance, index_landsat_oli)
 
     # Evaluate cloud cover and efficacy if band is quality
     efficacy = 0
     cloudratio = 100
     raster = None
     if band == quality_band:
-        raster_merge, efficacy, cloudratio = getMask(raster_merge, datasets, mask=mask, compute=compute)
+        efficacy, cloudratio = _qa_statistics(raster_merge, mask=mask, compute=compute, confidence=confidence)
 
     # Ensure file tree is created
     merge_file = Path(merge_file)
@@ -352,17 +385,22 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
         cloudratio=cloudratio,
         dataset=dataset,
         resolution=resx,
-        nodata=nodata
+        nodata=nodata,
+        platforms_used=list(set(platforms_used))
     )
 
-    if band == quality_band and len(datasets) > 1:
+    if band == quality_band and build_provenance:
         provenance = merge_file.parent / merge_file.name.replace(band, DATASOURCE_NAME)
 
         profile = deepcopy(template)
         profile['dtype'] = DATASOURCE_ATTRIBUTES['data_type']
         profile['nodata'] = DATASOURCE_ATTRIBUTES['nodata']
+        entries = datasets
+        if len(datasets) == 1:
+            entries = platforms
+            options['platforms'] = platforms
 
-        custom_tags = {dataset: value for value, dataset in enumerate(datasets)}
+        custom_tags = {dataset: value for value, dataset in enumerate(entries)}
 
         save_as_cog(str(provenance), raster_provenance, tags=custom_tags, block_size=block_size, **profile)
         options[DATASOURCE_NAME] = str(provenance)
@@ -546,8 +584,9 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         It may be cloud/cloud-shadow (when there is no valid pixel 0 and 1). Otherwise, fill as `nodata`.
 
     See Also:
-        Numpy Masked Arrays https://numpy.org/doc/stable/reference/maskedarray.generic.html
-        Brazil Data Cube Temporal Compositing https://brazil-data-cube.github.io/products/specifications/processing-flow.html#temporal-compositing
+        - `Numpy Masked Arrays <https://numpy.org/doc/stable/reference/maskedarray.generic.html>`_
+
+        - `Brazil Data Cube Temporal Compositing <https://brazil-data-cube.github.io/products/specifications/processing-flow.html#temporal-compositing>`_
 
     Args:
         activity: Prepared blend activity metadata
@@ -557,7 +596,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     Returns:
         A processed activity with the generated values.
     """
-    from .image import radsat_extract_bits
+    from .image import QAConfidence, get_qa_mask, radsat_extract_bits
 
     # Assume that it contains a band and quality band
     numscenes = len(activity['scenes'])
@@ -581,6 +620,14 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         profile = src.profile
         tilelist = list(src.block_windows())
 
+    platforms = activity.get('platforms', [])
+    is_combined_collection = len(activity['datasets']) > 1 or (len(platforms) > 1 and kwargs.get('combined'))
+    index_landsat_oli = []
+    for idx, platform in enumerate(platforms):
+        if 'landsat' in platform.lower():
+            _, platform_version = platform.split('-')
+            if int(platform_version) >= 8:
+                index_landsat_oli.append(idx)
     # Order scenes based in efficacy/resolution
     mask_tuples = []
 
@@ -658,8 +705,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     period = activity.get('period')
     tile_id = activity.get('tile_id')
 
-    is_combined_collection = len(activity['datasets']) > 1
-
     if reuse_data_cube:
         datacube = reuse_data_cube['name']
         version = reuse_data_cube['version']
@@ -671,6 +716,12 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     cube_file.parent.mkdir(parents=True, exist_ok=True)
 
     cube_function = activity['composite_function']
+
+    confidence = None
+    if mask_values['bits']:
+        conf = mask_values.get('confidence', dict())
+        conf.setdefault('oli', True)
+        confidence = QAConfidence(**conf)
 
     if cube_function == 'MED':
         median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
@@ -694,12 +745,15 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
         if is_combined_collection:
             datasets = activity['datasets']
-            tags = {dataset: value for value, dataset in enumerate(datasets)}
+            entities = datasets
+            if kwargs.get('combined'):
+                entities = platforms
+            tags = {dataset: value for value, dataset in enumerate(entities)}
 
             datasource = SmartDataSet(str(dataset_file_path), 'w', tags=tags, **dataset_profile)
             datasource.dataset.write(numpy.full((height, width),
-                                              fill_value=DATASOURCE_ATTRIBUTES['nodata'],
-                                              dtype=DATASOURCE_ATTRIBUTES['data_type']), indexes=1)
+                                     fill_value=DATASOURCE_ATTRIBUTES['nodata'],
+                                     dtype=DATASOURCE_ATTRIBUTES['data_type']), indexes=1)
 
     provenance_array = numpy.full((height, width), dtype=numpy.int16, fill_value=-1)
 
@@ -730,16 +784,23 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
                 saturated = saturated_list[order].dataset.read(1, window=window)
                 # TODO: Get the original band order and apply to the extract function instead.
                 saturated = radsat_extract_bits(saturated, 1, 7).astype(numpy.bool_)
-
                 masked.mask[saturated] = True
 
-            # Mask cloud/snow/shadow/no-data as False
-            masked.mask[numpy.where(numpy.isin(masked, not_clear_values))] = True
-            # Ensure that Raster noda value (-9999 maybe) is set to False
-            masked.mask[raster == nodata] = True
-            masked.mask[numpy.where(numpy.isin(masked, saturated_values))] = True
-            # Mask valid data (0 and 1) as True
-            masked.mask[numpy.where(numpy.isin(masked, clear_values))] = False
+            if mask_values['bits']:
+                matched = get_qa_mask(masked,
+                                      clear_data=clear_values,
+                                      not_clear_data=not_clear_values,
+                                      nodata=mask_values['nodata'],
+                                      confidence=confidence)  # TODO: Pass the QA Confidence
+                masked.mask = matched.mask
+            else:
+                # Mask cloud/snow/shadow/no-data as False
+                masked.mask[numpy.where(numpy.isin(masked, not_clear_values))] = True
+                # Ensure that Raster no data value (-9999 maybe) is set to False
+                masked.mask[raster == nodata] = True
+                masked.mask[numpy.where(numpy.isin(masked, saturated_values))] = True
+                # Mask valid data (0 and 1) as True
+                masked.mask[numpy.where(numpy.isin(masked, clear_values))] = False
 
             # Create an inverse mask value in order to pass to numpy masked array
             # True => nodata
@@ -749,8 +810,11 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             stackMA[order] = numpy.ma.masked_where(bmask, raster)
 
             # Copy Masked values in order to stack total observation
-            copy_mask[copy_mask != nodata] = 1
+            # Use numpy where before to locate positions to change
+            # mask all and then apply the valid data over copy mask count
+            valid_pos = numpy.where(copy_mask != nodata)
             copy_mask[copy_mask == nodata] = 0
+            copy_mask[valid_pos] = 1
 
             stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask.astype(numpy.uint8)
 
@@ -758,6 +822,11 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             file_path = bandlist[order].name
             file_date = datetime.strptime(merges_band_map[file_path], '%Y-%m-%d')
             day_of_year = file_date.timetuple().tm_yday
+
+            if build_clear_observation and is_combined_collection:
+                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
+                if mask_values['bits']:
+                    confidence.oli = datasource_block == index_landsat_oli
 
             # Find all no data in destination STACK image
             stack_raster_where_nodata = numpy.where(
@@ -897,18 +966,24 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     return activity
 
 
-def generate_rgb(rgb_file: Path, qlfiles: List[str]):
+def generate_rgb(rgb_file: Path, qlfiles: List[str], input_range, output_range=(0, 255,), **kwargs):
     """Generate a raster file that stack the quick look files into RGB channel."""
     # TODO: Save RGB definition on Database
     with rasterio.open(str(qlfiles[0])) as dataset:
         profile = dataset.profile
 
     profile['count'] = 3
+    profile['dtype'] = 'uint8'
     with rasterio.open(str(rgb_file), 'w', **profile) as dataset:
         for band_index in range(len(qlfiles)):
             with rasterio.open(str(qlfiles[band_index])) as band_dataset:
-                data = band_dataset.read(1)
-                dataset.write(data, band_index + 1)
+                windows = band_dataset.block_windows()
+
+                for _, window in windows:
+                    data = band_dataset.read(1, window=window)
+                    data = linear_raster_scale(data, input_range=input_range, output_range=output_range)
+
+                    dataset.write(data.astype(numpy.uint8), band_index + 1, window=window)
 
     logging.info(f'Done RGB {str(rgb_file)}')
 
@@ -985,11 +1060,11 @@ def publish_datacube(cube: Collection, bands, tile_id, period, scenes, cloudrati
         for band in bands:
             ql_files.append(scenes[band][composite_function])
 
-        quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
+        quick_look_file = generate_quick_look(str(quick_look_file), ql_files, **kwargs)
 
         if kwargs.get('with_rgb'):
             rgb_file = build_cube_path(datacube, period, tile_id, version=version, band='RGB', composed=True, **kwargs)
-            generate_rgb(rgb_file, ql_files)
+            generate_rgb(rgb_file, ql_files, **kwargs)
 
         map_band_scene = {name: composite_map[composite_function] for name, composite_map in scenes.items()}
 
@@ -1108,12 +1183,13 @@ def publish_merge(bands, datacube, tile_id, date, scenes, reuse_data_cube=None, 
         ql_files.append(scenes['ARDfiles'][band])
 
     quick_look_file.parent.mkdir(exist_ok=True, parents=True)
-    quick_look_file = generate_quick_look(str(quick_look_file), ql_files)
+    quick_look_file = generate_quick_look(str(quick_look_file), ql_files, **kwargs)
 
     # Generate VI
-    custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id, reuse_data_cube=reuse_data_cube,
-                                         composed=False, **kwargs)
-    scenes['ARDfiles'].update(custom_bands)
+    if not kwargs.get('skip_vi_identity'):
+        custom_bands = generate_band_indexes(datacube, scenes['ARDfiles'], date, tile_id, reuse_data_cube=reuse_data_cube,
+                                             composed=False, **kwargs)
+        scenes['ARDfiles'].update(custom_bands)
 
     tile = Tile.query().filter(Tile.name == tile_id, Tile.grid_ref_sys_id == datacube.grid_ref_sys_id).first()
 
@@ -1212,48 +1288,40 @@ def cleanup(directory: Union[str, Path]):
         pass
 
 
-def generate_quick_look(file_path, qlfiles):
+def generate_quick_look(file_path, qlfiles, channel_limits: ChannelLimits = None, **kwargs):
     """Generate quicklook on disk."""
+    default_range = 0, 10000
+    if channel_limits is None:
+        channel_limits = default_range, default_range, default_range
+
+    if len(channel_limits) != 3:
+        raise ValueError(f'Invalid value for channels in quicklook. Expects 3 elements (r, g, b), but got {len(channel_limits)}')
+
     with rasterio.open(qlfiles[0]) as src:
         profile = src.profile
 
     numlin = 768
     numcol = int(float(profile['width'])/float(profile['height'])*numlin)
-    image = numpy.ones((numlin,numcol,len(qlfiles),), dtype=numpy.uint8)
+    image = numpy.ones((numlin, numcol, len(qlfiles),), dtype=numpy.uint8)
     pngname = '{}.png'.format(file_path)
 
     nb = 0
-    for file in qlfiles:
+    for idx, file in enumerate(qlfiles):
         with rasterio.open(file) as src:
             raster = src.read(1, out_shape=(numlin, numcol))
 
             # Rescale to 0-255 values
             nodata = raster <= 0
+            limit = channel_limits[idx]
             if raster.min() != 0 or raster.max() != 0:
-                raster = raster.astype(numpy.float32)/10000.*255.
+                raster = raster.astype(numpy.float32) / float(limit[1]) * 255.
+                raster[raster < 0] = 0
                 raster[raster > 255] = 255
             image[:, :, nb] = raster.astype(numpy.uint8) * numpy.invert(nodata)
             nb += 1
 
     write_png(pngname, image, transparent=(0, 0, 0))
     return pngname
-
-
-def getMask(raster, dataset=None, mask=None, compute=False):
-    """Retrieve and re-sample quality raster to well-known values used in Brazil Data Cube.
-
-    Args:
-        raster - Raster with Quality band values
-        satellite - Satellite Type
-
-    Returns:
-        Tuple containing formatted quality raster, efficacy and cloud ratio, respectively.
-    """
-    rastercm = raster
-
-    efficacy, cloudratio = _qa_statistics(rastercm, mask=mask, compute=compute)
-
-    return rastercm.astype(numpy.uint8), efficacy, cloudratio
 
 
 def parse_mask(mask: dict):
@@ -1306,6 +1374,7 @@ def parse_mask(mask: dict):
         not_clear_data=not_clear_data,
         saturated_data=saturated_data,
         nodata=nodata,
+        bits=mask.get('bits', False)
     )
 
     if mask.get('saturated_band'):
@@ -1314,23 +1383,59 @@ def parse_mask(mask: dict):
     return res
 
 
-def _qa_statistics(raster, mask: dict, compute: bool = False) -> Tuple[float, float]:
-    """Retrieve raster statistics efficacy and not clear ratio, based in Fmask values.
+def _qa_statistics(raster, mask: dict, compute: bool = False, confidence=None) -> Tuple[float, float]:
+    """Retrieve raster statistics efficacy and cloud factor.
+
+    This method uses the evidence of ``mask`` attribute to category the raster
+    efficacy and cloud factor using ``clear_data``, ``not_clear_data`` and
+    ``saturated_data`` as described in `Temporal Compositing <https://brazil-data-cube.github.io/products/specifications/processing-flow.html#temporal-compositing>`_
+
+    Args:
+        raster (numpy.ndarray|numpy.ma.MaskedArray): Image Raster values
+        mask (dict): A mask dictionary containing the values described in ``Temporal Compositing``.
+            The supported values are:
+            - ``clear_data``: Raster values used to be considered as valid data.
+            - ``not_clear_data``: Raster values used to be considered as invalid data.
+            - ``saturated_data``: Raster values used describe as saturated.
+            - ``saturated_band``: Band used to read and match saturated values. Usually referred for
+                Landsat. Defaults to ``None``.
+            - ``nodata``: Cloud Mask nodata value
+            - ``bits``: Flag to deal with Bitwise cloud factor. Defaults to ``False``.
 
     Note:
-        Values 0 and 1 are considered `clear data`.
-        Values 2 and 4 are considered as `not clear data`
-        The values for snow `3` and nodata `255` is not used to count efficacy and not clear ratio
+        The efficacy is based on `non nodata` pixels.
+
+    Note:
+        When the ``bits`` is set on mask parameter, the values referred in ``clear_data`` and ``not_clear_data``
+        will be used as Bit factor.
+
+    Returns:
+        Tuple[float, float]: Tuple of efficacy and cloud cover, respectively.
     """
+    from .image import get_qa_mask
+
     if compute:
         mask = parse_mask(mask)
 
-    # Compute how much data is for each class. It will be used as image area
-    clear_pixels = raster[numpy.where(numpy.isin(raster, mask['clear_data']))].size
-    not_clear_pixels = raster[numpy.where(numpy.isin(raster, mask['not_clear_data']))].size
+    confidence = confidence or mask.get('confidence')
 
     # Total pixels used to retrieve data efficacy
     total_pixels = raster.size
+    if mask['bits']:
+        nodata_pixels = raster[raster == mask['nodata']].size
+        qa_mask = get_qa_mask(raster,
+                              clear_data=mask['clear_data'],
+                              not_clear_data=mask['not_clear_data'],
+                              nodata=mask['nodata'],
+                              confidence=confidence)
+        clear_pixels = qa_mask[numpy.invert(qa_mask.mask)].size
+        # Since the nodata values is already masked, we should remove the difference
+        not_clear_pixels = qa_mask[qa_mask.mask].size - nodata_pixels
+    else:
+        # Compute how much data is for each class. It will be used as image area
+        clear_pixels = raster[numpy.where(numpy.isin(raster, mask['clear_data']))].size
+        not_clear_pixels = raster[numpy.where(numpy.isin(raster, mask['not_clear_data']))].size
+
     # Image area is everything, except nodata.
     image_area = clear_pixels + not_clear_pixels
     not_clear_ratio = 100
@@ -1439,49 +1544,3 @@ def rasterio_access_token(access_token=None):
             options.update(GDAL_HTTP_HEADER_FILE=str(tmp_file))
 
         yield options
-
-
-def raster_convexhull(imagepath: str, epsg='EPSG:4326') -> dict:
-    """Get a raster image footprint.
-
-    Args:
-        imagepath (str): image file
-        epsg (str): geometry EPSG
-
-    See:
-        https://rasterio.readthedocs.io/en/latest/topics/masks.html
-    """
-    with rasterio.open(imagepath) as dataset:
-        # Read raster data, masking nodata values
-        data = dataset.read(1, masked=True)
-        # Create mask, which 1 represents valid data and 0 nodata
-        mask = numpy.invert(data.mask).astype(numpy.uint8)
-
-        geoms = []
-        res = {'val': []}
-        for geom, val in rasterio.features.shapes(mask, mask=mask, transform=dataset.transform):
-            geom = rasterio.warp.transform_geom(dataset.crs, epsg, geom)
-
-            res['val'].append(val)
-            geoms.append(shapely.geometry.shape(geom))
-
-        if len(geoms) == 1:
-            return geoms[0]
-
-        multi_polygons = shapely.geometry.MultiPolygon(geoms)
-
-        return multi_polygons.convex_hull
-
-
-def raster_extent(imagepath: str, epsg = 'EPSG:4326') -> shapely.geometry.Polygon:
-    """Get raster extent in arbitrary CRS.
-
-    Args:
-        imagepath (str): Path to image
-        epsg (str): EPSG Code of result crs
-    Returns:
-        dict: geojson-like geometry
-    """
-    with rasterio.open(imagepath) as dataset:
-        _geom = shapely.geometry.mapping(shapely.geometry.box(*dataset.bounds))
-        return shapely.geometry.shape(rasterio.warp.transform_geom(dataset.crs, epsg, _geom))
