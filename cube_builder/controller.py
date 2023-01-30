@@ -456,7 +456,7 @@ class CubeController:
 
         maestro.orchestrate()
 
-        maestro.dispatch_celery()
+        maestro.run()
 
         return dict(ok=True)
 

@@ -438,7 +438,7 @@ class Maestro:
             return list(filter(lambda band: band.name in self.params['bands'], self.bands))
         return [b for b in self.bands if b.name != DATASOURCE_NAME]
 
-    def dispatch_celery(self):
+    def run(self):
         """Dispatch datacube generation on celery workers.
 
         Make sure celery is running. Check RUNNING.rst for further details.
@@ -470,7 +470,6 @@ class Maestro:
                     raise TypeError(f'Invalid input range for RGB. Expects Tuple[int, int], got {type(input_range)}')
 
             quality_band = None
-            stac_kwargs = self.properties.get('stac_kwargs', dict())
             if self.datacube.composite_function.alias != 'IDT':
                 quality_band = self.properties['quality_band']
 

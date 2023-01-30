@@ -93,8 +93,8 @@ class TestCubeCreation:
     @patch(f'cube_builder.maestro.group')
     @patch(f'cube_builder.maestro.warp_merge')
     @patch(f'cube_builder.maestro.prepare_blend')
-    def test_mock_dispatch_celery(self, mock_prepare_blend, mock_merge, mock_group, mock_chain, maestro):
-        maestro.dispatch_celery()
+    def test_mock_run(self, mock_prepare_blend, mock_merge, mock_group, mock_chain, maestro):
+        maestro.run()
         mock_merge.s.assert_called()
         mock_prepare_blend.s.assert_called_once()
         mock_group.assert_called_with([mock_chain()])
@@ -133,7 +133,7 @@ class TestCubeCreation:
 
 
 def _make_cube(control: Maestro):
-    res = control.dispatch_celery()
+    res = control.run()
     band_map = control.band_map
 
     for period in res['blends'].values():
