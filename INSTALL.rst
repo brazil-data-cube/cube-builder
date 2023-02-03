@@ -21,8 +21,6 @@ Installation
 
 The ``Cube Builder`` depends essentially on:
 
-- `Python Client Library for STAC (stac.py) <https://github.com/brazil-data-cube/stac.py>`_
-
 - `Flask <https://palletsprojects.com/p/flask/>`_
 
 - `Celery <http://www.celeryproject.org/>`_
@@ -30,8 +28,6 @@ The ``Cube Builder`` depends essentially on:
 - `rasterio <https://rasterio.readthedocs.io/en/latest/>`_
 
 - `NumPy <https://numpy.org/>`_
-
-- `scikit-image <https://scikit-image.org/>`_
 
 - `RabbitMQ <https://www.rabbitmq.com/>`_
 
