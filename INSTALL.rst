@@ -190,7 +190,7 @@ Enter the following command to start ``Cube Builder`` worker::
     WORK_DIR="/workdir" \
     DATA_DIR="/data" \
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder worker -l INFO --concurrency 8 -Q default,merge-cube,prepare-cube,blend-cube,publish-cube
+    celery -A cube_builder.celery.worker:celery worker -l INFO --concurrency 8 -Q default,merge-cube,prepare-cube,blend-cube,publish-cube
 
 
 You may need to replace the definition of some parameters:

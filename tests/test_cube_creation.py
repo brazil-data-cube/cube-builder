@@ -124,12 +124,22 @@ class TestCubeCreation:
         params = deepcopy(CUBE_PARAMS)
         params['collections'] = ['S2_L2A-1']
         params['datacube'] = 'S2-16D-1'
-        params['tiles'] = ['031018']
+        params['tiles'] = ['031018', '026029']
+        params['skip_vi_identity'] = True  # Disable Vegetation Index for Identity Cubes
         control = Maestro(**params)
         control.orchestrate()
 
+        cube_stats = set()
+        cube_proj4 = set()
+
         for blend_files, merge_files in _make_cube(control):
-            _assert_datacube_period_valid(blend_files, merge_files)
+            period_cube_stats, period_cube_proj4, _ = _assert_datacube_period_valid(blend_files, merge_files)
+            cube_proj4 = cube_proj4.union(period_cube_proj4)
+            cube_stats = cube_stats.union(period_cube_stats)
+
+        # All tiles MUST HAVE same projection and total pixel/dimension
+        assert len(cube_proj4) == 1
+        assert len(cube_stats) == 1
 
 
 def _make_cube(control: Maestro):
@@ -150,18 +160,26 @@ def _make_cube(control: Maestro):
 def _assert_datacube_period_valid(blend_files: Any, merge_files: Any):
     cube_stats = set()
     cube_proj4 = set()
+    cube_bounds = set()
 
     # Validate Rasters
     for entry in blend_files:
         assert check_file_integrity(entry, read_bytes=True)
         if str(entry).endswith('.tif'):
             with rasterio.open(str(entry)) as ds:
-                # check resolution
                 transform = ds.transform
                 resx, resy, xmin, ymax = transform.a, transform.e, transform.c, transform.f
-                cube_stats.add((resx, resy, xmin, ymax))
+
+                distance_x = ds.bounds[2] - xmin
+                distance_y = ymax - ds.bounds[1]
+                cube_stats.add((resx, resy, distance_x, distance_y, ds.width, ds.height))
                 cube_proj4.add(ds.crs.to_wkt())
-    # All files must have same pixel origin and resolution
+                cube_bounds.add(ds.bounds)
+    # All files must have same pixel size and total pixels
     assert len(cube_stats) == 1
     # All files must have same proj4
     assert len(cube_proj4) == 1
+    # All files must have same geom/bounds
+    assert len(cube_bounds) == 1
+
+    return cube_stats, cube_proj4, cube_bounds
