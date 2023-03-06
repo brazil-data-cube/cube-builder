@@ -138,7 +138,7 @@ class ZippedDataSet(DataSet):
     def _setup(self):
         flag = '/vsizip'
         if self.uri.startswith('http'):
-            flag = '/vsicurl'
+            flag = f'{flag}//vsicurl'
 
         self._flag = flag
 
@@ -163,7 +163,6 @@ class LandsatTgzDataSet(ZippedDataSet):
         else:
             raise ValueError(f'Invalid band for Sentinel-2 DataSet {band}')
         self.uri = f'{self._uri}/{self.scene_id}_{band}{suffix}'
-        super().open(*args, **kwargs)
 
 
 class SentinelZipDataSet(ZippedDataSet):
@@ -184,10 +183,15 @@ class SentinelZipDataSet(ZippedDataSet):
         """Create a new Sentinel-2 dataset."""
         self.band = band
         self._uri = uri
+        self._uri_parsed = urlparse(uri)
+        self._band_descriptions = None
         super().__init__(uri, mode, **options)
 
     def open(self, band: str = None, *args, **kwargs):
         """Open Sentinel-2 subdataset inside zip file."""
+        if self._uri_parsed.scheme in ('http', 'https',):
+            self.uri = self.uri.split('?')[0]
+
         ds = rasterio.open(f'{self._flag}/{self.uri}')
         if len(ds.subdatasets) != 4:
             raise RuntimeError(f'Invalid data set Sentinel {self.uri}')
@@ -195,9 +199,9 @@ class SentinelZipDataSet(ZippedDataSet):
         band = band or self.band
         # TODO: Complete validation
         if band in ('B02', 'B03', 'B04', 'B08'):
-            target = ds.subdatasets[0]
-        elif band in ('B05', 'B06', 'B07', 'B8A', 'B11', 'B12'):
-            target = ds.subdatasets[1]
+            target = ds.subdatasets[0]  # 4 bands
+        elif band in ('B05', 'B06', 'B07', 'B8A', 'B11', 'B12', 'SCL'):
+            target = ds.subdatasets[1]  # 9 bands
         elif band in ('B01', 'B09', 'B10'):
             target = ds.subdatasets[2]
         elif band == 'TCI':
@@ -206,11 +210,36 @@ class SentinelZipDataSet(ZippedDataSet):
             raise ValueError(f'Invalid band for Sentinel-2 DataSet {band}')
         self.uri = target
         super().open(*args, **kwargs)
+        self._band_descriptions = self.dataset.descriptions
 
     def close(self):
         """Close a dataset."""
         super().close()
         self.uri = self._uri
+
+    def read(self, indexes: Union[int, List[int]], *args, **kwargs):
+        """Implement the data set reader with rasterio/GDAL.
+
+        Args:
+            indexes: The int band value or list of band indices to read.
+
+        KeywordArgs:
+            window: Read data using rasterio window limits.
+            masked: Flag to read data using
+                `Numpy Masked Module <https://numpy.org/doc/stable/reference/maskedarray.generic.html#the-numpy-ma-module>`_ where nodata is masked.
+        """
+        native_mode = kwargs.pop('native_mode', False)
+        if self._band_descriptions and not native_mode:
+            band_lst = [_resolve_sentinel_band_name(entry.split(',')[0]) for entry in self._band_descriptions]
+            indexes = band_lst.index(self.band) + 1
+        return self.dataset.read(indexes, *args, **kwargs)
+
+
+def _resolve_sentinel_band_name(name: str) -> str:
+    band_id = name[1:]
+    if band_id.isnumeric():
+        band_id = '{0:02d}'.format(int(band_id))
+    return f'{name[0]}{band_id}'
 
 
 def dataset_from_uri(uri: str, band: str = None, **options) -> DataSet:

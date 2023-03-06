@@ -27,7 +27,7 @@ from bdc_catalog.models import db
 from celery import Celery
 from flask import Flask
 
-from cube_builder.config import Config
+from ..config import Config
 from ..constants import to_bool
 
 CELERY_TASKS = [

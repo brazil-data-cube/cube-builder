@@ -19,8 +19,8 @@
 
 import os
 
-from .version import __version__
 from .constants import to_bool
+from .version import __version__
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
