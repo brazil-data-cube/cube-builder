@@ -27,7 +27,7 @@ LABEL "org.brazildatacube.description"="Docker image for Data Cube Builder appli
 LABEL "org.brazildatacube.git_commit"="${GIT_COMMIT}"
 
 # Build arguments
-ARG CUBE_BUILDER_VERSION="0.8.4"
+ARG CUBE_BUILDER_VERSION="0.8.5"
 ARG CUBE_BUILDER_INSTALL_PATH="/opt/cube-builder/${CUBE_BUILDER_VERSION}"
 
 ADD . ${CUBE_BUILDER_INSTALL_PATH}
