@@ -77,3 +77,25 @@ COG_MIME_TYPE = 'image/tiff; application=geotiff; profile=cloud-optimized'
 PNG_MIME_TYPE = 'image/png'
 
 SRID_ALBERS_EQUAL_AREA = 100001
+
+
+def to_bool(val: str):
+    """Convert a string representation to true or false.
+
+    This method was adapted from `pypa/distutils <https://github.com/pypa/distutils>`_
+    to avoid import deprecated module.
+
+    The following values are supported:
+    - ``True``: 'y', 'yes', 't', 'true', 'on', and '1'
+    - ``False``: 'n', 'no', 'f', 'false', 'off', and '0'
+
+    Raises:
+        ValueError: When the given string value could not be converted to boolean.
+    """
+    val = val.lower()
+    if val in ('y', 'yes', 't', 'true', 'on', '1',):
+        return 1
+    elif val in ('n', 'no', 'f', 'false', 'off', '0',):
+        return 0
+
+    raise ValueError(f"invalid boolean value for {val}")

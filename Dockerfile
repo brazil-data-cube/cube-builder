@@ -27,14 +27,14 @@ LABEL "org.brazildatacube.description"="Docker image for Data Cube Builder appli
 LABEL "org.brazildatacube.git_commit"="${GIT_COMMIT}"
 
 # Build arguments
-ARG CUBE_BUILDER_VERSION="0.8.4"
+ARG CUBE_BUILDER_VERSION="0.8.5"
 ARG CUBE_BUILDER_INSTALL_PATH="/opt/cube-builder/${CUBE_BUILDER_VERSION}"
 
 ADD . ${CUBE_BUILDER_INSTALL_PATH}
 
 WORKDIR ${CUBE_BUILDER_INSTALL_PATH}
 
-RUN python3 -m pip install pip --upgrade setuptools wheel && \
+RUN python3 -m pip install pip --upgrade "setuptools<67" wheel && \
     python3 -m pip install -e .[rabbitmq] && \
     python3 -m pip install gunicorn
 
