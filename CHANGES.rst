@@ -20,6 +20,14 @@
 Changes
 =======
 
+
+Version 0.8.5 (2023-03-08)
+--------------------------
+
+- Fix integration with STAC v1 and STAC Legacy versions
+- Add notice in INSTALL for compatibility with package and "setuptools<67"
+
+
 Version 1.0.0a2 (2023-01-30)
 ----------------------------
 
