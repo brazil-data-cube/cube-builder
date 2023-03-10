@@ -199,3 +199,20 @@ def build_stac(uri, headers=None, **parameters) -> BaseSTAC:
     if stac_version.startswith('0.'):
         return STACLegacy(uri, params=parameters, headers=headers)
     return STACV1(uri, params=parameters, headers=headers)
+
+
+def adapt_stac_items(feature_collection: dict, bands: List[str], key: str = 'asset') -> dict:
+    """Adapt the STAC FeatureCollection asset (Sentinel-2 SAFE) with the given bands.
+
+    Args:
+        feature_collection: STAC FeatureCollection result
+        bands: List of bands to adapt and map the safe file.
+        key: Asset Key in FeatureCollection. Defaults to ``asset``.
+    """
+    for feature in feature_collection['features']:
+        asset = feature['assets'].pop(key, None)
+
+        for band in bands:
+            feature['assets'][band] = asset
+
+    return feature_collection

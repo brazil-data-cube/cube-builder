@@ -78,30 +78,6 @@ def load_data():
     db.session.commit()
 
 
-@cli.command(context_settings=dict(
-    ignore_unknown_options=True,
-    allow_extra_args=True,
-))
-@with_appcontext
-@click.pass_context
-def worker(ctx: click.Context):
-    """Run cube builder worker and make it available to execute data cube tasks.
-
-    Uses celery default variables
-    """
-    from celery.bin.celery import main as _main
-
-    from .celery import worker
-
-    # TODO: Retrieve dynamically
-    worker_context = '{}:celery'.format(worker.__name__)
-
-    args = ["celery", "worker", "-A", worker_context]
-    args.extend(ctx.args)
-
-    _main(args)
-
-
 @cli.command()
 @click.argument('datacube')
 @click.option('--collections', type=click.STRING, required=True, help='Collections to use')

@@ -63,8 +63,9 @@ setup_requires = []
 install_requires = [
     'bdc-auth-client @ git+https://github.com/brazil-data-cube/bdc-auth-client.git@v0.4.3#egg=bdc-auth-client',
     'bdc-catalog @ git+https://github.com/brazil-data-cube/bdc-catalog.git@v1.0.1#egg=bdc-catalog',
-    'celery>=4.3.0,<5',
-    'Flask>=1.1.1,<2',
+    'celery>=5.2',  # For PEP517
+    # Remove Flask 2.3 limitation due warnings related dependencies (flask-redoc)
+    "Flask>=1.1.1,<2.3",
     'flask-redoc>=0.2.1',
     'marshmallow-sqlalchemy>=0.19.0,<0.25',
     'numpy>=1.17.2',
@@ -72,12 +73,11 @@ install_requires = [
     'python-dateutil>=2.8,<3',
     'pyproj==3.3.1',
     'pystac-client>0.3,<1.0',
-    'rasterio[s3]==1.2.1',
+    'rasterio[s3]>=1.3',
     'requests>=2.25.1',
     'rio_cogeo==3.0.2',
     'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
-    'MarkupSafe==2.0.1',
 ]
 
 packages = find_packages()

@@ -290,7 +290,9 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
                         source_nodata = nodata
 
                     meta.update({
-                        'nodata': source_nodata
+                        'nodata': source_nodata,
+                        'driver': 'GTiff',
+                        'count': 1   # Ensure that output data is always single band
                     })
 
                     with MemoryFile() as mem_file:
@@ -298,7 +300,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
                             if shape:
                                 raster = src.read(1)
                             else:
-                                source_array = rasterio.band(src.dataset, 1)  # src.read(1)
+                                source_array = src.read(1)
 
                                 reproject(
                                     source=source_array,
@@ -727,7 +729,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
         median_raster = numpy.full((height, width), fill_value=nodata, dtype=profile['dtype'])
 
     if build_clear_observation:
-        logging.warning('Creating and computing Clear Observation (ClearOb) file...')
+        logging.info('Creating and computing Clear Observation (ClearOb) file...')
 
         clear_ob_file_path = build_cube_path(datacube, period, tile_id, version=version,
                                              band=CLEAR_OBSERVATION_NAME, suffix='.tif', composed=True, **kwargs)
@@ -918,7 +920,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
     # TODO: Review how to design it to avoid these IF's statement, since we must stack data set and mask dummy values
     if build_clear_observation:
         clear_ob_data_set.close()
-        logging.warning('Clear Observation (ClearOb) file generated successfully.')
+        logging.info('Clear Observation (ClearOb) file generated successfully.')
 
         total_observation_file = build_cube_path(datacube, period, tile_id, version=version,
                                                  band=TOTAL_OBSERVATION_NAME, composed=True, **kwargs)
@@ -1112,7 +1114,7 @@ def publish_datacube(cube: Collection, bands, tile_id, period, scenes, cloudrati
             for band in scenes:
                 band_model = list(filter(lambda b: b.name == band, cube_bands))
 
-                # Band does not exists on model
+                # Band does not exist on model
                 if not band_model:
                     logging.warning('Band {} of {} does not exist on database. Skipping'.format(band, cube.id))
                     continue

@@ -27,7 +27,7 @@ from bdc_catalog.models import db
 from celery import Celery
 from flask import Flask
 
-from cube_builder.config import Config
+from ..config import Config
 from ..constants import to_bool
 
 CELERY_TASKS = [
@@ -57,14 +57,20 @@ def create_celery_app(flask_app: Flask) -> Celery:
     celery.autodiscover_tasks(CELERY_TASKS)
 
     # Set same config of Flask into Celery flask_app
-    celery.conf.update(flask_app.config)
+    flask_conf = {
+        key: value for key, value in flask_app.config.items()
+        # Disable the following patterns for env vars due deprecation in celery 5.x+
+        if not key.startswith('CELERY_') and not key.startswith('CELERYD_')
+    }
+
+    celery.conf.update(flask_conf)
 
     always_eager = flask_app.config.get('TESTING', False)
     celery.conf.update(dict(
-        CELERY_ACKS_LATE=to_bool(os.getenv('CELERY_ACKS_LATE', '1')),
-        CELERY_TASK_ALWAYS_EAGER=always_eager,
-        CELERYD_PREFETCH_MULTIPLIER=Config.CELERYD_PREFETCH_MULTIPLIER,
-        CELERY_RESULT_BACKEND='db+{}'.format(flask_app.config.get('SQLALCHEMY_DATABASE_URI')),
+        task_acks_late=to_bool(os.getenv('CELERY_ACKS_LATE', '1')),
+        task_always_eager=always_eager,
+        worker_prefetch_multiplier=Config.CELERYD_PREFETCH_MULTIPLIER,
+        result_backend='db+{}'.format(flask_app.config.get('SQLALCHEMY_DATABASE_URI')),
     ))
 
     TaskBase = celery.Task

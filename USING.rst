@@ -549,6 +549,14 @@ You can change any parameter with the command ``cube-builder configure`` with ``
     Make sure to re-generate all the periods and tiles again.
 
 
+List of supported values:
+
+- ``sentinel_safe`` (STRING): Flag to determine the usage of cube builder and generation data cube from `Sentinel-2 Safe Format <https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-2-msi/data-formats>`_. Use to specify which key described in STAC Item Asset contains the ``zip`` file. Defaults to ``None``.
+- ``channel_limits`` (LIST): Customize the range limit for thumbnail files. Defaults to ``None``.
+- ``no_post_process`` (BOOL): Flag to skip data cube post processing step. Defaults to ``False``.
+- ``reference_day`` (INT): Value representing a day used as priority for ``Least Cloud Cover`` (LCF) algorithm. This value can be used to improve day gap between the best pixels.
+- ``skip_vi_identity`` (BOOL): Flag to skip data cube identity vegetation index generation. Defaults to ``False``.
+
 
 Advanced User Guide
 -------------------
@@ -575,7 +583,7 @@ Essentially, a format contains the following properties:
 
 - ``images`` (REQUIRED): Object context representing how to seek for any image in disk.
 
-    - ``pattern`` (REQUIRED)
+    - ``pattern`` (REQUIRED): Regex value for data discovering.
 - ``datetime`` (REQUIRED): Object context describing how to identify data times from any directory path or file path.
 
     - ``pattern`` (REQUIRED): A regex expression describing how to match datetime.

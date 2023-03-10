@@ -21,8 +21,6 @@ Installation
 
 The ``Cube Builder`` depends essentially on:
 
-- `Python Client Library for STAC (stac.py) <https://github.com/brazil-data-cube/stac.py>`_
-
 - `Flask <https://palletsprojects.com/p/flask/>`_
 
 - `Celery <http://www.celeryproject.org/>`_
@@ -30,8 +28,6 @@ The ``Cube Builder`` depends essentially on:
 - `rasterio <https://rasterio.readthedocs.io/en/latest/>`_
 
 - `NumPy <https://numpy.org/>`_
-
-- `scikit-image <https://scikit-image.org/>`_
 
 - `RabbitMQ <https://www.rabbitmq.com/>`_
 
@@ -190,7 +186,7 @@ Enter the following command to start ``Cube Builder`` worker::
     WORK_DIR="/workdir" \
     DATA_DIR="/data" \
     SQLALCHEMY_DATABASE_URI="postgresql://postgres:postgres@localhost/bdc" \
-    cube-builder worker -l INFO --concurrency 8 -Q default,merge-cube,prepare-cube,blend-cube,publish-cube
+    celery -A cube_builder.celery.worker:celery worker -l INFO --concurrency 8 -Q default,merge-cube,prepare-cube,blend-cube,publish-cube
 
 
 You may need to replace the definition of some parameters:

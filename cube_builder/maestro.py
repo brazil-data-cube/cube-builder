@@ -38,11 +38,10 @@ from bdc_catalog.models import Band, Collection, CollectionSRC, GridRefSys, Tile
 from celery import chain, group
 from geoalchemy2 import func
 from geoalchemy2.shape import to_shape
-
-# Cube Builder
 from werkzeug.exceptions import abort
 
-from ._adapter import BaseSTAC, build_stac
+# Cube Builder
+from ._adapter import BaseSTAC, adapt_stac_items, build_stac
 from .celery.tasks import prepare_blend, warp_merge
 from .config import Config
 from .constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, IDENTITY, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
@@ -645,6 +644,7 @@ class Maestro:
         # Retrieve band definition in dict format.
         # TODO: Should we use from STAC?
         collection_bands = dict()
+        spectral_bands = []
 
         for band_obj in bands:
             collection_bands[band_obj.name] = dict(
@@ -652,6 +652,8 @@ class Maestro:
                 max_value=float(band_obj.max_value),
                 nodata=float(band_obj.nodata),
             )
+            if not _has_default_or_index_bands(band_obj):
+                spectral_bands.append(band_obj.name)
 
         for band in bands:
             if band.name != PROVENANCE_NAME:
@@ -672,8 +674,13 @@ class Maestro:
             print('Searching for {} - {} ({}, {}) using {}...'.format(dataset, tile_id, start,
                                                                       end, stac.uri), end='', flush=True)
 
+            is_sentinel_safe = self.properties.pop('sentinel_safe', None)
+
             with timing(' total'):
                 items = stac.search(**options)
+
+                if is_sentinel_safe:
+                    adapt_stac_items(items, spectral_bands)
 
                 for feature in items['features']:
                     if feature['type'] == 'Feature':

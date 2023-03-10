@@ -127,6 +127,12 @@ class CubeParametersSchema(Schema):
         required=False,
         validate=validate.Length(min=3, max=3)
     )
+    sentinel_safe = fields.String(required=False, allow_none=False, dump_default=False)
+    """Flag to determine the usage of cube builder and generation data cube from
+    `Sentinel-2 Safe Format <https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-2-msi/data-formats>`_.
+
+    Use to specify which key described in STAC Item Asset contains the ``zip`` file.
+    Defaults to ``None``."""
 
 
 class DataCubeForm(Schema):
