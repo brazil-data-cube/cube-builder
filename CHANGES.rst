@@ -21,6 +21,21 @@ Changes
 =======
 
 
+Version 1.0.0 (2023-03-10)
+--------------------------
+
+- Add support to generate data cubes for EO Landsat combined sensors (`#172 <https://github.com/brazil-data-cube/cube-builder/issues/172>`_)
+- Improve generation of Data Cube preview images.
+- Add support for interoperability of STAC clients: 0.9.x and 1.0
+- Add integration with BDC-Catalog 1.0 `#233 <https://github.com/brazil-data-cube/cube-builder/issues/233>`_.
+- Add support to generate datacube from Sentinel-2 Zip (experimental) `#222 <https://github.com/brazil-data-cube/cube-builder/issues/222>`_.
+- Add support to generate data cube from local directories (`#25 <https://github.com/brazil-data-cube/cube-builder/issues/25>`_)
+- Upgrade celery to 5.x (`#251 <https://github.com/brazil-data-cube/cube-builder/issues/251>`_).
+- Deprecate internal parameters related reuse cube
+- Fix bug related dependencies: "jinja2" (`#258 <https://github.com/brazil-data-cube/cube-builder/issues/251>`_).
+- Report warning message for invalid tile or expired token while generating datacubes (`#245 <https://github.com/brazil-data-cube/cube-builder/issues/245>`_).
+
+
 Version 0.8.5 (2023-03-08)
 --------------------------
 
