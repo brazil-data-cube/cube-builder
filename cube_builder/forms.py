@@ -273,3 +273,17 @@ class CubeDetailForm(Schema):
     tile_id = fields.String(required=True)
     start_date = fields.Date(required=True)
     end_date = fields.Date(required=True)
+
+
+class ListCubeForm(Schema):
+    """Form to filter User input to list cubes.
+
+    The values supported are defined as:
+    - ``name``: as cube name. The value will be persisted using SQL Like
+    - ``collection_type``: collection type identifier. It also supports ``all`` to represent ``cube`` and ``mosaic``.
+    - ``public``: data cube is public. Defaults to ``True``.
+    """
+
+    name = fields.String(required=False, allow_none=False)
+    collection_type = fields.String(required=False, allow_none=False)
+    public = fields.Boolean(required=False, default=True)
