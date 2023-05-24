@@ -29,6 +29,7 @@ import rasterio
 from celery import chain, group
 
 from cube_builder.celery.tasks import publish
+from cube_builder.constants import to_bool
 from cube_builder.maestro import Maestro
 from cube_builder.utils.image import check_file_integrity
 
@@ -99,8 +100,8 @@ class TestCubeCreation:
         mock_prepare_blend.s.assert_called_once()
         mock_group.assert_called_with([mock_chain()])
 
-    @pytest.mark.skipif(not _supported_collection(**CUBE_PARAMS),
-                        reason=f"collection is not supported in {CUBE_PARAMS['stac_url']}")
+    @pytest.mark.skipif(not _supported_collection(**CUBE_PARAMS) or to_bool(os.getenv("SKIP_TEST_DATA", "NO")),
+                        reason=f"collection is not supported (or skipped) in {CUBE_PARAMS['stac_url']}")
     def test_cube_workflow(self, maestro):
         for blend_files, merge_files in _make_cube(maestro):
             _assert_datacube_period_valid(blend_files, merge_files)
@@ -120,6 +121,8 @@ class TestCubeCreation:
                 assert check_file_integrity(entry, read_bytes=True)
                 # check all == nodata
 
+    @pytest.mark.skipif(to_bool(os.getenv("SKIP_TEST_DATA", "NO")),
+                        reason=f"data cube generation of sentinel-2 skipped due env SKIP_TEST_DATA")
     def test_create_cube_sentinel(self, app):
         params = deepcopy(CUBE_PARAMS)
         params['collections'] = ['S2_L2A-1']
