@@ -16,15 +16,15 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 ARG GIT_COMMIT
-ARG BASE_IMAGE=python:3.8
+ARG BASE_IMAGE=python:3.11
 FROM ${BASE_IMAGE}
 
 ARG GIT_COMMIT
 
-LABEL "org.brazildatacube.maintainer"="Brazil Data Cube <brazildatacube@inpe.br>"
-LABEL "org.brazildatacube.title"="Docker image for Data Cube Builder Service"
-LABEL "org.brazildatacube.description"="Docker image for Data Cube Builder application."
-LABEL "org.brazildatacube.git_commit"="${GIT_COMMIT}"
+LABEL "org.repo.maintainer"="Brazil Data Cube <brazildatacube@inpe.br>"
+LABEL "org.repo.title"="Docker image for Data Cube Builder Service"
+LABEL "org.repo.description"="Docker image for Data Cube Builder application."
+LABEL "org.repo.git_commit"="${GIT_COMMIT}"
 
 # Build arguments
 ARG CUBE_BUILDER_VERSION="1.0.0"
@@ -34,7 +34,7 @@ ADD . ${CUBE_BUILDER_INSTALL_PATH}
 
 WORKDIR ${CUBE_BUILDER_INSTALL_PATH}
 
-RUN python3 -m pip install pip --upgrade "setuptools<67" wheel && \
+RUN python3 -m pip install pip --upgrade setuptools wheel && \
     python3 -m pip install -e .[rabbitmq] && \
     python3 -m pip install gunicorn
 

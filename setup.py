@@ -51,12 +51,12 @@ extras_require = {
     'docs': docs_require,
     'tests': tests_require,
     'histogram': histogram_require,
-    'rabbitmq': [
-        'librabbitmq>=1.5.0',
+    'amqp': [
+        'amqp>=5.0'
     ]
 }
 
-extras_require['all'] = [ req for exts, reqs in extras_require.items() for req in reqs ]
+extras_require['all'] = [req for exts, reqs in extras_require.items() for req in reqs]
 
 setup_requires = []
 
@@ -71,7 +71,7 @@ install_requires = [
     'numpy>=1.17.2',
     'numpngw>=0.0.8',
     'python-dateutil>=2.8,<3',
-    'pyproj==3.3.1',
+    'pyproj>=3.4,<3.6',
     'pystac-client>0.3,<1.0',
     'rasterio[s3]>=1.3',
     'requests>=2.25.1',
