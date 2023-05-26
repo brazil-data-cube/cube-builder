@@ -18,6 +18,7 @@
 
 """File responsible for data serialization."""
 
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy.inspection import inspect
@@ -34,6 +35,9 @@ class Serializer(object):
             value = getattr(obj, c.key)
             if type(value) == Decimal:
                 value = float(value)
+            elif isinstance(value, datetime):
+                # Ensure RFC339 is used
+                value = value.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
             result[c.key] = value
         return result
 

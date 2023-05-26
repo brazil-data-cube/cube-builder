@@ -343,7 +343,7 @@ class CubeController:
         stats = (
             db.session
             .query(func.min(Item.start_date).label('start_date'),
-                   func.max(Item.start_date).label('end_date'))
+                   func.max(Item.end_date).label('end_date'))
             .filter(Item.collection_id == cube.id)
             .first()
         )
@@ -354,9 +354,18 @@ class CubeController:
         return dump_cube, 200
 
     @classmethod
-    def list_cubes(cls):
+    def list_cubes(cls, name: str = None, collection_type: str = None, public: bool = True):
         """Retrieve the list of data cubes from Brazil Data Cube database."""
-        cubes = Collection.query().filter(Collection.collection_type == 'cube').order_by(Collection.id).all()
+        where = [Collection.collection_type.in_(['cube', 'mosaic'])]
+        if collection_type and collection_type != 'all':
+            where = [Collection.collection_type == collection_type]
+
+        where.append(Collection.is_public.is_(public))
+
+        if name:
+            where.append(Collection.identifier.like(f'%{name}%'))
+
+        cubes = Collection.query().filter(*where).order_by(Collection.id).all()
 
         serializer = CollectionForm()
 
@@ -365,8 +374,7 @@ class CubeController:
         for cube in cubes:
             cube_dict = serializer.dump(cube)
 
-            # list_tasks = list_pending_tasks() + list_running_tasks()
-            # count_tasks = len(list(filter(lambda t: t['collection_id'] == cube.name, list_tasks)))
+            # TODO: count activities from database and compare with execution
             count_tasks = 0
 
             cube_dict['status'] = 'Finished' if count_tasks == 0 else 'Pending'
@@ -388,42 +396,24 @@ class CubeController:
             .first()
         )
 
-        count_items = Item.query().filter(Item.collection_id == cube.id).count()
+        count_items = db.session.query(Item.id).filter(Item.collection_id == cube.id).count()
 
         count_tasks = 0
-
-        count_acts_errors = (
-            db.session.query(Activity.id)
-            .filter(
-                Activity.collection_id == cube.name,
-                Activity.status == 'FAILURE'
-            )
-            .count()
-        )
-
-        count_acts_success = (
-            db.session.query(Activity.id)
-            .filter(
-                Activity.collection_id == cube.name,
-                Activity.status == 'SUCCESS'
-            )
-            .count()
-        )
 
         if count_tasks > 0:
             return dict(
                 finished=False,
-                done=count_acts_success,
+                done=0,
                 not_done=count_tasks,
-                error=count_acts_errors
+                error=0
             )
 
         return dict(
             finished=True,
             start_date=str(dates[0]),
             last_date=str(dates[1]),
-            done=count_acts_success,
-            error=count_acts_errors,
+            done=0,
+            error=0,
             collection_item=count_items
         )
 
@@ -649,7 +639,7 @@ class CubeController:
 
         paginator = db.session.query(Item).filter(
             *where
-        ).order_by(Item.start_date.desc()).paginate(int(page), int(per_page), error_out=False)
+        ).order_by(Item.start_date.desc()).paginate(page=int(page), per_page=int(per_page), error_out=False)
 
         result = []
         for item in paginator.items:

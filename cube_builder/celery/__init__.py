@@ -46,7 +46,7 @@ def create_celery_app(flask_app: Flask) -> Celery:
         flask_app (flask.Flask): Flask app
 
     Returns:
-        Celery celery app
+        Celery The celery app
     """
     celery = Celery(
         flask_app.import_name,
@@ -98,11 +98,11 @@ def create_celery_app(flask_app: Flask) -> Celery:
         def after_return(self, status, retval, task_id, args, kwargs, einfo):
             """Define teardown task execution.
 
-            Whenever task finishes, it must teardown our db session, since the Flask SQLAlchemy
+            Whenever task finishes, it must tear down our db session, since the Flask SQLAlchemy
             creates scoped session at startup.
             FMI: https://gist.github.com/twolfson/a1b329e9353f9b575131
             """
-            if flask_app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN']:
+            if flask_app.config.get('SQLALCHEMY_COMMIT_ON_TEARDOWN'):
                 if not isinstance(retval, Exception):
                     db.session.commit()
                 else:
@@ -114,7 +114,6 @@ def create_celery_app(flask_app: Flask) -> Celery:
 
             if not celery.conf.CELERY_ALWAYS_EAGER:
                 db.session.remove()
-
 
     celery.Task = ContextTask
 

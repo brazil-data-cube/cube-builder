@@ -21,6 +21,15 @@ Changes
 =======
 
 
+Version 1.0.1
+-------------
+
+- Fix bug related session close in SQLAlchemy & Celery (`#264 <https://github.com/brazil-data-cube/cube-builder/issues/264>`_)
+- Fix bug related docs and deploy database models in `deploy/configure-db.sh` (`#263 <https://github.com/brazil-data-cube/cube-builder/issues/263>`_)
+- Improve route to list cubes and add support to filter by collection type (`#262 <https://github.com/brazil-data-cube/cube-builder/issues/262>`_)
+- Add initial support for Python 3.11+
+
+
 Version 1.0.0 (2023-03-10)
 --------------------------
 

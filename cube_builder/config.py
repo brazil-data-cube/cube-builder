@@ -122,6 +122,21 @@ class Config:
     """Set a RabbitMQ queue name for Publish Data Cubes.
             Defaults to ``publish-cube``."""
 
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_size": int(os.getenv("SQLALCHEMY_ENGINE_POOL_SIZE", 2)),
+        "max_overflow": int(os.getenv("SQLALCHEMY_ENGINE_MAX_OVERFLOW", 5)),
+        "poolclass": os.getenv("SQLALCHEMY_ENGINE_POOL_CLASS"),
+        "pool_recycle": int(os.getenv("SQLALCHEMY_ENGINE_POOL_RECYCLE", -1)),
+    }
+    """Set SQLAlchemy engine options for pooling.
+    You may set the following environment variables to customize pooling:
+    
+    - ``SQLALCHEMY_ENGINE_POOL_SIZE``: The pool size. Defaults to ``2``.
+    - ``SQLALCHEMY_ENGINE_MAX_OVERFLOW``: Max pool overflow. Defaults to ``5``.
+    - ``SQLALCHEMY_ENGINE_POOL_CLASS``: The pool type for management.
+    - ``SQLALCHEMY_ENGINE_POOL_RECYCLE``: Define the given number of seconds to recycle pool. Defaults to ``-1``, or no timeout.
+    """
+
 
 class ProductionConfig(Config):
     """Production Mode."""

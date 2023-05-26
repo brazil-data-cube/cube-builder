@@ -21,20 +21,20 @@ FROM ${BASE_IMAGE}
 
 ARG GIT_COMMIT
 
-LABEL "org.brazildatacube.maintainer"="Brazil Data Cube <brazildatacube@inpe.br>"
-LABEL "org.brazildatacube.title"="Docker image for Data Cube Builder Service"
-LABEL "org.brazildatacube.description"="Docker image for Data Cube Builder application."
-LABEL "org.brazildatacube.git_commit"="${GIT_COMMIT}"
+LABEL "org.repo.maintainer"="Brazil Data Cube <brazildatacube@inpe.br>"
+LABEL "org.repo.title"="Docker image for Data Cube Builder Service"
+LABEL "org.repo.description"="Docker image for Data Cube Builder application."
+LABEL "org.repo.git_commit"="${GIT_COMMIT}"
 
 # Build arguments
-ARG CUBE_BUILDER_VERSION="1.0.0"
+ARG CUBE_BUILDER_VERSION="1.0.1"
 ARG CUBE_BUILDER_INSTALL_PATH="/opt/cube-builder/${CUBE_BUILDER_VERSION}"
 
 ADD . ${CUBE_BUILDER_INSTALL_PATH}
 
 WORKDIR ${CUBE_BUILDER_INSTALL_PATH}
 
-RUN python3 -m pip install pip --upgrade "setuptools<67" wheel && \
+RUN python3 -m pip install pip --upgrade setuptools wheel && \
     python3 -m pip install -e .[rabbitmq] && \
     python3 -m pip install gunicorn
 
