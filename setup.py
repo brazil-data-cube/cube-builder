@@ -67,7 +67,7 @@ install_requires = [
     # Remove Flask 2.3 limitation due warnings related dependencies (flask-redoc)
     "Flask>=1.1.1,<2.3",
     'flask-redoc>=0.2.1',
-    'marshmallow-sqlalchemy>=0.19.0,<0.25',
+    'marshmallow-sqlalchemy>=0.19.0,<0.30',
     'numpy>=1.17.2',
     'numpngw>=0.0.8',
     'python-dateutil>=2.8,<3',
