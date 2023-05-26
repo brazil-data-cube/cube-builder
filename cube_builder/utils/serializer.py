@@ -19,7 +19,6 @@
 """File responsible for data serialization."""
 
 from datetime import datetime
-
 from decimal import Decimal
 
 from sqlalchemy.inspection import inspect

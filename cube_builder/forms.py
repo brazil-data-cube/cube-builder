@@ -286,4 +286,4 @@ class ListCubeForm(Schema):
 
     name = fields.String(required=False, allow_none=False)
     collection_type = fields.String(required=False, allow_none=False)
-    public = fields.Boolean(required=False, default=True)
+    public = fields.Boolean(required=False, dump_default=True)
