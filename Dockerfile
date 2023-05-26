@@ -16,7 +16,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 ARG GIT_COMMIT
-ARG BASE_IMAGE=python:3.11
+ARG BASE_IMAGE=python:3.8
 FROM ${BASE_IMAGE}
 
 ARG GIT_COMMIT
