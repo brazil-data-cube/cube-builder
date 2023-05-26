@@ -343,7 +343,7 @@ class CubeController:
         stats = (
             db.session
             .query(func.min(Item.start_date).label('start_date'),
-                   func.max(Item.start_date).label('end_date'))
+                   func.max(Item.end_date).label('end_date'))
             .filter(Item.collection_id == cube.id)
             .first()
         )
@@ -396,42 +396,24 @@ class CubeController:
             .first()
         )
 
-        count_items = Item.query().filter(Item.collection_id == cube.id).count()
+        count_items = db.session.query(Item.id).filter(Item.collection_id == cube.id).count()
 
         count_tasks = 0
-
-        count_acts_errors = (
-            db.session.query(Activity.id)
-            .filter(
-                Activity.collection_id == cube.name,
-                Activity.status == 'FAILURE'
-            )
-            .count()
-        )
-
-        count_acts_success = (
-            db.session.query(Activity.id)
-            .filter(
-                Activity.collection_id == cube.name,
-                Activity.status == 'SUCCESS'
-            )
-            .count()
-        )
 
         if count_tasks > 0:
             return dict(
                 finished=False,
-                done=count_acts_success,
+                done=0,
                 not_done=count_tasks,
-                error=count_acts_errors
+                error=0
             )
 
         return dict(
             finished=True,
             start_date=str(dates[0]),
             last_date=str(dates[1]),
-            done=count_acts_success,
-            error=count_acts_errors,
+            done=0,
+            error=0,
             collection_item=count_items
         )
 
@@ -657,7 +639,7 @@ class CubeController:
 
         paginator = db.session.query(Item).filter(
             *where
-        ).order_by(Item.start_date.desc()).paginate(int(page), int(per_page), error_out=False)
+        ).order_by(Item.start_date.desc()).paginate(page=int(page), per_page=int(per_page), error_out=False)
 
         result = []
         for item in paginator.items:
