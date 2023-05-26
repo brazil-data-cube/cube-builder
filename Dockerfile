@@ -27,7 +27,7 @@ LABEL "org.repo.description"="Docker image for Data Cube Builder application."
 LABEL "org.repo.git_commit"="${GIT_COMMIT}"
 
 # Build arguments
-ARG CUBE_BUILDER_VERSION="1.0.0"
+ARG CUBE_BUILDER_VERSION="1.0.1"
 ARG CUBE_BUILDER_INSTALL_PATH="/opt/cube-builder/${CUBE_BUILDER_VERSION}"
 
 ADD . ${CUBE_BUILDER_INSTALL_PATH}
