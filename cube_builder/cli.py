@@ -206,7 +206,7 @@ def _configure_parameters(datacube: str, **kwargs):
 
     DATACUBE must be a DatacubeName-Version.
     """
-    cube = CubeController.get_cube_or_404(cube_full_name=datacube)
+    cube = CubeController.get_cube_or_404(datacube)
 
     if kwargs.get('mask'):
         kwargs['mask'] = eval(kwargs['mask'])
@@ -235,7 +235,7 @@ def _show_parameters(datacube: str):
 
     DATACUBE must be a DataCubeName-Version.
     """
-    cube = CubeController.get_cube_or_404(cube_full_name=datacube)
+    cube = CubeController.get_cube_or_404(datacube)
 
     parameters = CubeParameters.query().filter(CubeParameters.collection_id == cube.id).first_or_404()
 
