@@ -102,7 +102,7 @@ def create_celery_app(flask_app: Flask) -> Celery:
             creates scoped session at startup.
             FMI: https://gist.github.com/twolfson/a1b329e9353f9b575131
             """
-            if flask_app.config.get('SQLALCHEMY_COMMIT_ON_TEARDOWN'):
+            with flask_app.app_context():
                 if not isinstance(retval, Exception):
                     db.session.commit()
                 else:
@@ -112,8 +112,8 @@ def create_celery_app(flask_app: Flask) -> Celery:
                         logging.warning('Error rollback transaction')
                         pass
 
-            if not celery.conf.CELERY_ALWAYS_EAGER:
-                db.session.remove()
+                if not celery.conf.CELERY_ALWAYS_EAGER:
+                    db.session.remove()
 
     celery.Task = ContextTask
 
