@@ -18,11 +18,15 @@
 
 """Define the DataSet readers for Cube Builder."""
 import os.path
+import re
 import tarfile
 import urllib.parse
+from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
 
+import numpy
 import rasterio
 import requests
 from rasterio.crs import CRS
@@ -45,12 +49,13 @@ class DataSet:
     dataset: Any = None
     """The Rasterio/GDAL dataset reference."""
 
-    def __init__(self, uri: str, mode: str = 'r', **options):
+    def __init__(self, uri: str, mode: str = 'r', extra_data=None, **options):
         """Build a basic dataset with rasterio support."""
         self.uri = uri
         self.mode = mode
         self.options = options
         self.dataset = None
+        self.extra_data = extra_data or {}
 
     def open(self, *args, **kwargs):
         """Open a dataset using rasterio/gdal way."""
@@ -235,6 +240,184 @@ class SentinelZipDataSet(ZippedDataSet):
         return self.dataset.read(indexes, *args, **kwargs)
 
 
+@dataclass
+class Sentinel2BaseLine:
+    """Represent the Sentinel-2 Baseline attribute to identify Scene Processing version."""
+
+    major: int
+    minor: int
+
+    @classmethod
+    def from_string(cls, baseline: str) -> 'Sentinel2BaseLine':
+        """Build a baseline from string representation.
+
+        Note:
+            The baseline str must have the right signature: ``N0000``.
+        """
+        if not baseline.startswith("N"):
+            raise ValueError("Invalid value for Sentinel-2 baseline. Missing \"N\".")
+
+        if len(baseline) < 5:
+            raise ValueError("Invalid value for Sentinel-2 baseline. Syntax is \"N0000\". "
+                             "See https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-2-msi/naming-convention.")
+
+        major = baseline[1:3]
+        minor = baseline[3:5]
+        if not major.isnumeric() or not minor.isnumeric():
+            raise ValueError(f"The major/minor value must be numeric, got {major}, {minor} instead.")
+
+        return cls(int(major), int(minor))
+
+
+class SentinelParser:
+    """Define a parser class for Sentinel-2 scene identifier.
+
+    It deals with product id and the new format AWS.
+    """
+
+    def __init__(self, sceneid: str, **kwargs):
+        """Build a sentinel-2 parser."""
+        self.sceneid = sceneid
+        self._options = kwargs
+        self._baseline = None
+        self._fragments = None
+
+        if 60 <= len(sceneid) <= 65:  # SceneId / ProductId
+            fragments = SentinelParser._parse(sceneid)
+        elif len(sceneid) == 24 and sceneid.startswith("S2"):
+            fragments = SentinelParser._parse_short(sceneid, **kwargs)
+        else:
+            raise ValueError(f"Invalid scene id {sceneid} for Sentinel-2")
+
+        self._fragments = fragments
+
+    def baseline(self) -> Sentinel2BaseLine:
+        """Retrieve the scene baseline used."""
+        if self._baseline is None:
+            baseline_str = self._fragments["baseline"]
+
+            self._baseline = Sentinel2BaseLine.from_string(baseline_str)
+
+        return self._baseline
+
+    @staticmethod
+    def _parse(sceneid: str) -> Dict[str, str]:
+        """Parse sceneid according product id syntax."""
+        pattern = (
+            r"^S(?P<sensor>\w{1})(?P<satellite>[AB]{1})_"
+            r"MSI(?P<processingLevel>L[0-2][ABC])_"
+            r"(?P<acquisitionYear>[0-9]{4})(?P<acquisitionMonth>[0-9]{2})(?P<acquisitionDay>[0-9]{2})T(?P<acquisitionHMS>[0-9]{6})_"
+            r"(?P<baseline>N(?P<baseline_number>[0-9]{4}))_"
+            r"R(?P<relative_orbit>[0-9]{3})_"
+            r"(?P<tileId>T(?P<utm>[0-9]{2})(?P<lat>\w{1})(?P<sq>\w{2}))_"
+            r"(?P<stopDateTime>[0-9]{8}T[0-9]{6})"
+        )
+
+        matched = re.match(pattern, sceneid, re.IGNORECASE)
+        if matched is None:
+            raise ValueError(f"Invalid scene id {sceneid} for sentinel-2")
+        meta = matched.groupdict()
+        return meta
+
+    @staticmethod
+    def _parse_short(sceneid: str, **kwargs):
+        """Parse sceneid according short version of scene (AWS only)."""
+        pattern = (
+            r"^S(?P<sensor>\w{1})(?P<satellite>[AB]{1})_"
+            r"(?P<tileId>T(?P<utm>[0-9]{2})(?P<lat>\w{1})(?P<sq>\w{2}))_"
+            r"(?P<acquisitionYear>[0-9]{4})(?P<acquisitionMonth>[0-9]{2})(?P<acquisitionDay>[0-9]{2})_"
+            r"(?P<number>[0-9]{1,2})_"
+            r"(?P<processingLevel>L[0-2][ABC])$"
+        )
+        matched = re.match(pattern, sceneid, re.IGNORECASE)
+        if matched is None:
+            raise ValueError(f"Invalid scene id {sceneid} for sentinel-2 (new format)")
+        meta = matched.groupdict()
+        if kwargs.get("s2:processing_baseline"):
+            baseline = f'N{kwargs["s2:processing_baseline"].replace(".", "")}'
+        else:
+            raise ValueError("Could not determine Sentinel-2 baseline. Are you using new scene id format from AWS? "
+                             "Make sure to use `extra_data={}` with keys containing `s2:processing_baseline`"
+                             "to aggregate metadata for scene identifier.")
+        meta["baseline"] = baseline
+
+        return meta
+
+
+class Sentinel2DataSet(DataSet):
+    """Represent a base class to open Sentinel-2 raster datasets.
+
+    This file also supports the product baseline processing which requires offsetting in raster
+    with major version >=4.
+    See more in https://sentinels.copernicus.eu/web/sentinel/technical-guides/sentinel-2-msi/processing-baseline.
+    """
+
+    def __init__(self, uri: str, mode: str = 'r', band: str = None, extra_data=None, **options):
+        """Build a simple dataset to deal with Sentinel-2 raster scenes."""
+        super(Sentinel2DataSet, self).__init__(uri, mode, extra_data, **options)
+        self.scene_id = self.extra_data.pop("sceneid", None) or self.extra_data.pop("scene_id", None)
+        self._product_base_line = None
+        self._parser = None
+        self.band = band
+        self._parser = SentinelParser(self.scene_id, **self.extra_data)
+
+    def read(self, indexes: Union[int, List[int]], *args, **kwargs):
+        """Implement read data from Sentinel-2 Dataset.
+
+        This method supports the baseline processing (major >= 4) which requires the offset (-1000) applied over
+        spectral bands.
+
+        Note:
+            Processing Baseline 04.00 L1C (TOA) and L2A (BOA) products (TTO 25th of January 2022) now
+            contain an Offset in the metadata. This offset has been included to accomodate ‘noisy’ pixels over
+            dark surfaces, that can sometimes present negative radiometric values at L1B and L1C.
+            This factor is not applied for prior baselines (<4).
+
+            See more https://sentinels.copernicus.eu/web/sentinel/technical-guides/sentinel-2-msi/processing-baseline.
+        """
+        # Use Always masked=True
+        options = deepcopy(kwargs)
+        options.setdefault("masked", True)
+        arr = super().read(indexes, *args, **options)
+
+        # Check baseline for offset
+        if not self.baseline or self.baseline.major < 4 or (self.band and self.band.lower() == "scl"):
+            return arr.data if not kwargs.get("masked") else arr
+
+        nodata = self.dataset.nodata
+        if nodata is None:
+            nodata = 0
+            if "nodata" in self.extra_data:  # Use nodata from parameter
+                nodata = self.extra_data["nodata"]
+
+            arr.mask = arr == nodata
+
+        offset = -1000
+        arr = arr + offset
+        # Set negative values as Nodata
+        negative_pos = numpy.ma.where(arr < 0)
+        arr[negative_pos] = nodata
+
+        return arr.data if not kwargs.get("masked") else arr
+
+    @property
+    def baseline(self):
+        """Retrieve the product baseline.
+
+        See more in https://sentinels.copernicus.eu/web/sentinel/technical-guides/sentinel-2-msi/processing-baseline.
+        """
+        return self._parser.baseline()
+
+    @staticmethod
+    def is_sentinel_scene(sceneid: str, **kwargs):
+        """Try to identify a Sentinel-2 scene."""
+        try:
+            SentinelParser(sceneid, **kwargs)
+            return True
+        except ValueError:
+            return False
+
+
 def _resolve_sentinel_band_name(name: str) -> str:
     band_id = name[1:]
     if band_id.isnumeric():
@@ -242,12 +425,13 @@ def _resolve_sentinel_band_name(name: str) -> str:
     return f'{name[0]}{band_id}'
 
 
-def dataset_from_uri(uri: str, band: str = None, **options) -> DataSet:
+def dataset_from_uri(uri: str, band: str = None, extra_data=None, **options) -> DataSet:
     """Build a Cube Builder dataset from a string URI.
 
     Args:
         uri: Path to the dataset. Any URI supported by GDAL dataset.
         band: Internal band name for dataset.
+        extra_data: Optional dict values used to create/open dataset.
         **options: The rasterio/gdal dataset options.
     """
     parse = urlparse(uri)
@@ -260,10 +444,15 @@ def dataset_from_uri(uri: str, band: str = None, **options) -> DataSet:
     elif parse.scheme and parse.scheme.startswith('vsitar+') or (path.endswith('.tar') or path.endswith('.tar.gz')):
         return _make_tgz_dataset(parse, band=band, **options)
 
-    return DataSet(uri, **options)
+    extra_data = extra_data or {}
+    extra_data.setdefault("band", band)
+    if extra_data.get("sceneid") and Sentinel2DataSet.is_sentinel_scene(extra_data["sceneid"]):
+        return Sentinel2DataSet(uri, extra_data=extra_data, band=band, **options)
+
+    return DataSet(uri, extra_data=None, **options)
 
 
-def _make_zip_dataset(parse: urllib.parse.ParseResultBytes, band: str = None, **options) -> ZippedDataSet:
+def _make_zip_dataset(parse: urllib.parse.ParseResultBytes, band: str = None, extra_data=None, **options) -> ZippedDataSet:
     fragments = parse.path.rsplit(':')
     path = fragments[0]
     band_ = band
@@ -274,7 +463,7 @@ def _make_zip_dataset(parse: urllib.parse.ParseResultBytes, band: str = None, **
     return ZippedDataSet(parse.geturl(), **options)
 
 
-def _make_tgz_dataset(parse: urllib.parse.ParseResultBytes, band: str = None, **options) -> DataSet:
+def _make_tgz_dataset(parse: urllib.parse.ParseResultBytes, band: str = None, extra_data=None, **options) -> DataSet:
     # When vsicurl, download first 512 bytes
     url = parse.geturl()
     url_ = url
