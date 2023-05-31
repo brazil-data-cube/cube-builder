@@ -83,9 +83,6 @@ def create_celery_app(flask_app: Flask) -> Celery:
         def __call__(self, *args, **kwargs):
             """Prepare SQLAlchemy inside flask app."""
             if not celery.conf.CELERY_ALWAYS_EAGER:
-                if flask._app_ctx_stack.top is not None:
-                    return TaskBase.__call__(self, *args, **kwargs)
-
                 with flask_app.app_context():
                     # Following example of Flask
                     # Just make sure the task execution is running inside flask context
