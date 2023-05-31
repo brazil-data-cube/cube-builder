@@ -47,7 +47,7 @@ from ..config import Config
 from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
                          DATASOURCE_NAME, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, SRID_ALBERS_EQUAL_AREA,
                          TOTAL_OBSERVATION_NAME)
-from ..datasets import dataset_from_uri
+from ..drivers.datasets import dataset_from_uri
 # Builder
 from . import get_srid_column
 from .image import (SmartDataSet, generate_cogs, linear_raster_scale, raster_convexhull, raster_extent, rescale,
@@ -264,7 +264,7 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
                 if platform:
                     platforms_used.append(platform)
 
-                src = dataset_from_uri(link, band=band)
+                src = dataset_from_uri(link, band=band, extra_data=asset)
 
                 with src:
                     meta = src.meta.copy()
