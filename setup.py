@@ -62,7 +62,7 @@ setup_requires = []
 
 install_requires = [
     'bdc-auth-client @ git+https://github.com/brazil-data-cube/bdc-auth-client.git@v0.4.3#egg=bdc-auth-client',
-    'bdc-catalog @ git+https://github.com/brazil-data-cube/bdc-catalog.git@v1.0.1#egg=bdc-catalog',
+    'bdc-catalog @ git+https://github.com/brazil-data-cube/bdc-catalog.git@v1.0.2#egg=bdc-catalog',
     'celery>=5.2',  # For PEP517
     # Remove Flask 2.3 limitation due warnings related dependencies (flask-redoc)
     "Flask>=1.1.1,<2.3",
