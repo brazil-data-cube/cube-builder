@@ -1,6 +1,6 @@
 #
 # This file is part of Cube Builder.
-# Copyright (C) 2022 INPE.
+# Copyright (C) 2023 INPE.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,11 +16,4 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
-"""Version information for Python Module for Cube Builder.
-
-This file is imported by ``cube_builder.__init__``,
-and parsed by ``setup.py``.
-"""
-
-
-__version__ = '1.0.1'
+"""Represent a module to support the several drivers for Data Cube Builder."""

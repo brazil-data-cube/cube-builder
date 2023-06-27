@@ -26,7 +26,7 @@ from .celery.utils import list_queues
 from .config import Config
 from .controller import CubeController
 from .forms import (CubeDetailForm, CubeItemsForm, CubeStatusForm, DataCubeForm, DataCubeMetadataForm,
-                    DataCubeProcessForm, GridForm, PeriodForm)
+                    DataCubeProcessForm, GridForm, ListCubeForm, PeriodForm)
 from .version import __version__
 
 bp = Blueprint('cubes', import_name=__name__)
@@ -67,7 +67,14 @@ def list_cubes(cube_id, **kwargs):
         message, status_code = CubeController.get_cube(cube_id)
 
     else:
-        message, status_code = CubeController.list_cubes()
+        form = ListCubeForm()
+        args = request.args.to_dict()
+        errors = form.validate(args)
+        if errors:
+            return errors, 400
+        data = form.load(args)
+
+        message, status_code = CubeController.list_cubes(**data)
 
     return jsonify(message), status_code
 
@@ -98,7 +105,7 @@ def create_cube(**kwargs):
 @bp.route('/cubes/<int:cube_id>', methods=['PUT'])
 @oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def update_cube_matadata(cube_id, **kwargs):
-    """Define PUT handler for datacube Updation.
+    """Define PUT handler for datacube Update.
 
     Expects a JSON that matches with ``DataCubeMetadataForm``.
     """

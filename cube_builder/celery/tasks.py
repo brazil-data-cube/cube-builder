@@ -89,9 +89,9 @@ def warp_merge(activity, band_map, mask, force=False, data_dir=None, **kwargs):
     Returns:
         Validated activity
     """
-    logging.warning('Executing merge {} - {} - {}'.format(activity.get('warped_collection_id'),
-                                                          activity['band'],
-                                                          activity['date']))
+    logging.info('Executing merge {} - {} - {}'.format(activity.get('warped_collection_id'),
+                                                       activity['band'],
+                                                       activity['date']))
 
     record = create_execution(activity)
 
@@ -170,9 +170,9 @@ def warp_merge(activity, band_map, mask, force=False, data_dir=None, **kwargs):
             record.args = args
             record.save()
 
-            logging.warning(f"Merge {str(merge_file_path)} executed successfully. "
-                            f"Efficacy={activity['args']['efficacy']}, "
-                            f"cloud_ratio={activity['args']['cloudratio']}")
+            logging.info(f"Merge {str(merge_file_path)} executed successfully. "
+                         f"Efficacy={activity['args']['efficacy']}, "
+                         f"cloud_ratio={activity['args']['cloudratio']}")
 
             activity['args']['reused'] = reused
 
@@ -236,7 +236,7 @@ def warp_merge(activity, band_map, mask, force=False, data_dir=None, **kwargs):
     finally:
         record.save()
 
-    logging.warning('Merge {} executed successfully. Efficacy={}, cloud_ratio={}'.format(
+    logging.info('Merge {} executed successfully. Efficacy={}, cloud_ratio={}'.format(
         str(merge_file_path),
         activity['args']['efficacy'],
         activity['args']['cloudratio']
@@ -398,7 +398,7 @@ def prepare_blend(merges, band_map: dict, reuse_data_cube=None, **kwargs):
         task = publish.s(list(activities.values()), reuse_data_cube=reuse_data_cube, band_map=band_map, **kwargs)
         return task.apply_async()
 
-    logging.warning('Scheduling blend....')
+    logging.info('Scheduling blend....')
 
     blends = []
 
@@ -434,7 +434,7 @@ def blend(activity, band_map, build_clear_observation=False, reuse_data_cube=Non
     """
     block_size = kwargs.get('block_size')
 
-    logging.warning('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
+    logging.info('Executing blend - {} - {}'.format(activity.get('datacube'), activity.get('band')))
 
     return blend_processing(activity, band_map,
                             build_clear_observation=build_clear_observation,

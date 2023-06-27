@@ -1,6 +1,6 @@
 #
 # This file is part of Cube Builder.
-# Copyright (C) 2022 INPE.
+# Copyright (C) 2023 INPE.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,11 +16,11 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
-"""Version information for Python Module for Cube Builder.
+"""Define the module to support Landsat dataset management."""
 
-This file is imported by ``cube_builder.__init__``,
-and parsed by ``setup.py``.
-"""
+from .landsat import LandsatTgzDataSet, is_landsat_like
 
-
-__version__ = '1.0.1'
+__all__ = (
+    'LandsatTgzDataSet',
+    'is_landsat_like',
+)

@@ -1,6 +1,6 @@
 #
 # This file is part of Cube Builder.
-# Copyright (C) 2022 INPE.
+# Copyright (C) 2023 INPE.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,11 +16,22 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 #
 
-"""Version information for Python Module for Cube Builder.
+"""Define the base interface to deal with generic datasets that implements Zip format through VSICURL/VSIZIP."""
 
-This file is imported by ``cube_builder.__init__``,
-and parsed by ``setup.py``.
-"""
+from .base import DataSet
 
 
-__version__ = '1.0.1'
+class ZippedDataSet(DataSet):
+    """Implement a DataSet that supports Zip compression."""
+
+    def __init__(self, uri: str, mode: str = 'r', extra_data=None, **options):
+        """Build a new dataset from ZIP files."""
+        super().__init__(uri, mode, extra_data=extra_data, **options)
+        self._setup()
+
+    def _setup(self):
+        flag = '/vsizip'
+        if self.uri.startswith('http'):
+            flag = f'{flag}//vsicurl'
+
+        self._flag = flag

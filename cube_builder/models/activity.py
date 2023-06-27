@@ -23,7 +23,7 @@ from typing import Union
 
 from bdc_catalog.models.base_sql import BaseModel, db
 # 3rdparty
-from sqlalchemy import ARRAY, JSON, Column, Date, Integer, String, Text
+from sqlalchemy import ARRAY, JSON, Column, Date, Integer, String, Text, text
 from sqlalchemy.engine import ResultProxy
 
 from ..config import Config
@@ -74,6 +74,6 @@ class Activity(BaseModel):
             end_date
         )
 
-        res = db.session.execute(sql)
+        res = db.session.execute(text(sql))
 
         return res.fetchall()

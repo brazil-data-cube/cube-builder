@@ -101,7 +101,7 @@ def setup_app(app):
                 return o.isoformat()
             return super(ImprovedJSONEncoder, self).default(o)
 
-    app.json_encoder = ImprovedJSONEncoder
+    app.json_provider_class = ImprovedJSONEncoder
 
     setup_error_handlers(app)
 

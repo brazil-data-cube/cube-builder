@@ -46,7 +46,7 @@ def create_celery_app(flask_app: Flask) -> Celery:
         flask_app (flask.Flask): Flask app
 
     Returns:
-        Celery celery app
+        Celery The celery app
     """
     celery = Celery(
         flask_app.import_name,
@@ -83,9 +83,6 @@ def create_celery_app(flask_app: Flask) -> Celery:
         def __call__(self, *args, **kwargs):
             """Prepare SQLAlchemy inside flask app."""
             if not celery.conf.CELERY_ALWAYS_EAGER:
-                if flask._app_ctx_stack.top is not None:
-                    return TaskBase.__call__(self, *args, **kwargs)
-
                 with flask_app.app_context():
                     # Following example of Flask
                     # Just make sure the task execution is running inside flask context
@@ -98,11 +95,11 @@ def create_celery_app(flask_app: Flask) -> Celery:
         def after_return(self, status, retval, task_id, args, kwargs, einfo):
             """Define teardown task execution.
 
-            Whenever task finishes, it must teardown our db session, since the Flask SQLAlchemy
+            Whenever task finishes, it must tear down our db session, since the Flask SQLAlchemy
             creates scoped session at startup.
             FMI: https://gist.github.com/twolfson/a1b329e9353f9b575131
             """
-            if flask_app.config['SQLALCHEMY_COMMIT_ON_TEARDOWN']:
+            with flask_app.app_context():
                 if not isinstance(retval, Exception):
                     db.session.commit()
                 else:
@@ -112,9 +109,8 @@ def create_celery_app(flask_app: Flask) -> Celery:
                         logging.warning('Error rollback transaction')
                         pass
 
-            if not celery.conf.CELERY_ALWAYS_EAGER:
-                db.session.remove()
-
+                if not celery.conf.CELERY_ALWAYS_EAGER:
+                    db.session.remove()
 
     celery.Task = ContextTask
 
