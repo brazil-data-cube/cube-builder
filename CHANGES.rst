@@ -21,8 +21,8 @@ Changes
 =======
 
 
-Version 1.0.1
--------------
+Version 1.0.1 (2023-06-27)
+--------------------------
 
 - Fix bug related session close in SQLAlchemy & Celery (`#264 <https://github.com/brazil-data-cube/cube-builder/issues/264>`_)
 - Fix bug related docs and deploy database models in `deploy/configure-db.sh` (`#263 <https://github.com/brazil-data-cube/cube-builder/issues/263>`_)
