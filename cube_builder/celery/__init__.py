@@ -83,9 +83,6 @@ def create_celery_app(flask_app: Flask) -> Celery:
         def __call__(self, *args, **kwargs):
             """Prepare SQLAlchemy inside flask app."""
             if not celery.conf.CELERY_ALWAYS_EAGER:
-                if flask._app_ctx_stack.top is not None:
-                    return TaskBase.__call__(self, *args, **kwargs)
-
                 with flask_app.app_context():
                     # Following example of Flask
                     # Just make sure the task execution is running inside flask context
@@ -102,7 +99,7 @@ def create_celery_app(flask_app: Flask) -> Celery:
             creates scoped session at startup.
             FMI: https://gist.github.com/twolfson/a1b329e9353f9b575131
             """
-            if flask_app.config.get('SQLALCHEMY_COMMIT_ON_TEARDOWN'):
+            with flask_app.app_context():
                 if not isinstance(retval, Exception):
                     db.session.commit()
                 else:
@@ -112,8 +109,8 @@ def create_celery_app(flask_app: Flask) -> Celery:
                         logging.warning('Error rollback transaction')
                         pass
 
-            if not celery.conf.CELERY_ALWAYS_EAGER:
-                db.session.remove()
+                if not celery.conf.CELERY_ALWAYS_EAGER:
+                    db.session.remove()
 
     celery.Task = ContextTask
 

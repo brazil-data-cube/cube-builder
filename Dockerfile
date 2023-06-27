@@ -35,7 +35,7 @@ ADD . ${CUBE_BUILDER_INSTALL_PATH}
 WORKDIR ${CUBE_BUILDER_INSTALL_PATH}
 
 RUN python3 -m pip install pip --upgrade setuptools wheel && \
-    python3 -m pip install -e .[rabbitmq] && \
+    python3 -m pip install -e .[amqp] && \
     python3 -m pip install gunicorn
 
 EXPOSE 5000

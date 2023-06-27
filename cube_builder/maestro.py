@@ -574,7 +574,7 @@ class Maestro:
 
                             properties = dict(
                                 date=merge_date,
-                                datasets=collections,
+                                datasets=list(collections),
                                 xmin=min_x,
                                 ymax=max_y,
                                 resx=float(resolutions[0]),

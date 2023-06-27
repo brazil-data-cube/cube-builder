@@ -516,7 +516,7 @@ class CubeController:
         response = dict(**cube_params.metadata_)
 
         if activity is not None:
-            response['collections'] = activity.args['datasets']
+            response['collections'] = list(activity.args['datasets'])
 
         return response, 200
 

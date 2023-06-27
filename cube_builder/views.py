@@ -105,7 +105,7 @@ def create_cube(**kwargs):
 @bp.route('/cubes/<int:cube_id>', methods=['PUT'])
 @oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def update_cube_matadata(cube_id, **kwargs):
-    """Define PUT handler for datacube Updation.
+    """Define PUT handler for datacube Update.
 
     Expects a JSON that matches with ``DataCubeMetadataForm``.
     """
