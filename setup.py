@@ -77,7 +77,9 @@ install_requires = [
     'SQLAlchemy-Utils>=0.34.2,<1',
     'pystac-client>=0.5',
     'MarkupSafe==2.0.1',
-    'bdc-auth-client @ git+https://github.com/brazil-data-cube/bdc-auth-client.git@v0.2.1#egg=bdc-auth-client'
+    'bdc-auth-client @ git+https://github.com/brazil-data-cube/bdc-auth-client.git@v0.2.1#egg=bdc-auth-client',
+    # 3rdparty deps
+    'pydantic<2',
 ]
 
 packages = find_packages()

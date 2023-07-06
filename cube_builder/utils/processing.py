@@ -50,8 +50,8 @@ from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, C
                          TOTAL_OBSERVATION_NAME)
 # Builder
 from . import get_srid_column
-from .image import (SmartDataSet, generate_cogs, linear_raster_scale, raster_convexhull, raster_extent, rescale,
-                    save_as_cog)
+from .image import (SmartDataSet, generate_cogs, get_resample_method, linear_raster_scale, raster_convexhull,
+                    raster_extent, rescale, save_as_cog)
 from .index_generator import generate_band_indexes
 from .strings import StringFormatter
 
@@ -236,7 +236,8 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
 
     if quality_band == band:
         source_nodata = nodata = float(mask['nodata'])
-        # Only apply bilinear (change pixel values) for band values
+    elif "resampling" in kwargs:
+        resampling = get_resample_method(kwargs["resampling"])
     elif (mask and mask.get('saturated_band') != band) or quality_band is None:
         resampling = Resampling.bilinear
 

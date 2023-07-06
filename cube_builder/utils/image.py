@@ -30,7 +30,7 @@ import rasterio
 import rasterio.features
 import rasterio.warp
 import shapely.geometry
-from rasterio._warp import Affine
+from rasterio.warp import Affine, Resampling
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 from sqlalchemy.engine.result import ResultProxy, RowProxy
@@ -730,3 +730,19 @@ def linear_raster_scale(array: ArrayType,
     data = data * (output_range[1] - output_range[0]) + output_range[0]
 
     return data
+
+
+def get_resample_method(name: str) -> Resampling:
+    """Retrieve a resampling method from name
+
+    Note:
+        This method uses ``rasterio.warp.Resampling``.
+
+    Args:
+        name: The resampling name
+    """
+    supported = {entry.name: entry for entry in list(Resampling)}
+    lowered = name.lower()
+    if lowered not in supported:
+        raise RuntimeError(f"Invalid resampling method. Use one of {supported.keys()}")
+    return supported[lowered]
