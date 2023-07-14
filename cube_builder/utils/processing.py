@@ -950,7 +950,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             provenance_file = build_cube_path(datacube, period, tile_id, version=version,
                                               band=PROVENANCE_NAME, composed=True, **kwargs)
             provenance_profile = profile.copy()
-            provenance_profile.pop('nodata', -1)
+            provenance_profile['nodata'] = PROVENANCE_ATTRIBUTES['nodata']
             provenance_profile['dtype'] = PROVENANCE_ATTRIBUTES['data_type']
 
             save_as_cog(str(provenance_file), provenance_array, block_size=block_size, **provenance_profile)
