@@ -50,8 +50,8 @@ from ..constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, C
                          TOTAL_OBSERVATION_NAME)
 # Builder
 from . import get_srid_column
-from .image import (SmartDataSet, generate_cogs, linear_raster_scale, raster_convexhull, raster_extent, rescale,
-                    save_as_cog)
+from .image import (SmartDataSet, generate_cogs, get_resample_method, linear_raster_scale, raster_convexhull,
+                    raster_extent, rescale, save_as_cog)
 from .index_generator import generate_band_indexes
 from .strings import StringFormatter
 
@@ -236,7 +236,8 @@ def merge(merge_file: str, mask: dict, assets: List[dict], band: str,
 
     if quality_band == band:
         source_nodata = nodata = float(mask['nodata'])
-        # Only apply bilinear (change pixel values) for band values
+    elif "resampling" in kwargs:
+        resampling = get_resample_method(kwargs["resampling"])
     elif (mask and mask.get('saturated_band') != band) or quality_band is None:
         resampling = Resampling.bilinear
 
@@ -796,6 +797,16 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
                 saturated = radsat_extract_bits(saturated, 1, 7).astype(numpy.bool_)
                 masked.mask[saturated] = True
 
+            # Get current observation file name
+            file_path = bandlist[order].name
+            file_date = datetime.strptime(merges_band_map[file_path], '%Y-%m-%d')
+            day_of_year = file_date.timetuple().tm_yday
+
+            if build_clear_observation and is_combined_collection:
+                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
+                if mask_values['bits']:
+                    confidence.oli = numpy.isin(datasource_block, index_landsat_oli)
+
             if mask_values['bits']:
                 matched = get_qa_mask(masked,
                                       clear_data=clear_values,
@@ -828,16 +839,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
             stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask.astype(numpy.uint8)
 
-            # Get current observation file name
-            file_path = bandlist[order].name
-            file_date = datetime.strptime(merges_band_map[file_path], '%Y-%m-%d')
-            day_of_year = file_date.timetuple().tm_yday
-
-            if build_clear_observation and is_combined_collection:
-                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
-                if mask_values['bits']:
-                    confidence.oli = datasource_block == index_landsat_oli
-
             # Find all no data in destination STACK image
             stack_raster_where_nodata = numpy.where(
                 stack_raster[window.row_off: row_offset, window.col_off: col_offset] == nodata
@@ -847,9 +848,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             stack_raster_nodata_pos = numpy.ravel_multi_index(stack_raster_where_nodata,
                                                               stack_raster[window.row_off: row_offset,
                                                               window.col_off: col_offset].shape)
-
-            if build_clear_observation and is_combined_collection:
-                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
 
             # Find all valid/cloud in destination STACK image
             raster_where_data = numpy.where(raster != nodata)
@@ -952,7 +950,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             provenance_file = build_cube_path(datacube, period, tile_id, version=version,
                                               band=PROVENANCE_NAME, composed=True, **kwargs)
             provenance_profile = profile.copy()
-            provenance_profile.pop('nodata', -1)
+            provenance_profile['nodata'] = PROVENANCE_ATTRIBUTES['nodata']
             provenance_profile['dtype'] = PROVENANCE_ATTRIBUTES['data_type']
 
             save_as_cog(str(provenance_file), provenance_array, block_size=block_size, **provenance_profile)

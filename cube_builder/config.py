@@ -19,8 +19,8 @@
 
 import os
 
-from .version import __version__
 from .constants import to_bool
+from .version import __version__
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -72,6 +72,13 @@ class Config:
     )
     """The database URI that should be used for the database connection.
     Defaults to ``'postgresql://postgres:postgres@localhost:5432/bdc_catalog'``."""
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_size": int(os.getenv("SQLALCHEMY_ENGINE_POOL_SIZE", 2)),
+        "max_overflow": int(os.getenv("SQLALCHEMY_ENGINE_MAX_OVERFLOW", 5)),
+        "poolclass": os.getenv("SQLALCHEMY_ENGINE_POOL_CLASS"),
+        "pool_recycle": int(os.getenv("SQLALCHEMY_ENGINE_POOL_RECYCLE", -1)),
+    }
+
     STAC_URL = os.environ.get('STAC_URL', 'https://brazildatacube.dpi.inpe.br/stac/')
     MAX_THREADS_IMAGE_VALIDATOR = int(os.environ.get('MAX_THREADS_IMAGE_VALIDATOR', os.cpu_count()))
     # rasterio
