@@ -108,6 +108,13 @@ class CustomMaskDefinition(Schema):
     bits = fields.Boolean(required=False, allow_none=False, dump_default=False)
 
 
+class CustomScaleSchema(Schema):
+    """Represent the Band attribute scale factor and scale mult."""
+
+    add = fields.Float(required=True, allow_none=False, allow_nan=False)
+    mult = fields.Float(required=True, allow_none=False, allow_nan=False)
+
+
 class CubeParametersSchema(Schema):
     """Represent the data cube parameters used to be attached to the cube execution."""
 
@@ -116,6 +123,15 @@ class CubeParametersSchema(Schema):
     histogram_matching = fields.Bool(required=False, allow_none=False)
     no_post_process = fields.Bool(required=False, allow_none=False)
     band_map = fields.Dict(required=False, allow_none=False)
+    channel_limits = fields.List(
+        fields.List(fields.Float, many=True, validate=fields.Length(equal=2)),
+        required=False,
+        allow_none=False,
+        validate=fields.Length(min=1, max=3)
+    )
+    combined = fields.Boolean(required=False, allow_none=False)
+    resampling = fields.String(required=False, allow_none=False, default="nearest")
+    scale = fields.Nested(CustomScaleSchema, required=False, allow_none=False)
 
 
 class DataCubeForm(Schema):
