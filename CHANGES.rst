@@ -21,6 +21,14 @@ Changes
 =======
 
 
+Version 0.8.6 (2023-07-14)
+--------------------------
+
+- Fix generation of data cubes for Landsat program: confidence mask
+- Improve cube builder forms for extra parameters
+- Customize number of GDAL parallel threads to generate COGs
+
+
 Version 0.8.5 (2023-03-08)
 --------------------------
 
