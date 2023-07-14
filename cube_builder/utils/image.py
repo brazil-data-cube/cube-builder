@@ -737,7 +737,7 @@ def linear_raster_scale(array: ArrayType,
 
 
 def get_resample_method(name: str) -> Resampling:
-    """Retrieve a resampling method from name
+    """Retrieve a resampling method from name.
 
     Note:
         This method uses ``rasterio.warp.Resampling``.
