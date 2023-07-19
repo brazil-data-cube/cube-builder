@@ -36,8 +36,8 @@ import shapely.geometry
 import sqlalchemy
 from bdc_catalog.models import Band, Collection, CollectionSRC, GridRefSys, Tile, db
 from celery import chain, group
-from geoalchemy2 import func
 from geoalchemy2.shape import to_shape
+from sqlalchemy import func
 from werkzeug.exceptions import abort
 
 # Cube Builder

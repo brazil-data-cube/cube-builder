@@ -22,8 +22,7 @@ from typing import List
 
 import geoalchemy2
 import sqlalchemy.sql.expression
-from geoalchemy2 import func
-from sqlalchemy import Column
+from sqlalchemy import Column, func
 
 
 def get_srid_column(columns: List[Column], default_srid=4326) -> Column:
