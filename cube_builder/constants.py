@@ -79,6 +79,8 @@ PNG_MIME_TYPE = 'image/png'
 
 SRID_ALBERS_EQUAL_AREA = 100001
 
+DATETIME_RFC339 = "%Y-%m-%dT%H:%M:%S.%fZ"
+
 
 def to_bool(val: str):
     """Convert a string representation to true or false.

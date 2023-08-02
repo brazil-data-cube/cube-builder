@@ -23,6 +23,7 @@ import logging
 import traceback
 from collections.abc import Iterable
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 
 from bdc_catalog.models import Collection, db
@@ -31,14 +32,14 @@ from celery import chain, group
 # Cube Builder
 from ..config import Config
 from ..constants import CLEAR_OBSERVATION_NAME, DATASOURCE_NAME, IDENTITY, PROVENANCE_NAME, TOTAL_OBSERVATION_NAME
-from ..models import Activity
+from ..models import Activity, CubeParameters
 from ..utils import get_srid_column
 from ..utils.image import check_file_integrity, create_empty_raster, match_histogram_with_merges
 from ..utils.processing import blend as blend_processing
 from ..utils.processing import build_cube_path, compute_data_set_stats, get_item_id, get_or_create_model
 from ..utils.processing import merge as merge_processing
 from ..utils.processing import post_processing_quality, publish_datacube, publish_merge
-from ..utils.timeline import temporal_priority_timeline
+from ..utils.timeline import Timeline, temporal_priority_timeline
 from . import celery_app
 from .utils import clear_merge
 
@@ -543,3 +544,77 @@ def publish(blends, band_map, quality_band: str, reuse_data_cube=None, **kwargs)
             db.session.rollback()
 
     return _blend_result, _merge_result
+
+
+@celery_app.task(queue=Config.QUEUE_TRIGGER_CUBE)
+def trigger_cube_period(datacube: str, tiles: list, collections: list, start_date: str, end_date: str, **kwargs):
+    """Execute the data cube triggering asynchronously.
+
+    .. versionadded:: 1.1.0
+
+    This method basically seeks for the required files for composition and then dispatch tasks
+    into message broker.
+
+    Args:
+        datacube: Data cube identifier (``Name-Version``)
+        tiles: List of tiles to generate
+        collections: The STAC collections used in the generation
+        start_date: The start date period.
+        end_date: The end date period.
+
+    Keyword Args:
+        **kwargs: Any extra parameter used in data cube execution step.
+    """
+    from ..maestro import Maestro
+
+    maestro = Maestro(datacube, collections, tiles=tiles, start_date=start_date, end_date=end_date, **kwargs)
+    maestro.orchestrate()
+    entries = maestro.run()
+
+    return {"status": 200, "entries": len(entries)}
+
+
+@celery_app.task(queue=Config.QUEUE_TRIGGER_CUBE)
+def complete_timeline(datacube: str, summary: dict):
+    """Execute the data cube triggering, completing the missing timeline step.
+
+    .. versionadded:: 1.1.0
+
+    This method basically seeks for missing timeline entries based in the given ``summary`` and then
+    dispatch the data cube periods in the message broker.
+
+    Args:
+        datacube: Data cube identifier (``Name-Version``)
+        summary: The data cube summary map of missing tiles/time steps.
+    """
+    from ..maestro import Maestro
+
+    cube: Collection = Collection.get_by_id(datacube)
+    cube_timeline = sorted([ts.time_inst for ts in cube.timeline])
+    cube_parameters: CubeParameters = CubeParameters.query().filter(CubeParameters.collection_id == cube.id).first()
+    if cube_parameters is None or not cube_parameters.metadata_:
+        raise ValueError(f"There is no parameters for datacube {cube.identifier}")
+
+    parameters = deepcopy(cube_parameters.metadata_)
+    timeline = Timeline(**cube.temporal_composition_schema,
+                        start_date=cube_timeline[0].date(),
+                        end_date=cube_timeline[-1].date()).mount()
+    timeline_map = {
+        period_start.strftime("%Y-%m-%d"): [period_start, period_end] for period_start, period_end in timeline
+    }
+    affected_entries = 0
+
+    for tile, ctx in summary.items():
+        if len(ctx["missing"]) != 0:
+            for missing_time in ctx["missing"]:
+                start, end = timeline_map[datetime.fromisoformat(missing_time).date().strftime("%Y-%m-%d")]
+
+                parameters["start_date"] = start
+                parameters["end_date"] = end
+
+                maestro = Maestro(cube.identifier, tiles=[tile], **parameters)
+                maestro.orchestrate()
+                result = maestro.run()
+                affected_entries += len(result)
+
+    return {"status": 200, "entries": affected_entries}

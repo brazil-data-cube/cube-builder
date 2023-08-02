@@ -128,6 +128,9 @@ class Config:
     QUEUE_PUBLISH_CUBE = os.getenv('QUEUE_PUBLISH_CUBE', 'publish-cube')
     """Set a RabbitMQ queue name for Publish Data Cubes.
             Defaults to ``publish-cube``."""
+    QUEUE_TRIGGER_CUBE = os.getenv('QUEUE_TRIGGER_CUBE', 'trigger-cube')
+    """Set a RabbitMQ queue name for Triggering Data Cubes.
+            Defaults to ``trigger-cube``."""
 
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_size": int(os.getenv("SQLALCHEMY_ENGINE_POOL_SIZE", 2)),

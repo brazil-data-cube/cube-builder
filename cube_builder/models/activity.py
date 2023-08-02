@@ -23,7 +23,7 @@ from typing import Union
 
 from bdc_catalog.models.base_sql import BaseModel, db
 # 3rdparty
-from sqlalchemy import ARRAY, JSON, Column, Date, Integer, String, Text, text
+from sqlalchemy import ARRAY, JSON, Column, Date, Index, Integer, String, Text, text
 from sqlalchemy.engine import ResultProxy
 
 from ..config import Config
@@ -33,7 +33,6 @@ class Activity(BaseModel):
     """Define a SQLAlchemy model to track celery execution."""
 
     __tablename__ = 'activities'
-    __table_args__ = {"schema": Config.ACTIVITIES_SCHEMA}
 
     id = Column(Integer, primary_key=True)
     collection_id = Column(String(64), nullable=False)
@@ -48,6 +47,16 @@ class Activity(BaseModel):
     scene_type = Column('scene_type', String)
     band = Column('band', String(64), nullable=False)
     traceback = Column(Text(), nullable=True)
+
+    __table_args__ = (
+        Index(None, tile_id),
+        Index(None, date),
+        Index(None, band),
+        Index(None, status),
+        Index(None, collection_id),
+        Index(None, warped_collection_id),
+        {"schema": Config.ACTIVITIES_SCHEMA}
+    )
 
     @classmethod
     def list_merge_files(cls, collection: str, tile: str,

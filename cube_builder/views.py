@@ -145,6 +145,14 @@ def update_cube_parameters(cube_id, **kwargs):
     return jsonify(message)
 
 
+@bp.route('/cubes/<cube_id>/complete', methods=['POST'])
+@oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["write"], throw_exception=Config.BDC_AUTH_REQUIRED)
+def complete_cube_timeline(cube_id, **kwargs):
+    """Complete the data cube missing time steps."""
+    result = CubeController.complete_cube_timeline(cube_id)
+    return jsonify(result), 200
+
+
 @bp.route('/cubes/<int:cube_id>/tiles/geom', methods=['GET'])
 @oauth2(required=Config.BDC_AUTH_REQUIRED, roles=["read"], throw_exception=Config.BDC_AUTH_REQUIRED)
 def list_tiles_as_features(cube_id, **kwargs):
@@ -202,7 +210,7 @@ def start_cube(**kwargs):
     if data.get('local'):
         data['collections'] = None
 
-    proc = CubeController.maestro(**data)
+    proc = CubeController.trigger_datacube(**data)
 
     return proc
 

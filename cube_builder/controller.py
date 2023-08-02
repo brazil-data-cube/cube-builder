@@ -30,9 +30,7 @@ from rasterio.crs import CRS
 from sqlalchemy import func
 from werkzeug.exceptions import NotFound, abort
 
-from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,
-                        IDENTITY, PROVENANCE_ATTRIBUTES, PROVENANCE_NAME, TOTAL_OBSERVATION_ATTRIBUTES,
-                        TOTAL_OBSERVATION_NAME)
+from . import constants
 from .forms import CollectionForm
 from .grids import create_grids
 from .models import Activity, CubeParameters
@@ -136,13 +134,13 @@ class CubeController:
         data = dict(name='Meter', symbol='m')
         resolution_meter, _ = get_or_create_model(ResolutionUnit, defaults=data, symbol='m')
 
-        mime_type, _ = get_or_create_model(MimeType, defaults=dict(name=COG_MIME_TYPE), name=COG_MIME_TYPE)
+        mime_type, _ = get_or_create_model(MimeType, defaults=dict(name=constants.COG_MIME_TYPE), name=constants.COG_MIME_TYPE)
 
         if cube is None:
             cube = Collection(
                 name=cube_id,
                 title=params['title'],
-                temporal_composition_schema=params['temporal_composition'] if function != IDENTITY else None,
+                temporal_composition_schema=params['temporal_composition'] if function != constants.IDENTITY else None,
                 composite_function_id=cube_function.id,
                 grs=grs,
                 metadata_=params['metadata'],
@@ -159,7 +157,7 @@ class CubeController:
 
             bands = []
 
-            default_bands = (CLEAR_OBSERVATION_NAME.lower(), TOTAL_OBSERVATION_NAME.lower(), PROVENANCE_NAME.lower())
+            default_bands = (constants.CLEAR_OBSERVATION_NAME.lower(), constants.TOTAL_OBSERVATION_NAME.lower(), constants.PROVENANCE_NAME.lower())
 
             band_map = dict()
 
@@ -221,21 +219,21 @@ class CubeController:
         db.session.add(cube_parameters)
 
         # Create default Cube Bands
-        if function != IDENTITY:
-            _ = cls.get_or_create_band(cube.id, **CLEAR_OBSERVATION_ATTRIBUTES, mime_type_id=mime_type.id,
+        if function != constants.IDENTITY:
+            _ = cls.get_or_create_band(cube.id, **constants.CLEAR_OBSERVATION_ATTRIBUTES, mime_type_id=mime_type.id,
                                        resolution_unit_id=resolution_meter.id,
                                        resolution_x=params['resolution'], resolution_y=params['resolution'])
-            _ = cls.get_or_create_band(cube.id, **TOTAL_OBSERVATION_ATTRIBUTES, mime_type_id=mime_type.id,
+            _ = cls.get_or_create_band(cube.id, **constants.TOTAL_OBSERVATION_ATTRIBUTES, mime_type_id=mime_type.id,
                                        resolution_unit_id=resolution_meter.id,
                                        resolution_x=params['resolution'], resolution_y=params['resolution'])
 
             if function in ('STK', 'LCF'):
-                _ = cls.get_or_create_band(cube.id, **PROVENANCE_ATTRIBUTES, mime_type_id=mime_type.id,
+                _ = cls.get_or_create_band(cube.id, **constants.PROVENANCE_ATTRIBUTES, mime_type_id=mime_type.id,
                                            resolution_unit_id=resolution_meter.id,
                                            resolution_x=params['resolution'], resolution_y=params['resolution'])
 
         if params.get('is_combined') and function != 'MED':
-            _ = cls.get_or_create_band(cube.id, **DATASOURCE_ATTRIBUTES, mime_type_id=mime_type.id,
+            _ = cls.get_or_create_band(cube.id, **constants.DATASOURCE_ATTRIBUTES, mime_type_id=mime_type.id,
                                        resolution_unit_id=resolution_meter.id,
                                        resolution_x=params['resolution'], resolution_y=params['resolution'])
 
@@ -262,12 +260,12 @@ class CubeController:
         with db.session.begin_nested():
             # Create data cube Identity
             identity_params = deepcopy(params)
-            identity_params['composite_function'] = IDENTITY
+            identity_params['composite_function'] = constants.IDENTITY
             cube = cls._create_cube_definition(cube_identity, identity_params)
 
             cube_serialized = [cube]
 
-            if params['composite_function'] != IDENTITY:
+            if params['composite_function'] != constants.IDENTITY:
                 if cube_name == cube_identity:
                     abort(409, f'Duplicated data cube name for cube: '
                                f'Composed {cube_name} and Identity {cube_identity}')
@@ -335,7 +333,7 @@ class CubeController:
             description=cube.composite_function.description,
             alias=cube.composite_function.alias,
         )
-        dump_cube['summary'] = cls.summarize(cube)
+        dump_cube['cube_summary'] = cls.summarize(cube)
 
         # Retrieve Item Start/End Date
         # This step is required since the default generation trigger
@@ -348,8 +346,9 @@ class CubeController:
             .first()
         )
         if stats:
-            dump_cube['start_date'] = stats.start_date
-            dump_cube['end_date'] = stats.end_date
+            dump_cube['start_date'] = stats.start_date.strftime(constants.DATETIME_RFC339)
+            dump_cube['end_date'] = stats.end_date.strftime(constants.DATETIME_RFC339)
+            dump_cube['timeline'] = sorted([ts.time_inst.strftime(constants.DATETIME_RFC339) for ts in cube.timeline])
 
         return dump_cube, 200
 
@@ -429,28 +428,6 @@ class CubeController:
         return [feature.Tile.name if only_ids else feature.geom for feature in features], 200
 
     @classmethod
-    def maestro(cls, datacube, collections, tiles, start_date, end_date, **properties):
-        """Search and Dispatch datacube generation on cluster.
-
-        Args:
-            datacube - Data cube identifier.
-            collections - List of collections used to generate datacube.
-            tiles - List of tiles to generate.
-            start_date - Start period
-            end_date - End period
-            **properties - Additional properties used on datacube generation, such bands and cache.
-        """
-        from .maestro import Maestro
-
-        maestro = Maestro(datacube, collections, tiles, start_date, end_date, **properties)
-
-        maestro.orchestrate()
-
-        maestro.run()
-
-        return dict(ok=True)
-
-    @classmethod
     def check_for_invalid_merges(cls, cube_id: str, tile_id: str, start_date: str,
                                  end_date: str) -> Tuple[dict, int]:
         """List merge files used in data cube and check for invalid scenes.
@@ -470,7 +447,7 @@ class CubeController:
             raise NotFound('Cube {} not found'.format(cube_id))
 
         # TODO validate schema to avoid start/end too abroad
-        identity = cube.composite_function.alias == IDENTITY
+        identity = cube.composite_function.alias == constants.IDENTITY
 
         res = Activity.list_merge_files(cube.name, tile_id, start_date[:10], end_date[:10], identity)
 
@@ -706,9 +683,12 @@ class CubeController:
         if isinstance(cube, str):
             cube = CubeController.get_cube_or_404(cube_id=cube)
 
+        timestamp_fmt = "%Y-%m-%dT%H:%M:%S"
+        db_timestamp_fmt = 'YYYY-MM-DD"T"HH24:MI:SS'
+
         summary_rows = (
             db.session.query(
-                Tile.name.label('tile'), func.count(Item.name).label('total_items')
+                Tile.name.label('tile'), func.jsonb_agg(func.to_char(Item.start_date, db_timestamp_fmt)).label('timeline')
             )
             .join(Tile, Tile.id == Item.tile_id)
             .filter(Item.collection_id == cube.id)
@@ -716,11 +696,55 @@ class CubeController:
             .order_by(Tile.name)
             .all()
         )
+        cube_timeline = sorted([ts.time_inst.strftime(timestamp_fmt) for ts in cube.timeline])
+        cube_timeline_set = set(cube_timeline)
 
-        return {
-            row.tile: row.total_items
+        output = {
+            row.tile: {
+                "total": len(row.timeline),
+                "missing": sorted(list(cube_timeline_set - set(row.timeline)))
+            }
             for row in summary_rows
         }
+
+        return output
+
+    @classmethod
+    def complete_cube_timeline(cls, cube_id: Union[str, int]):
+        """Complete data cube missing timelines."""
+        from .celery.tasks import complete_timeline
+        if isinstance(cube_id, str):
+            cube_id = int(cube_id) if cube_id.isnumeric() else cube_id
+
+        cube = cls.get_cube_or_404(cube_id)
+        summary = cls.summarize(cube)
+
+        task = complete_timeline.s(datacube=cube.identifier, summary=summary)
+        result = task.apply_async()
+        return {"process_id": result.id, "status": "scheduled"}
+
+    @classmethod
+    def trigger_datacube(cls, datacube, collections, tiles, start_date, end_date, **properties):
+        """Search and Dispatch datacube generation on cluster.
+
+        Args:
+            datacube - Data cube identifier.
+            collections - List of collections used to generate datacube.
+            tiles - List of tiles to generate.
+            start_date - Start period
+            end_date - End period
+            **properties - Additional properties used on datacube generation, such bands and cache.
+        """
+        from .celery.tasks import trigger_cube_period
+
+        task = trigger_cube_period.s(datacube,
+                                     tiles=tiles,
+                                     collections=collections,
+                                     start_date=start_date,
+                                     end_date=end_date,
+                                     **properties)
+        result = task.apply_async()
+        return {"process_id": result.id, "status": "scheduled"}
 
 
 def _make_item_assets(cube: Collection) -> dict:
