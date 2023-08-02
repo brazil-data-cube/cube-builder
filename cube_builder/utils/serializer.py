@@ -23,6 +23,8 @@ from decimal import Decimal
 
 from sqlalchemy.inspection import inspect
 
+from ..constants import DATETIME_RFC339
+
 
 class Serializer(object):
     """Class responsible to serialize database SQLAlchemy instances."""
@@ -37,7 +39,7 @@ class Serializer(object):
                 value = float(value)
             elif isinstance(value, datetime):
                 # Ensure RFC339 is used
-                value = value.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+                value = value.strftime(DATETIME_RFC339)
             result[c.key] = value
         return result
 
