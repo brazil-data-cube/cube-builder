@@ -183,7 +183,6 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-
   /cubes/{cube_id}/meta:
     get:
       description: Retrieve the meta information of a data cube such STAC provider used, collection, etc.
@@ -199,6 +198,27 @@ paths:
                 additionalProperties: true
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /cubes/{cube_id}/complete:
+    post:
+      responses:
+        "200":
+          description: Execution started.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  process_id:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+
   /start:
     post:
       requestBody:
@@ -253,9 +273,8 @@ paths:
               schema:
                 type: object
                 properties:
-                  ok:
-                    type: boolean
-                    default: true
+                  process_id:
+                    type: string
         "400":
           $ref: "#/components/responses/BadRequest"
         "500":
@@ -397,6 +416,7 @@ paths:
                       type: string
                     alias:
                       type: string
+
   /tasks:
     get:
       responses:
