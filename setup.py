@@ -78,6 +78,8 @@ install_requires = [
     'rio_cogeo==3.0.2',
     'shapely>=1.7,<2',
     'SQLAlchemy-Utils>=0.34.2,<1',
+    # 3rdparty deps
+    'pydantic<2',
 ]
 
 packages = find_packages()

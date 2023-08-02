@@ -26,8 +26,8 @@ from typing import Tuple, Union
 import sqlalchemy
 from bdc_catalog.models import (Band, BandSRC, Collection, CollectionSRC, CompositeFunction, GridRefSys, Item, MimeType,
                                 Quicklook, ResolutionUnit, SpatialRefSys, Tile, db)
-from geoalchemy2 import func
 from rasterio.crs import CRS
+from sqlalchemy import func
 from werkzeug.exceptions import NotFound, abort
 
 from .constants import (CLEAR_OBSERVATION_ATTRIBUTES, CLEAR_OBSERVATION_NAME, COG_MIME_TYPE, DATASOURCE_ATTRIBUTES,

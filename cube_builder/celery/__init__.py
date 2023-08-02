@@ -67,6 +67,7 @@ def create_celery_app(flask_app: Flask) -> Celery:
 
     always_eager = flask_app.config.get('TESTING', False)
     celery.conf.update(dict(
+        broker_connection_retry_on_startup=True,
         task_acks_late=to_bool(os.getenv('CELERY_ACKS_LATE', '1')),
         task_always_eager=always_eager,
         worker_prefetch_multiplier=Config.CELERYD_PREFETCH_MULTIPLIER,

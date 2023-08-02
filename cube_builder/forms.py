@@ -110,6 +110,13 @@ class CustomMaskDefinition(Schema):
     bits = fields.Boolean(required=False, allow_none=False, dump_default=False)
 
 
+class CustomScaleSchema(Schema):
+    """Represent the Band attribute scale factor and scale mult."""
+
+    add = fields.Float(required=True, allow_none=False, allow_nan=False)
+    mult = fields.Float(required=True, allow_none=False, allow_nan=False)
+
+
 class CubeParametersSchema(Schema):
     """Represent the data cube parameters used to be attached to the cube execution."""
 
@@ -133,6 +140,9 @@ class CubeParametersSchema(Schema):
 
     Use to specify which key described in STAC Item Asset contains the ``zip`` file.
     Defaults to ``None``."""
+    combined = fields.Boolean(required=False, allow_none=False)
+    resampling = fields.String(required=False, allow_none=False, default="nearest")
+    scale = fields.Nested(CustomScaleSchema, required=False, allow_none=False)
 
 
 class DataCubeForm(Schema):

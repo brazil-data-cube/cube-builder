@@ -36,11 +36,11 @@ import rasterio.features
 import rasterio.windows
 import requests
 from bdc_catalog.models import Collection, Item, SpatialRefSys, Tile, db
-from geoalchemy2 import func
 from geoalchemy2.shape import from_shape, to_shape
 from numpngw import write_png
 from rasterio import Affine, MemoryFile
 from rasterio.warp import Resampling, reproject
+from sqlalchemy import func
 
 from ..config import Config
 # Constant to define required bands to generate both NDVI and EVI
@@ -790,6 +790,16 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
                 saturated = radsat_extract_bits(saturated, 1, 7).astype(numpy.bool_)
                 masked.mask[saturated] = True
 
+            # Get current observation file name
+            file_path = bandlist[order].name
+            file_date = datetime.strptime(merges_band_map[file_path], '%Y-%m-%d')
+            day_of_year = file_date.timetuple().tm_yday
+
+            if build_clear_observation and is_combined_collection:
+                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
+                if mask_values['bits']:
+                    confidence.oli = numpy.isin(datasource_block, index_landsat_oli)
+
             if mask_values['bits']:
                 matched = get_qa_mask(masked,
                                       clear_data=clear_values,
@@ -822,16 +832,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
 
             stack_total_observation[window.row_off: row_offset, window.col_off: col_offset] += copy_mask.astype(numpy.uint8)
 
-            # Get current observation file name
-            file_path = bandlist[order].name
-            file_date = datetime.strptime(merges_band_map[file_path], '%Y-%m-%d')
-            day_of_year = file_date.timetuple().tm_yday
-
-            if build_clear_observation and is_combined_collection:
-                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
-                if mask_values['bits']:
-                    confidence.oli = datasource_block == index_landsat_oli
-
             # Find all no data in destination STACK image
             stack_raster_where_nodata = numpy.where(
                 stack_raster[window.row_off: row_offset, window.col_off: col_offset] == nodata
@@ -841,9 +841,6 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             stack_raster_nodata_pos = numpy.ravel_multi_index(stack_raster_where_nodata,
                                                               stack_raster[window.row_off: row_offset,
                                                               window.col_off: col_offset].shape)
-
-            if build_clear_observation and is_combined_collection:
-                datasource_block = provenance_merge_map[file_date.strftime('%Y-%m-%d')].dataset.read(1, window=window)
 
             # Find all valid/cloud in destination STACK image
             raster_where_data = numpy.where(raster != nodata)
@@ -946,7 +943,7 @@ def blend(activity, band_map, quality_band, build_clear_observation=False, block
             provenance_file = build_cube_path(datacube, period, tile_id, version=version,
                                               band=PROVENANCE_NAME, composed=True, **kwargs)
             provenance_profile = profile.copy()
-            provenance_profile.pop('nodata', -1)
+            provenance_profile['nodata'] = PROVENANCE_ATTRIBUTES['nodata']
             provenance_profile['dtype'] = PROVENANCE_ATTRIBUTES['data_type']
 
             save_as_cog(str(provenance_file), provenance_array, block_size=block_size, **provenance_profile)
@@ -1088,7 +1085,6 @@ def publish_datacube(cube: Collection, bands, tile_id, period, scenes, cloudrati
                 tile_id=tile.id,
                 start_date=start_date,
                 end_date=end_date,
-                is_available=False
             )
 
             item, _ = get_or_create_model(Item, defaults=item_data, name=item_id, collection_id=cube.id)

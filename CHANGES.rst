@@ -33,6 +33,14 @@ Version 1.0.1 (2023-06-27)
 - Add support to apply Sentinel-2 baseline offsetting (`#266 <https://github.com/brazil-data-cube/cube-builder/issues/266>`_)
 
 
+Version 0.8.6 (2023-07-14)
+--------------------------
+
+- Fix generation of data cubes for Landsat program: confidence mask
+- Improve cube builder forms for extra parameters
+- Customize number of GDAL parallel threads to generate COGs
+
+
 Version 1.0.0 (2023-03-10)
 --------------------------
 
@@ -70,15 +78,6 @@ Version 0.8.4 (2023-01-23)
 - Add support to combine Landsat Collection 2 sensors (L5/L7, L7/L8, L7/L8/L9) using single collection (`#172 <https://github.com/brazil-data-cube/cube-builder/issues/172>`_)
 - Review API error when no parameter is set.
 - Review unittests for cube creation and code coverage.
-
-
-Version 1.0.0a1 (2022-10-20)
-----------------------------
-
-- Add integration with BDC-Catalog 1.0 `#233 <https://github.com/brazil-data-cube/cube-builder/issues/233>`_.
-- Add support to generate datacube from Sentinel-2 Zip (experimental) `#222 <https://github.com/brazil-data-cube/cube-builder/issues/222>`_.
-- Improve docs setup
-- Add support to generate data cube from local directories (`#25 <https://github.com/brazil-data-cube/cube-builder/issues/25>`_)
 
 
 Version 0.8.3 (2022-10-03)
